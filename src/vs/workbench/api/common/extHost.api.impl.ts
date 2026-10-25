@@ -26,7 +26,6 @@ import { ILogService, ILoggerService, LogLevel } from '../../../platform/log/com
 import { getRemoteName } from '../../../platform/remote/common/remoteHosts.js';
 import { TelemetryTrustedValue } from '../../../platform/telemetry/common/telemetryUtils.js';
 import { EditSessionIdentityMatch } from '../../../platform/workspace/common/editSessions.js';
-import { DebugConfigurationProviderTriggerKind } from '../../contrib/debug/common/debug.js';
 import { ExtensionDescriptionRegistry } from '../../services/extensions/common/extensionDescriptionRegistry.js';
 import { UIKind } from '../../services/extensions/common/extensionHostProtocol.js';
 import { checkProposedApiEnabled, isProposedApiEnabled } from '../../services/extensions/common/extensions.js';
@@ -50,7 +49,6 @@ import { createExtHostComments } from './extHostComments.js';
 import { ExtHostConfigProvider, IExtHostConfiguration } from './extHostConfiguration.js';
 import { ExtHostCustomEditors } from './extHostCustomEditors.js';
 import { IExtHostDataChannels } from './extHostDataChannels.js';
-import { IExtHostDebugService } from './extHostDebugService.js';
 import { IExtHostDecorations } from './extHostDecorations.js';
 import { ExtHostDiagnostics } from './extHostDiagnostics.js';
 import { ExtHostDialogs } from './extHostDialogs.js';
@@ -87,7 +85,6 @@ import { IExtHostTask } from './extHostTask.js';
 import { ExtHostTelemetryLogger, IExtHostTelemetry, isNewAppInstall } from './extHostTelemetry.js';
 import { IExtHostTerminalService } from './extHostTerminalService.js';
 import { IExtHostTerminalShellIntegration } from './extHostTerminalShellIntegration.js';
-import { IExtHostTesting } from './extHostTesting.js';
 import { ExtHostEditors } from './extHostTextEditors.js';
 import { ExtHostTheming } from './extHostTheming.js';
 import { ExtHostTimeline } from './extHostTimeline.js';
@@ -185,7 +182,6 @@ export function createApiFactoryAndRegisterActors(accessor: ServicesAccessor): I
 		ExtHostContext.ExtHostTerminalShellIntegration,
 		accessor.get(IExtHostTerminalShellIntegration)
 	);
-	const extHostDebugService = rpcProtocol.set(ExtHostContext.ExtHostDebugService, accessor.get(IExtHostDebugService));
 	const extHostSearch = rpcProtocol.set(ExtHostContext.ExtHostSearch, accessor.get(IExtHostSearch));
 	const extHostTask = rpcProtocol.set(ExtHostContext.ExtHostTask, accessor.get(IExtHostTask));
 	const extHostOutputService = rpcProtocol.set(
@@ -299,7 +295,6 @@ export function createApiFactoryAndRegisterActors(accessor: ServicesAccessor): I
 		ExtHostContext.ExtHostWebviewViews,
 		new ExtHostWebviewViews(rpcProtocol, extHostWebviews)
 	);
-	const extHostTesting = rpcProtocol.set(ExtHostContext.ExtHostTesting, accessor.get(IExtHostTesting));
 	const extHostUriOpeners = rpcProtocol.set(ExtHostContext.ExtHostUriOpeners, new ExtHostUriOpeners(rpcProtocol));
 	const extHostStatusBar = rpcProtocol.set(
 		ExtHostContext.ExtHostStatusBar,
@@ -672,37 +667,6 @@ export function createApiFactoryAndRegisterActors(accessor: ServicesAccessor): I
 			// allow to patch env-function when running tests
 			Object.freeze(env);
 		}
-
-		// namespace: tests
-		const tests: typeof vscode.tests & Record<string, any> = {
-			createTestController(
-				provider,
-				label,
-				refreshHandler?: (token: vscode.CancellationToken) => Thenable<void> | void
-			) {
-				return extHostTesting.createTestController(extension, provider, label, refreshHandler);
-			},
-			createTestObserver() {
-				checkProposedApiEnabled(extension, 'testObserver');
-				return extHostTesting.createTestObserver();
-			},
-			runTests(provider) {
-				checkProposedApiEnabled(extension, 'testObserver');
-				return extHostTesting.runTests(provider);
-			},
-			registerTestFollowupProvider(provider) {
-				checkProposedApiEnabled(extension, 'testObserver');
-				return extHostTesting.registerTestFollowupProvider(provider);
-			},
-			get onDidChangeTestResults() {
-				checkProposedApiEnabled(extension, 'testObserver');
-				return _asExtensionEvent(extHostTesting.onResultsChanged);
-			},
-			get testResults() {
-				checkProposedApiEnabled(extension, 'testObserver');
-				return extHostTesting.results;
-			}
-		};
 
 		// namespace: extensions
 		const extensionKind = initData.remote.isRemote
@@ -1900,96 +1864,6 @@ export function createApiFactoryAndRegisterActors(accessor: ServicesAccessor): I
 			}
 		};
 
-		// namespace: debug
-		const debug: typeof vscode.debug & Record<string, any> = {
-			get activeDebugSession() {
-				return extHostDebugService.activeDebugSession;
-			},
-			get activeDebugConsole() {
-				return extHostDebugService.activeDebugConsole;
-			},
-			get breakpoints() {
-				return extHostDebugService.breakpoints;
-			},
-			get activeStackItem() {
-				return extHostDebugService.activeStackItem;
-			},
-			registerDebugVisualizationProvider(id, provider) {
-				checkProposedApiEnabled(extension, 'debugVisualization');
-				return extHostDebugService.registerDebugVisualizationProvider(extension, id, provider);
-			},
-			registerDebugVisualizationTreeProvider(id, provider) {
-				checkProposedApiEnabled(extension, 'debugVisualization');
-				return extHostDebugService.registerDebugVisualizationTree(extension, id, provider);
-			},
-			onDidStartDebugSession(listener, thisArg?, disposables?) {
-				return _asExtensionEvent(extHostDebugService.onDidStartDebugSession)(listener, thisArg, disposables);
-			},
-			onDidTerminateDebugSession(listener, thisArg?, disposables?) {
-				return _asExtensionEvent(extHostDebugService.onDidTerminateDebugSession)(listener, thisArg, disposables);
-			},
-			onDidChangeActiveDebugSession(listener, thisArg?, disposables?) {
-				return _asExtensionEvent(extHostDebugService.onDidChangeActiveDebugSession)(listener, thisArg, disposables);
-			},
-			onDidReceiveDebugSessionCustomEvent(listener, thisArg?, disposables?) {
-				return _asExtensionEvent(extHostDebugService.onDidReceiveDebugSessionCustomEvent)(
-					listener,
-					thisArg,
-					disposables
-				);
-			},
-			onDidChangeBreakpoints(listener, thisArgs?, disposables?) {
-				return _asExtensionEvent(extHostDebugService.onDidChangeBreakpoints)(listener, thisArgs, disposables);
-			},
-			onDidChangeActiveStackItem(listener, thisArg?, disposables?) {
-				return _asExtensionEvent(extHostDebugService.onDidChangeActiveStackItem)(listener, thisArg, disposables);
-			},
-			registerDebugConfigurationProvider(
-				debugType: string,
-				provider: vscode.DebugConfigurationProvider,
-				triggerKind?: vscode.DebugConfigurationProviderTriggerKind
-			) {
-				return extHostDebugService.registerDebugConfigurationProvider(
-					debugType,
-					provider,
-					triggerKind || DebugConfigurationProviderTriggerKind.Initial
-				);
-			},
-			registerDebugAdapterDescriptorFactory(debugType: string, factory: vscode.DebugAdapterDescriptorFactory) {
-				return extHostDebugService.registerDebugAdapterDescriptorFactory(extension, debugType, factory);
-			},
-			registerDebugAdapterTrackerFactory(debugType: string, factory: vscode.DebugAdapterTrackerFactory) {
-				return extHostDebugService.registerDebugAdapterTrackerFactory(debugType, factory);
-			},
-			startDebugging(
-				folder: vscode.WorkspaceFolder | undefined,
-				nameOrConfig: string | vscode.DebugConfiguration,
-				parentSessionOrOptions?: vscode.DebugSession | vscode.DebugSessionOptions
-			) {
-				if (
-					!parentSessionOrOptions ||
-					(typeof parentSessionOrOptions === 'object' && 'configuration' in parentSessionOrOptions)
-				) {
-					return extHostDebugService.startDebugging(folder, nameOrConfig, {
-						parentSession: parentSessionOrOptions as any
-					});
-				}
-				return extHostDebugService.startDebugging(folder, nameOrConfig, parentSessionOrOptions || {});
-			},
-			stopDebugging(session?: vscode.DebugSession) {
-				return extHostDebugService.stopDebugging(session);
-			},
-			addBreakpoints(breakpoints: readonly vscode.Breakpoint[]) {
-				return extHostDebugService.addBreakpoints(breakpoints);
-			},
-			removeBreakpoints(breakpoints: readonly vscode.Breakpoint[]) {
-				return extHostDebugService.removeBreakpoints(breakpoints);
-			},
-			asDebugSourceUri(source: vscode.DebugProtocolSource, session?: vscode.DebugSession): vscode.Uri {
-				return extHostDebugService.asDebugSourceUri(source, session);
-			}
-		};
-
 		const tasks: typeof vscode.tasks & Record<string, any> = {
 			registerTaskProvider: (type: string, provider: vscode.TaskProvider) => {
 				return extHostTask.registerTaskProvider(extension, type, provider);
@@ -2079,18 +1953,15 @@ export function createApiFactoryAndRegisterActors(accessor: ServicesAccessor): I
 			authentication,
 			commands,
 			comments,
-			debug,
 			env,
 			extensions,
 			l10n,
 			languages,
 			scm,
 			tasks,
-			tests,
 			window,
 			workspace,
 			// types
-			Breakpoint: extHostTypes.Breakpoint,
 			TerminalOutputAnchor: extHostTypes.TerminalOutputAnchor,
 			CallHierarchyIncomingCall: extHostTypes.CallHierarchyIncomingCall,
 			CallHierarchyItem: extHostTypes.CallHierarchyItem,
@@ -2119,13 +1990,6 @@ export function createApiFactoryAndRegisterActors(accessor: ServicesAccessor): I
 			CompletionTriggerKind: extHostTypes.CompletionTriggerKind,
 			ConfigurationTarget: extHostTypes.ConfigurationTarget,
 			CustomExecution: extHostTypes.CustomExecution,
-			DebugAdapterExecutable: extHostTypes.DebugAdapterExecutable,
-			DebugAdapterInlineImplementation: extHostTypes.DebugAdapterInlineImplementation,
-			DebugAdapterNamedPipeServer: extHostTypes.DebugAdapterNamedPipeServer,
-			DebugAdapterServer: extHostTypes.DebugAdapterServer,
-			DebugConfigurationProviderTriggerKind: DebugConfigurationProviderTriggerKind,
-			DebugConsoleMode: extHostTypes.DebugConsoleMode,
-			DebugVisualization: extHostTypes.DebugVisualization,
 			DecorationRangeBehavior: extHostTypes.DecorationRangeBehavior,
 			Diagnostic: extHostTypes.Diagnostic,
 			DiagnosticRelatedInformation: extHostTypes.DiagnosticRelatedInformation,
@@ -2157,7 +2021,6 @@ export function createApiFactoryAndRegisterActors(accessor: ServicesAccessor): I
 			FilePermission: files.FilePermission,
 			FoldingRange: extHostTypes.FoldingRange,
 			FoldingRangeKind: extHostTypes.FoldingRangeKind,
-			FunctionBreakpoint: extHostTypes.FunctionBreakpoint,
 			InlineCompletionItem: extHostTypes.InlineSuggestion,
 			InlineCompletionList: extHostTypes.InlineSuggestionList,
 			Hover: extHostTypes.Hover,
@@ -2189,7 +2052,6 @@ export function createApiFactoryAndRegisterActors(accessor: ServicesAccessor): I
 			SignatureHelpTriggerKind: extHostTypes.SignatureHelpTriggerKind,
 			SignatureInformation: extHostTypes.SignatureInformation,
 			SnippetString: extHostTypes.SnippetString,
-			SourceBreakpoint: extHostTypes.SourceBreakpoint,
 			StandardTokenType: extHostTypes.StandardTokenType,
 			StatusBarAlignment: extHostTypes.StatusBarAlignment,
 			SymbolInformation: extHostTypes.SymbolInformation,
@@ -2249,20 +2111,9 @@ export function createApiFactoryAndRegisterActors(accessor: ServicesAccessor): I
 			TimelineItem: extHostTypes.TimelineItem,
 			PortAttributes: extHostTypes.PortAttributes,
 			LinkedEditingRanges: extHostTypes.LinkedEditingRanges,
-			TestResultState: extHostTypes.TestResultState,
-			TestRunRequest: extHostTypes.TestRunRequest,
-			TestMessage: extHostTypes.TestMessage,
-			TestMessageStackFrame: extHostTypes.TestMessageStackFrame,
-			TestTag: extHostTypes.TestTag,
-			TestRunProfileKind: extHostTypes.TestRunProfileKind,
 			TextSearchCompleteMessageType: TextSearchCompleteMessageType,
 			DataTransfer: extHostTypes.DataTransfer,
 			DataTransferItem: extHostTypes.DataTransferItem,
-			TestCoverageCount: extHostTypes.TestCoverageCount,
-			FileCoverage: extHostTypes.FileCoverage,
-			StatementCoverage: extHostTypes.StatementCoverage,
-			BranchCoverage: extHostTypes.BranchCoverage,
-			DeclarationCoverage: extHostTypes.DeclarationCoverage,
 			WorkspaceTrustState: extHostTypes.WorkspaceTrustState,
 			LanguageStatusSeverity: extHostTypes.LanguageStatusSeverity,
 			QuickPickItemKind: extHostTypes.QuickPickItemKind,
@@ -2277,8 +2128,6 @@ export function createApiFactoryAndRegisterActors(accessor: ServicesAccessor): I
 			TelemetryTrustedValue: TelemetryTrustedValue,
 			LogLevel: LogLevel,
 			EditSessionIdentityMatch: EditSessionIdentityMatch,
-			DebugStackFrame: extHostTypes.DebugStackFrame,
-			DebugThread: extHostTypes.DebugThread,
 			PartialAcceptTriggerKind: extHostTypes.PartialAcceptTriggerKind,
 			InlineCompletionEndOfLifeReasonKind: extHostTypes.InlineCompletionEndOfLifeReasonKind,
 			InlineCompletionDisplayLocationKind: extHostTypes.InlineCompletionDisplayLocationKind,

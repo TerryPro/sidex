@@ -56,7 +56,6 @@ import { CustomMenubarControl } from './menubarControl.js';
 import { IInstantiationService, ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { IStorageService, StorageScope } from '../../../../platform/storage/common/storage.js';
-import { IAccountService } from '../../../contrib/sidexChat/browser/account/accountService.js';
 import { IUpdateService } from '../../../../platform/update/common/update.js';
 import { URI } from '../../../../base/common/uri.js';
 import {
@@ -415,7 +414,6 @@ export class BrowserTitlebarPart extends Part implements ITitlebarPart {
 		@IWorkspaceContextService private readonly workspaceContextService: IWorkspaceContextService,
 		@ILabelService private readonly labelService: ILabelService,
 		@ICommandService private readonly commandService: ICommandService,
-		@IAccountService private readonly accountService: IAccountService,
 		@IUpdateService private readonly updateService: IUpdateService
 	) {
 		super(id, { hasTitle: false }, themeService, storageService, layoutService);
@@ -713,96 +711,15 @@ export class BrowserTitlebarPart extends Part implements ITitlebarPart {
 			const profileButton = append(this.rightContent, $('div.sidex-profile-button'));
 			
 			// Initials container
-			const initialsDiv = append(profileButton, $('div.sidex-profile-initials'));
-			initialsDiv.textContent = 'U'; // generic fallback initials until the local session resolves
+			append(profileButton, $('div.sidex-profile-initials')).textContent = 'U';
 			
 			// Chevron down indicator
 			const chevronSpan = append(profileButton, $('span.codicon.codicon-chevron-down.sidex-profile-chevron'));
 			chevronSpan.setAttribute('aria-hidden', 'true');
 
-			// Retrieve live initials from AccountService session
-			try {
-				const getInitials = (name: string, email: string): string => {
-					name = (name || '').trim();
-					if (name && name.toLowerCase() !== 'user') {
-						const parts = name.split(/\s+/);
-						if (parts.length >= 2) {
-							const first = parts[0].charAt(0);
-							const second = parts[1].charAt(0);
-							if (first && second) {
-								return (first + second).toUpperCase();
-							}
-						}
-						const capParts = name.split(/(?=[A-Z])/);
-						if (capParts.length >= 2) {
-							const first = capParts[0].charAt(0).trim();
-							const second = capParts[1].charAt(0).trim();
-							if (first && second) {
-								return (first + second).toUpperCase();
-							}
-						}
-						if (name.length >= 2) {
-							return name.slice(0, 2).toUpperCase();
-						}
-					}
-					email = (email || '').trim();
-					if (email) {
-						const prefix = email.split('@')[0];
-						const parts = prefix.split(/[\._-]/);
-						if (parts.length >= 2) {
-							const first = parts[0].charAt(0);
-							const second = parts[1].charAt(0);
-							if (first && second) {
-								return (first + second).toUpperCase();
-							}
-						}
-						const capParts = prefix.split(/(?=[A-Z])/);
-						if (capParts.length >= 2) {
-							const first = capParts[0].charAt(0);
-							const second = capParts[1].charAt(0);
-							if (first && second) {
-								return (first + second).toUpperCase();
-							}
-						}
-						if (prefix.length >= 2) {
-							const alphas = prefix.replace(/[^a-zA-Z]/g, '');
-							if (alphas.length >= 2) {
-								return alphas.slice(0, 2).toUpperCase();
-							}
-							return prefix.slice(0, 2).toUpperCase();
-						}
-					}
-					return 'U';
-				};
-
-				const updateInitials = () => {
-					const session = this.accountService.getSession();
-					if (session && session.user) {
-						initialsDiv.textContent = getInitials(session.user.name, session.user.email);
-					} else {
-						initialsDiv.textContent = 'U';
-					}
-				};
-				updateInitials();
-				this._register(this.accountService.onDidChangeSession(() => updateInitials()));
-			} catch {
-				// AccountService load failed, keep generic 'U' fallback
-			}
-
 			this._register(addDisposableListener(profileButton, EventType.CLICK, (e) => {
 				e.stopPropagation();
 				const actions: IAction[] = [];
-				// There is no account to sign in or out of. These open the local
-				// settings panel, where AI providers are configured.
-				const openSidexSettings = () => {
-					import('../../../contrib/sidexChat/browser/settings/sidexSettingsPanel.js').then(({ SidexSettingsPanel }) => {
-						SidexSettingsPanel.getInstance().toggle();
-					}).catch(() => { /* panel is optional */ });
-				};
-				actions.push(toAction({ id: 'sidex.profile.settings', label: 'SideX Settings', run: openSidexSettings }));
-				actions.push(toAction({ id: 'sidex.profile.usage', label: 'SideX Usage', run: openSidexSettings }));
-
-				actions.push(new Separator());
 
 				// Group 2: Editor Settings
 				actions.push(toAction({ id: 'sidex.manage.settings', label: 'Editor Settings', run: () => this.commandService.executeCommand('workbench.action.openSettings') }));
@@ -1851,7 +1768,6 @@ export class MainBrowserTitlebarPart extends BrowserTitlebarPart {
 		@IWorkspaceContextService workspaceContextService: IWorkspaceContextService,
 		@ILabelService labelService: ILabelService,
 		@ICommandService commandService: ICommandService,
-		@IAccountService accountService: IAccountService,
 		@IUpdateService updateService: IUpdateService
 	) {
 		super(
@@ -1874,7 +1790,6 @@ export class MainBrowserTitlebarPart extends BrowserTitlebarPart {
 			workspaceContextService,
 			labelService,
 			commandService,
-			accountService,
 			updateService
 		);
 	}
@@ -1915,7 +1830,6 @@ export class AuxiliaryBrowserTitlebarPart extends BrowserTitlebarPart implements
 		@IWorkspaceContextService workspaceContextService: IWorkspaceContextService,
 		@ILabelService labelService: ILabelService,
 		@ICommandService commandService: ICommandService,
-		@IAccountService accountService: IAccountService,
 		@IUpdateService updateService: IUpdateService
 	) {
 		const id = AuxiliaryBrowserTitlebarPart.COUNTER++;
@@ -1939,7 +1853,6 @@ export class AuxiliaryBrowserTitlebarPart extends BrowserTitlebarPart implements
 			workspaceContextService,
 			labelService,
 			commandService,
-			accountService,
 			updateService
 		);
 	}

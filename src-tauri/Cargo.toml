@@ -28,7 +28,6 @@ tauri = { version = "2.10.3", features = [
 tauri-plugin-log = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-shell = "2"
-jsonwebtoken = { version = "10.4", features = ["aws_lc_rs"] }
 
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -99,7 +98,6 @@ wasmtime-wasi = "43"
 toml = "0.8"
 anyhow = "1"
 sidex-db = { path = "../crates/sidex-db" }
-sidex-dap = { path = "../crates/sidex-dap" }
 sidex-remote = { path = "../crates/sidex-remote" }
 sidex-settings = { path = "../crates/sidex-settings" }
 sidex-theme = { path = "../crates/sidex-theme" }
@@ -113,15 +111,13 @@ sidex-text = { path = "../crates/sidex-text" }
 sidex-syntax = { path = "../crates/sidex-syntax" }
 sidex-tasks = { path = "../crates/sidex-tasks" }
 sidex-extensions = { path = "../crates/sidex-extensions" }
-sidex-agent = { path = "../crates/sidex-agent" }
-sidex-lsp = { path = "../crates/sidex-lsp" }
-sidex-keymap = { path = "../crates/sidex-keymap" }
 sidex-extension-api = { path = "../crates/sidex-extension-api" }
+sidex-keymap = { path = "../crates/sidex-keymap" }
+sidex-lsp = { path = "../crates/sidex-lsp" }
 sidex-update = { path = "../crates/sidex-update" }
 sidex-profiles = { path = "../crates/sidex-profiles" }
 sidex-auth = { path = "../crates/sidex-auth" }
 sidex-textmate = { path = "../crates/sidex-textmate" }
-sidex-context = { path = "../crates/sidex-context" }
 
 tree-sitter = "0.24"
 tree-sitter-rust = "0.23"

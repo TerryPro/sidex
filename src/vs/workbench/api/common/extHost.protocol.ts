@@ -88,17 +88,6 @@ import { WorkspaceTrustRequestOptions } from '../../../platform/workspace/common
 import { SaveReason } from '../../common/editor.js';
 import { IRevealOptions, ITreeItem, IViewBadge } from '../../common/views.js';
 import { CallHierarchyItem } from '../../contrib/callHierarchy/common/callHierarchy.js';
-import {
-	DebugConfigurationProviderTriggerKind,
-	IAdapterDescriptor,
-	IConfig,
-	IDebugSessionReplMode,
-	IDebugTestRunReference,
-	IDebugVisualization,
-	IDebugVisualizationContext,
-	IDebugVisualizationTreeItem,
-	MainThreadDebugVisualization
-} from '../../contrib/debug/common/debug.js';
 import * as notebookCommon from '../../contrib/notebook/common/notebookCommon.js';
 import { CellExecutionUpdateType } from '../../contrib/notebook/common/notebookExecutionService.js';
 import {
@@ -110,24 +99,6 @@ import { ISCMHistoryOptions } from '../../contrib/scm/common/history.js';
 import { InputValidationType } from '../../contrib/scm/common/scm.js';
 import { IWorkspaceSymbol, NotebookPriorityInfo } from '../../contrib/search/common/search.js';
 import { IRawClosedNotebookFileMatch } from '../../contrib/search/common/searchNotebookHelpers.js';
-import {
-	CoverageDetails,
-	ExtensionRunTestsRequest,
-	ICallProfileRunHandler,
-	IFileCoverage,
-	ISerializedTestResults,
-	IStartControllerTests,
-	ITestItem,
-	ITestMessage,
-	ITestRunProfile,
-	ITestRunTask,
-	ResolvedTestRunRequest,
-	TestControllerCapability,
-	TestMessageFollowupRequest,
-	TestMessageFollowupResponse,
-	TestResultState,
-	TestsDiffOp
-} from '../../contrib/testing/common/testTypes.js';
 import {
 	Timeline,
 	TimelineChangeEvent,
@@ -2072,68 +2043,6 @@ export interface MainThreadQuickDiffShape extends IDisposable {
 	$unregisterQuickDiffProvider(handle: number): Promise<void>;
 }
 
-export type DebugSessionUUID = string;
-
-export interface IDebugConfiguration {
-	type: string;
-	name: string;
-	request: string;
-	[key: string]: any;
-}
-
-export interface IStartDebuggingOptions {
-	parentSessionID?: DebugSessionUUID;
-	lifecycleManagedByParent?: boolean;
-	repl?: IDebugSessionReplMode;
-	noDebug?: boolean;
-	compact?: boolean;
-	suppressDebugToolbar?: boolean;
-	suppressDebugStatusbar?: boolean;
-	suppressDebugView?: boolean;
-	suppressSaveBeforeStart?: boolean;
-	testRun?: IDebugTestRunReference;
-}
-
-export interface MainThreadDebugServiceShape extends IDisposable {
-	$registerDebugTypes(debugTypes: string[]): void;
-	$sessionCached(sessionID: string): void;
-	$acceptDAMessage(handle: number, message: DebugProtocol.ProtocolMessage): void;
-	$acceptDAError(handle: number, name: string, message: string, stack: string | undefined): void;
-	$acceptDAExit(handle: number, code: number | undefined, signal: string | undefined): void;
-	$registerDebugConfigurationProvider(
-		type: string,
-		triggerKind: DebugConfigurationProviderTriggerKind,
-		hasProvideMethod: boolean,
-		hasResolveMethod: boolean,
-		hasResolve2Method: boolean,
-		handle: number
-	): Promise<void>;
-	$registerDebugAdapterDescriptorFactory(type: string, handle: number): Promise<void>;
-	$unregisterDebugConfigurationProvider(handle: number): void;
-	$unregisterDebugAdapterDescriptorFactory(handle: number): void;
-	$startDebugging(
-		folder: UriComponents | undefined,
-		nameOrConfig: string | IDebugConfiguration,
-		options: IStartDebuggingOptions
-	): Promise<boolean>;
-	$stopDebugging(sessionId: DebugSessionUUID | undefined): Promise<void>;
-	$setDebugSessionName(id: DebugSessionUUID, name: string): void;
-	$customDebugAdapterRequest(id: DebugSessionUUID, command: string, args: any): Promise<any>;
-	$getDebugProtocolBreakpoint(id: DebugSessionUUID, breakpoinId: string): Promise<DebugProtocol.Breakpoint | undefined>;
-	$appendDebugConsole(value: string): void;
-	$registerBreakpoints(
-		breakpoints: Array<ISourceMultiBreakpointDto | IFunctionBreakpointDto | IDataBreakpointDto>
-	): Promise<void>;
-	$unregisterBreakpoints(
-		breakpointIds: string[],
-		functionBreakpointIds: string[],
-		dataBreakpointIds: string[]
-	): Promise<void>;
-	$registerDebugVisualizer(extensionId: string, id: string): void;
-	$unregisterDebugVisualizer(extensionId: string, id: string): void;
-	$registerDebugVisualizerTree(treeId: string, canEdit: boolean): void;
-	$unregisterDebugVisualizerTree(treeId: string): void;
-}
 
 export interface IOpenUriOptions {
 	readonly allowTunneling?: boolean;
@@ -3391,132 +3300,6 @@ export interface ExtHostTaskShape {
 	$findExecutable(command: string, cwd?: string, paths?: string[]): Promise<string | undefined>;
 }
 
-export interface IBreakpointDto {
-	type: string;
-	id?: string;
-	enabled: boolean;
-	condition?: string;
-	hitCondition?: string;
-	logMessage?: string;
-	mode?: string;
-}
-
-export interface IFunctionBreakpointDto extends IBreakpointDto {
-	type: 'function';
-	functionName: string;
-	mode?: string;
-}
-
-export interface IDataBreakpointDto extends IBreakpointDto {
-	type: 'data';
-	dataId: string;
-	canPersist: boolean;
-	label: string;
-	accessTypes?: DebugProtocol.DataBreakpointAccessType[];
-	accessType: DebugProtocol.DataBreakpointAccessType;
-	mode?: string;
-}
-
-export interface ISourceBreakpointDto extends IBreakpointDto {
-	type: 'source';
-	uri: UriComponents;
-	line: number;
-	character: number;
-}
-
-export interface IBreakpointsDeltaDto {
-	added?: Array<ISourceBreakpointDto | IFunctionBreakpointDto | IDataBreakpointDto>;
-	removed?: string[];
-	changed?: Array<ISourceBreakpointDto | IFunctionBreakpointDto | IDataBreakpointDto>;
-}
-
-export interface ISourceMultiBreakpointDto {
-	type: 'sourceMulti';
-	uri: UriComponents;
-	lines: {
-		id: string;
-		enabled: boolean;
-		condition?: string;
-		hitCondition?: string;
-		logMessage?: string;
-		line: number;
-		character: number;
-		mode?: string;
-	}[];
-}
-
-export interface IDebugSessionFullDto {
-	id: DebugSessionUUID;
-	type: string;
-	name: string;
-	parent: DebugSessionUUID | undefined;
-	folderUri: UriComponents | undefined;
-	configuration: IConfig;
-}
-
-export type IDebugSessionDto = IDebugSessionFullDto | DebugSessionUUID;
-
-export interface IThreadFocusDto {
-	kind: 'thread';
-	sessionId: string;
-	threadId: number;
-}
-
-export interface IStackFrameFocusDto {
-	kind: 'stackFrame';
-	sessionId: string;
-	threadId: number;
-	frameId: number;
-}
-
-export interface ExtHostDebugServiceShape {
-	$substituteVariables(folder: UriComponents | undefined, config: IConfig): Promise<IConfig>;
-	$runInTerminal(args: DebugProtocol.RunInTerminalRequestArguments, sessionId: string): Promise<number | undefined>;
-	$startDASession(handle: number, session: IDebugSessionDto): Promise<void>;
-	$stopDASession(handle: number): Promise<void>;
-	$sendDAMessage(handle: number, message: DebugProtocol.ProtocolMessage): void;
-	$resolveDebugConfiguration(
-		handle: number,
-		folder: UriComponents | undefined,
-		debugConfiguration: IConfig,
-		token: CancellationToken
-	): Promise<IConfig | null | undefined>;
-	$resolveDebugConfigurationWithSubstitutedVariables(
-		handle: number,
-		folder: UriComponents | undefined,
-		debugConfiguration: IConfig,
-		token: CancellationToken
-	): Promise<IConfig | null | undefined>;
-	$provideDebugConfigurations(
-		handle: number,
-		folder: UriComponents | undefined,
-		token: CancellationToken
-	): Promise<IConfig[]>;
-	$provideDebugAdapter(handle: number, session: IDebugSessionDto): Promise<Dto<IAdapterDescriptor>>;
-	$acceptDebugSessionStarted(session: IDebugSessionDto): void;
-	$acceptDebugSessionTerminated(session: IDebugSessionDto): void;
-	$acceptDebugSessionActiveChanged(session: IDebugSessionDto | undefined): void;
-	$acceptDebugSessionCustomEvent(session: IDebugSessionDto, event: any): void;
-	$acceptBreakpointsDelta(delta: IBreakpointsDeltaDto): void;
-	$acceptDebugSessionNameChanged(session: IDebugSessionDto, name: string): void;
-	$acceptStackFrameFocus(focus: IThreadFocusDto | IStackFrameFocusDto | undefined): void;
-	$provideDebugVisualizers(
-		extensionId: string,
-		id: string,
-		context: IDebugVisualizationContext,
-		token: CancellationToken
-	): Promise<IDebugVisualization.Serialized[]>;
-	$resolveDebugVisualizer(id: number, token: CancellationToken): Promise<MainThreadDebugVisualization>;
-	$executeDebugVisualizerCommand(id: number): Promise<void>;
-	$disposeDebugVisualizers(ids: number[]): void;
-	$getVisualizerTreeItem(
-		treeId: string,
-		element: IDebugVisualizationContext
-	): Promise<IDebugVisualizationTreeItem.Serialized | undefined>;
-	$getVisualizerTreeItemChildren(treeId: string, element: number): Promise<IDebugVisualizationTreeItem.Serialized[]>;
-	$editVisualizerTreeItem(element: number, value: string): Promise<IDebugVisualizationTreeItem.Serialized | undefined>;
-	$disposeVisualizedTree(element: number): void;
-}
 
 export interface DecorationRequest {
 	readonly id: number;
@@ -3880,53 +3663,6 @@ export interface ExtHostTimelineShape {
 	): Promise<Dto<Timeline> | undefined>;
 }
 
-export const enum ExtHostTestingResource {
-	Workspace,
-	TextDocument
-}
-
-export interface ExtHostTestingShape {
-	$runControllerTests(req: IStartControllerTests[], token: CancellationToken): Promise<{ error?: string }[]>;
-	$startContinuousRun(req: ICallProfileRunHandler[], token: CancellationToken): Promise<{ error?: string }[]>;
-	$cancelExtensionTestRun(runId: string | undefined, taskId: string | undefined): void;
-	/** Handles a diff of tests, as a result of a subscribeToDiffs() call */
-	$acceptDiff(diff: TestsDiffOp.Serialized[]): void;
-	/** Expands a test item's children, by the given number of levels. */
-	$expandTest(testId: string, levels: number): Promise<void>;
-	/** Requests coverage details for a test run. Errors if not available. */
-	$getCoverageDetails(
-		coverageId: string,
-		testId: string | undefined,
-		token: CancellationToken
-	): Promise<CoverageDetails.Serialized[]>;
-	/** Disposes resources associated with a test run. */
-	$disposeRun(runId: string): void;
-	/** Configures a test run config. */
-	$configureRunProfile(controllerId: string, configId: number): void;
-	/** Asks the controller to refresh its tests */
-	$refreshTests(controllerId: string, token: CancellationToken): Promise<void>;
-	/** Ensures any pending test diffs are flushed */
-	$syncTests(): Promise<void>;
-	/** Sets the active test run profiles */
-	$setDefaultRunProfiles(profiles: Record</* controller id */ string, /* profile id */ number[]>): void;
-	$getTestsRelatedToCode(uri: UriComponents, position: IPosition, token: CancellationToken): Promise<string[]>;
-	$getCodeRelatedToTest(testId: string, token: CancellationToken): Promise<ILocationDto[]>;
-
-	// --- test results:
-
-	/** Publishes that a test run finished. */
-	$publishTestResults(results: ISerializedTestResults[]): void;
-	/** Requests followup actions for a test (failure) message */
-	$provideTestFollowups(
-		req: TestMessageFollowupRequest,
-		token: CancellationToken
-	): Promise<TestMessageFollowupResponse[]>;
-	/** Actions a followup actions for a test (failure) message */
-	$executeTestFollowup(id: number): Promise<void>;
-	/** Disposes followup actions for a test (failure) message */
-	$disposeTestFollowups(id: number[]): void;
-}
-
 export interface MainThreadDataChannelsShape extends IDisposable {}
 
 export interface ExtHostDataChannelsShape {
@@ -3946,72 +3682,6 @@ export interface IStringDetails {
 	comment?: string | string[];
 }
 
-export interface ITestControllerPatch {
-	label?: string;
-	capabilities?: TestControllerCapability;
-}
-
-export interface MainThreadTestingShape {
-	// --- test lifecycle:
-
-	/** Registers that there's a test controller with the given ID */
-	$registerTestController(controllerId: string, label: string, capability: TestControllerCapability): void;
-	/** Updates the label of an existing test controller. */
-	$updateController(controllerId: string, patch: ITestControllerPatch): void;
-	/** Diposes of the test controller with the given ID */
-	$unregisterTestController(controllerId: string): void;
-	/** Requests tests published to VS Code. */
-	$subscribeToDiffs(): void;
-	/** Stops requesting tests published to VS Code. */
-	$unsubscribeFromDiffs(): void;
-	/** Publishes that new tests were available on the given source. */
-	$publishDiff(controllerId: string, diff: TestsDiffOp.Serialized[]): void;
-	/** Gets coverage details from a test result. */
-	$getCoverageDetails(
-		resultId: string,
-		taskIndex: number,
-		uri: UriComponents,
-		token: CancellationToken
-	): Promise<CoverageDetails.Serialized[]>;
-
-	// --- test run configurations:
-
-	/** Called when a new test run configuration is available */
-	$publishTestRunProfile(config: ITestRunProfile): void;
-	/** Updates an existing test run configuration */
-	$updateTestRunConfig(controllerId: string, configId: number, update: Partial<ITestRunProfile>): void;
-	/** Removes a previously-published test run config */
-	$removeTestProfile(controllerId: string, configId: number): void;
-
-	// --- test run handling:
-
-	/** Request by an extension to run tests. */
-	$runTests(req: ResolvedTestRunRequest, token: CancellationToken): Promise<string>;
-	/**
-	 * Adds tests to the run. The tests are given in descending depth. The first
-	 * item will be a previously-known test, or a test root.
-	 */
-	$addTestsToRun(controllerId: string, runId: string, tests: ITestItem.Serialized[]): void;
-	/** Updates the state of a test run in the given run. */
-	$updateTestStateInRun(runId: string, taskId: string, testId: string, state: TestResultState, duration?: number): void;
-	/** Appends a message to a test in the run. */
-	$appendTestMessagesInRun(runId: string, taskId: string, testId: string, messages: ITestMessage.Serialized[]): void;
-	/** Appends raw output to the test run.. */
-	$appendOutputToRun(runId: string, taskId: string, output: VSBuffer, location?: ILocationDto, testId?: string): void;
-	/** Triggered when coverage is added to test results. */
-	$appendCoverage(runId: string, taskId: string, coverage: IFileCoverage.Serialized): void;
-	/** Signals a task in a test run started. */
-	$startedTestRunTask(runId: string, task: ITestRunTask): void;
-	/** Signals a task in a test run ended. */
-	$finishedTestRunTask(runId: string, taskId: string): void;
-	/** Start a new extension-provided test run. */
-	$startedExtensionTestRun(req: ExtensionRunTestsRequest): void;
-	/** Signals that an extension-provided test run finished. */
-	$finishedExtensionTestRun(runId: string): void;
-	/** Marks a test (or controller) as retired in all results. */
-	$markTestRetired(testIds: string[] | undefined): void;
-}
-
 // --- proxy identifiers
 
 export const MainContext = {
@@ -4022,7 +3692,6 @@ export const MainContext = {
 	MainThreadComments: createProxyIdentifier<MainThreadCommentsShape>('MainThreadComments'),
 	MainThreadConfiguration: createProxyIdentifier<MainThreadConfigurationShape>('MainThreadConfiguration'),
 	MainThreadConsole: createProxyIdentifier<MainThreadConsoleShape>('MainThreadConsole'),
-	MainThreadDebugService: createProxyIdentifier<MainThreadDebugServiceShape>('MainThreadDebugService'),
 	MainThreadDecorations: createProxyIdentifier<MainThreadDecorationsShape>('MainThreadDecorations'),
 	MainThreadDiagnostics: createProxyIdentifier<MainThreadDiagnosticsShape>('MainThreadDiagnostics'),
 	MainThreadDialogs: createProxyIdentifier<MainThreadDiaglogsShape>('MainThreadDiaglogs'),
@@ -4087,7 +3756,6 @@ export const MainContext = {
 	MainThreadTunnelService: createProxyIdentifier<MainThreadTunnelServiceShape>('MainThreadTunnelService'),
 	MainThreadManagedSockets: createProxyIdentifier<MainThreadManagedSocketsShape>('MainThreadManagedSockets'),
 	MainThreadTimeline: createProxyIdentifier<MainThreadTimelineShape>('MainThreadTimeline'),
-	MainThreadTesting: createProxyIdentifier<MainThreadTestingShape>('MainThreadTesting'),
 	MainThreadLocalization: createProxyIdentifier<MainThreadLocalizationShape>('MainThreadLocalizationShape'),
 	MainThreadDataChannels: createProxyIdentifier<MainThreadDataChannelsShape>('MainThreadDataChannels'),
 	MainThreadBrowsers: createProxyIdentifier<MainThreadBrowsersShape>('MainThreadBrowsers')
@@ -4097,7 +3765,6 @@ export const ExtHostContext = {
 	ExtHostCommands: createProxyIdentifier<ExtHostCommandsShape>('ExtHostCommands'),
 	ExtHostConfiguration: createProxyIdentifier<ExtHostConfigurationShape>('ExtHostConfiguration'),
 	ExtHostDiagnostics: createProxyIdentifier<ExtHostDiagnosticsShape>('ExtHostDiagnostics'),
-	ExtHostDebugService: createProxyIdentifier<ExtHostDebugServiceShape>('ExtHostDebugService'),
 	ExtHostDecorations: createProxyIdentifier<ExtHostDecorationsShape>('ExtHostDecorations'),
 	ExtHostDocumentsAndEditors: createProxyIdentifier<ExtHostDocumentsAndEditorsShape>('ExtHostDocumentsAndEditors'),
 	ExtHostDocuments: createProxyIdentifier<ExtHostDocumentsShape>('ExtHostDocuments'),
@@ -4163,7 +3830,6 @@ export const ExtHostContext = {
 	ExtHostManagedSockets: createProxyIdentifier<ExtHostManagedSocketsShape>('ExtHostManagedSockets'),
 	ExtHostAuthentication: createProxyIdentifier<ExtHostAuthenticationShape>('ExtHostAuthentication'),
 	ExtHostTimeline: createProxyIdentifier<ExtHostTimelineShape>('ExtHostTimeline'),
-	ExtHostTesting: createProxyIdentifier<ExtHostTestingShape>('ExtHostTesting'),
 	ExtHostTelemetry: createProxyIdentifier<ExtHostTelemetryShape>('ExtHostTelemetry'),
 	ExtHostMeteredConnection: createProxyIdentifier<ExtHostMeteredConnectionShape>('ExtHostMeteredConnection'),
 	ExtHostLocalization: createProxyIdentifier<ExtHostLocalizationShape>('ExtHostLocalization'),

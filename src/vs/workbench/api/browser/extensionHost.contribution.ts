@@ -24,7 +24,6 @@ import './mainThreadClipboard.js';
 import './mainThreadCommands.js';
 import './mainThreadConfiguration.js';
 import './mainThreadConsole.js';
-import './mainThreadDebugService.js';
 import './mainThreadDecorations.js';
 import './mainThreadDiagnostics.js';
 import './mainThreadDialogs.js';
@@ -73,7 +72,6 @@ import './mainThreadLabelService.js';
 import './mainThreadTunnelService.js';
 import './mainThreadAuthentication.js';
 import './mainThreadTimeline.js';
-import './mainThreadTesting.js';
 import './mainThreadSecretState.js';
 // Share — removed: SideX uses sidex-extension-api
 // ProfileContentHandlers — removed: SideX uses sidex-extension-api

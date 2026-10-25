@@ -291,28 +291,6 @@ pub async fn detect_forwarded_ports(container_id: &str) -> Result<Vec<u16>> {
     Ok(ports)
 }
 
-/// Install the `SideX` Server inside a running container.
-pub async fn install_server_in_container(container_id: &str) -> Result<()> {
-    let docker = Docker::connect_with_local_defaults()?;
-    let version = env!("CARGO_PKG_VERSION");
-    let check = exec_in_container(
-        &docker,
-        container_id,
-        "~/.sidex-server/sidex-server --version 2>/dev/null || echo missing",
-        "root",
-    )
-    .await?;
-
-    if check.stdout.trim() == version {
-        log::info!("SideX Server already up-to-date in container {container_id}");
-        return Ok(());
-    }
-
-    exec_in_container(&docker, container_id, "mkdir -p ~/.sidex-server", "root").await?;
-    log::info!("installing SideX Server {version} in container {container_id}");
-    Ok(())
-}
-
 // ---------------------------------------------------------------------------
 // Parsing
 // ---------------------------------------------------------------------------

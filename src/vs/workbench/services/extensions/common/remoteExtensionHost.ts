@@ -6,12 +6,10 @@
 import { VSBuffer } from '../../../../base/common/buffer.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
-import { Schemas } from '../../../../base/common/network.js';
 import * as platform from '../../../../base/common/platform.js';
 import { URI } from '../../../../base/common/uri.js';
 import { IMessagePassingProtocol } from '../../../../base/parts/ipc/common/ipc.js';
 import { PersistentProtocol } from '../../../../base/parts/ipc/common/ipc.net.js';
-import { IExtensionHostDebugService } from '../../../../platform/debug/common/extensionHostDebug.js';
 import { ILabelService } from '../../../../platform/label/common/label.js';
 import { ILogService, ILoggerService } from '../../../../platform/log/common/log.js';
 import { IProductService } from '../../../../platform/product/common/productService.js';
@@ -71,7 +69,6 @@ export class RemoteExtensionHost extends Disposable implements IExtensionHost {
 		@ILoggerService protected readonly _loggerService: ILoggerService,
 		@ILabelService private readonly _labelService: ILabelService,
 		@IRemoteAuthorityResolverService private readonly remoteAuthorityResolverService: IRemoteAuthorityResolverService,
-		@IExtensionHostDebugService private readonly _extensionHostDebugService: IExtensionHostDebugService,
 		@IProductService private readonly _productService: IProductService,
 		@ISignService private readonly _signService: ISignService,
 		@IDefaultLogLevelsService private readonly _defaultLogLevelsService: IDefaultLogLevelsService,
@@ -111,27 +108,10 @@ export class RemoteExtensionHost extends Disposable implements IExtensionHost {
 				env: { ...this._environmentService.debugExtensionHost.env, ...resolverResult.options?.extensionHostEnv },
 			};
 
-			const extDevLocs = this._environmentService.extensionDevelopmentLocationURI;
-
-			let debugOk = true;
-			if (extDevLocs && extDevLocs.length > 0) {
-				// TODO@AW: handles only first path in array
-				if (extDevLocs[0].scheme === Schemas.file) {
-					debugOk = false;
-				}
-			}
-
-			if (!debugOk) {
-				startParams.break = false;
-			}
-
 			return connectRemoteAgentExtensionHost(options, startParams).then(result => {
 				this._register(result);
 				const { protocol, debugPort, reconnectionToken } = result;
 				const isExtensionDevelopmentDebug = typeof debugPort === 'number';
-				if (debugOk && this._environmentService.isExtensionDevelopment && this._environmentService.debugExtensionHost.debugId && debugPort) {
-					this._extensionHostDebugService.attachSession(this._environmentService.debugExtensionHost.debugId, debugPort, this._initDataProvider.remoteAuthority);
-				}
 
 				protocol.onDidDispose(() => {
 					this._onExtHostConnectionLost(reconnectionToken);
@@ -190,10 +170,6 @@ export class RemoteExtensionHost extends Disposable implements IExtensionHost {
 			return;
 		}
 		this._hasLostConnection = true;
-
-		if (this._isExtensionDevHost && this._environmentService.debugExtensionHost.debugId) {
-			this._extensionHostDebugService.close(this._environmentService.debugExtensionHost.debugId);
-		}
 
 		if (this._terminating) {
 			// Expected termination path (we asked the process to terminate)

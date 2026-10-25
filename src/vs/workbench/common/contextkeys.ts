@@ -421,21 +421,6 @@ export const AuxiliaryBarMaximizedContext = new RawContextKey<boolean>(
 
 //#endregion
 
-//#region < --- Sidex --- >
-
-export const ActiveSidexContext = new RawContextKey<string>(
-	'activeSidex',
-	'',
-	localize('activeSidex', 'The identifier of the active Sidex view')
-);
-export const SidexFocusContext = new RawContextKey<boolean>(
-	'sidexFocus',
-	false,
-	localize('sidexFocus', 'Whether the Sidex part has keyboard focus')
-);
-
-//#endregion
-
 //#region < --- Panel --- >
 
 export const ActivePanelContext = new RawContextKey<string>(

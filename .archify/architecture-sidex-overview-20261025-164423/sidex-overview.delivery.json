@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "01881029-ad3b-4025-a0b6-d2509c561ac9",
+  "status": "current",
+  "command": "deliver",
+  "type": "architecture",
+  "input": "F:\\TRAEWS\\sidex\\.archify\\architecture-sidex-overview-20261025-164423\\candidate.json",
+  "output": "F:\\TRAEWS\\sidex\\.archify\\architecture-sidex-overview-20261025-164423\\sidex-overview.html",
+  "specification": {
+    "sha256": "62b68641f79993fcd989d3fb52841b0197ce925e17f3c8a61c6e761d3f75be0c",
+    "bytes": 9861
+  },
+  "artifact": {
+    "sha256": "0d7133b9dd8bc705c7f136d4a8fe865aee6feb4c91fec31f1270645e4533f779",
+    "bytes": 843461
+  }
+}

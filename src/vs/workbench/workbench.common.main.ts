@@ -16,7 +16,6 @@ import '../platform/sidex/browser/sidexSearchProvider.js';
 import '../platform/sidex/browser/sidexSCMProvider.js';
 import '../platform/sidex/browser/sidexSyntaxService.js';
 import '../platform/sidex/browser/sidexLspService.js';
-import '../platform/sidex/browser/sidexDapService.js';
 import '../platform/sidex/browser/sidexRemoteService.js';
 import '../platform/sidex/common/sidexThemeService.js';
 import '../platform/sidex/common/sidexSettingsService.js';
@@ -190,9 +189,6 @@ import './contrib/preferences/browser/preferences.contribution.js';
 import './contrib/preferences/browser/keybindingsEditorContribution.js';
 import './contrib/preferences/browser/preferencesSearch.js';
 
-// Testing
-import './contrib/testing/browser/testing.contribution.js';
-
 // Logs
 import './contrib/logs/common/logs.contribution.js';
 
@@ -211,12 +207,6 @@ import './contrib/bulkEdit/browser/bulkEditService.js';
 import './contrib/search/browser/search.contribution.js';
 import './contrib/search/browser/searchView.js';
 
-// Sidex Chat
-import './contrib/sidexChat/browser/sidexChat.contribution.js';
-
-// Sidex Complete
-import './contrib/sidexComplete/browser/sidexComplete.contribution.js';
-
 // Search Editor
 import './contrib/searchEditor/browser/searchEditor.contribution.js';
 
@@ -229,14 +219,6 @@ import './contrib/scm/browser/git.contribution.js';
 
 // Remote Explorer
 import './contrib/remote/browser/remote.contribution.js';
-
-// Debug
-import './contrib/debug/browser/debug.contribution.js';
-import './contrib/debug/browser/debugEditorContribution.js';
-import './contrib/debug/browser/breakpointEditorContribution.js';
-import './contrib/debug/browser/callStackEditorContribution.js';
-import './contrib/debug/browser/repl.js';
-import './contrib/debug/browser/debugViewlet.js';
 
 // Markers
 import './contrib/markers/browser/markers.contribution.js';

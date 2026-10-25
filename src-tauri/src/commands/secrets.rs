@@ -2,8 +2,7 @@
 //!
 //! Values live in `state.vscdb` → `ItemTable`, the same `SQLite` database the
 //! VS Code platform uses for all user state. There's no fixed key namespace
-//! here; callers pick their own keys (see `commands::providers` for the
-//! provider API key, base-URL and CLI-auth-opt-in keys actually written).
+//! here; callers pick their own keys.
 
 use std::sync::Arc;
 

@@ -51,6 +51,7 @@ import {
 	asCssVariable,
 	buttonBackground,
 	buttonSecondaryBackground,
+	chartsGreen,
 	editorErrorForeground
 } from '../../../../platform/theme/common/colorRegistry.js';
 import {
@@ -64,7 +65,6 @@ import { ThemeIcon } from '../../../../base/common/themables.js';
 import { IWorkspaceTrustManagementService } from '../../../../platform/workspace/common/workspaceTrust.js';
 import { EditorPane } from '../../../browser/parts/editor/editorPane.js';
 import { IEditorOpenContext } from '../../../common/editor.js';
-import { debugIconStartForeground } from '../../debug/browser/debugColors.js';
 import {
 	IExtensionsWorkbenchService,
 	LIST_WORKSPACE_UNSUPPORTED_EXTENSIONS_COMMAND_ID
@@ -831,7 +831,7 @@ export class WorkspaceTrustEditor extends EditorPane {
 
 		this.rootElement.style.setProperty('--workspace-trust-selected-color', asCssVariable(buttonBackground));
 		this.rootElement.style.setProperty('--workspace-trust-unselected-color', asCssVariable(buttonSecondaryBackground));
-		this.rootElement.style.setProperty('--workspace-trust-check-color', asCssVariable(debugIconStartForeground));
+		this.rootElement.style.setProperty('--workspace-trust-check-color', asCssVariable(chartsGreen));
 		this.rootElement.style.setProperty('--workspace-trust-x-color', asCssVariable(editorErrorForeground));
 
 		// Navigate page with keyboard
@@ -1179,12 +1179,10 @@ export class WorkspaceTrustEditor extends EditorPane {
 			this.workspaceService.getWorkbenchState() === WorkbenchState.EMPTY
 				? [
 						localize('trustedTasks', 'Tasks are allowed to run'),
-						localize('trustedDebugging', 'Debugging is enabled'),
 						localize('trustedExtensions', 'All enabled extensions are activated')
 					]
 				: [
 						localize('trustedTasks', 'Tasks are allowed to run'),
-						localize('trustedDebugging', 'Debugging is enabled'),
 						localize('trustedSettings', 'All workspace settings are applied'),
 						localize('trustedExtensions', 'All enabled extensions are activated')
 					];
@@ -1202,7 +1200,6 @@ export class WorkspaceTrustEditor extends EditorPane {
 			this.workspaceService.getWorkbenchState() === WorkbenchState.EMPTY
 				? [
 						localize('untrustedTasks', 'Tasks are not allowed to run'),
-						localize('untrustedDebugging', 'Debugging is disabled'),
 						fixBadLocalizedLinks(
 							localize(
 								{
@@ -1219,7 +1216,6 @@ export class WorkspaceTrustEditor extends EditorPane {
 					]
 				: [
 						localize('untrustedTasks', 'Tasks are not allowed to run'),
-						localize('untrustedDebugging', 'Debugging is disabled'),
 						fixBadLocalizedLinks(
 							numSettings
 								? localize(

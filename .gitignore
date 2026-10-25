@@ -58,7 +58,6 @@ ehthumbs.db
 !.env.example
 *.pem
 aws-credentials.json
-sidexai/aws-credentials.json
 
 # ── Tauri generated ──────────────────────────────────────────────────────────
 src-tauri/gen/

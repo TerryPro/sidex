@@ -3970,85 +3970,6 @@ function createVscodeShim() {
     };
   })();
 
-  const debug = (() => {
-    const _configProviders = new Map();
-    const _adapterFactories = new Map();
-    const _trackerFactories = new Map();
-    const _breakpoints = [];
-    let _activeSession = undefined;
-    const sessionStartEmitter = new VscEventEmitter();
-    const sessionEndEmitter = new VscEventEmitter();
-    const activeSessionEmitter = new VscEventEmitter();
-    const breakpointsEmitter = new VscEventEmitter();
-    const customEventEmitter = new VscEventEmitter();
-    return {
-      registerDebugConfigurationProvider: (type, provider, trigger) => {
-        const key = `${type}:${trigger || 1}`;
-        if (!_configProviders.has(key)) _configProviders.set(key, []);
-        _configProviders.get(key).push(provider);
-        return { dispose() {
-          const arr = _configProviders.get(key);
-          if (arr) {
-            const idx = arr.indexOf(provider);
-            if (idx >= 0) arr.splice(idx, 1);
-          }
-        }};
-      },
-      registerDebugAdapterDescriptorFactory: (type, factory) => {
-        _adapterFactories.set(type, factory);
-        return { dispose() { _adapterFactories.delete(type); } };
-      },
-      registerDebugAdapterTrackerFactory: (type, factory) => {
-        if (!_trackerFactories.has(type)) _trackerFactories.set(type, []);
-        _trackerFactories.get(type).push(factory);
-        return { dispose() {
-          const arr = _trackerFactories.get(type);
-          if (arr) {
-            const idx = arr.indexOf(factory);
-            if (idx >= 0) arr.splice(idx, 1);
-          }
-        }};
-      },
-      registerDebugVisualizationTreeProvider: () => noopDisposable,
-      registerDebugVisualizationProvider: () => noopDisposable,
-      startDebugging: (folder, config, parentSession) => {
-        host.emit('event', { type: 'startDebugging', folder, config, parentSession });
-        return Promise.resolve(true);
-      },
-      stopDebugging: (session) => {
-        host.emit('event', { type: 'stopDebugging', sessionId: session?.id });
-        return Promise.resolve();
-      },
-      addBreakpoints: (bps) => {
-        _breakpoints.push(...bps);
-        breakpointsEmitter.fire({ added: bps, removed: [], changed: [] });
-      },
-      removeBreakpoints: (bps) => {
-        for (const bp of bps) {
-          const idx = _breakpoints.indexOf(bp);
-          if (idx >= 0) _breakpoints.splice(idx, 1);
-        }
-        breakpointsEmitter.fire({ added: [], removed: bps, changed: [] });
-      },
-      get activeDebugSession() { return _activeSession; },
-      get activeDebugConsole() {
-        return {
-          append(value) { host.emit('event', { type: 'debugConsoleAppend', value }); },
-          appendLine(value) { host.emit('event', { type: 'debugConsoleAppend', value: value + '\n' }); },
-        };
-      },
-      get breakpoints() { return [..._breakpoints]; },
-      onDidChangeActiveDebugSession: activeSessionEmitter.event,
-      onDidStartDebugSession: sessionStartEmitter.event,
-      onDidReceiveDebugSessionCustomEvent: customEventEmitter.event,
-      onDidTerminateDebugSession: sessionEndEmitter.event,
-      onDidChangeBreakpoints: breakpointsEmitter.event,
-      asDebugSourceUri: (source, session) => {
-        if (source.path) return VscUri.file(source.path);
-        return VscUri.file('');
-      },
-    };
-  })();
 
   const notebooks = {
     createNotebookController: (id, notebookType, label, handler) => {
@@ -4228,59 +4149,6 @@ function createVscodeShim() {
     };
   })();
 
-  const tests = {
-    createTestController: (id, label) => {
-      const items = new Map();
-      return {
-        id,
-        label,
-        items: {
-          add: (item) => {
-            if (item && item.id) items.set(item.id, item);
-          },
-          delete: (itemId) => {
-            items.delete(itemId);
-          },
-          replace: (arr) => {
-            items.clear();
-            for (const item of arr || []) {
-              if (item && item.id) items.set(item.id, item);
-            }
-          },
-          get: (itemId) => items.get(itemId),
-          forEach: (fn) => items.forEach(fn),
-        },
-        createTestItem: (testId, testLabel, uri) => ({
-          id: testId,
-          label: testLabel,
-          uri,
-          children: new Map(),
-          canResolveChildren: false,
-          range: undefined,
-          busy: false,
-          error: undefined,
-          tags: [],
-        }),
-        createRunProfile: () => ({ dispose() {} }),
-        createTestRun: () => ({
-          enqueued() {},
-          skipped() {},
-          started() {},
-          failed() {},
-          passed() {},
-          appendOutput() {},
-          end() {},
-        }),
-        invalidateTestResults: () => {},
-        refreshHandler: undefined,
-        resolveHandler: undefined,
-        dispose: () => {},
-      };
-    },
-    createTestRunProfile: () => ({ dispose() {} }),
-    onDidChangeTestResults: noopEvent,
-    onDidChangeTestProviders: noopEvent,
-  };
 
   const api = {
     Position: VscPosition,
@@ -4360,7 +4228,6 @@ function createVscodeShim() {
     ProgressLocation,
     TreeItemCollapsibleState,
     ExtensionKind,
-    TestRunProfileKind: { Run: 1, Debug: 2, Coverage: 3 },
     ExtensionMode: { Production: 1, Development: 2, Test: 3 },
     ColorThemeKind: { Light: 1, Dark: 2, HighContrast: 3, HighContrastLight: 4 },
     UIKind: { Desktop: 1, Web: 2 },
@@ -4438,7 +4305,6 @@ function createVscodeShim() {
     TaskGroup: { Build: { id: 'build' }, Test: { id: 'test' }, Clean: { id: 'clean' }, Rebuild: { id: 'rebuild' } },
     TaskPanelKind: { Shared: 1, Dedicated: 2, New: 3 },
     TaskRevealKind: { Always: 1, Silent: 2, Never: 3 },
-    DebugConfigurationProviderTriggerKind: { Initial: 1, Dynamic: 2 },
     TerminalLocation: { Panel: 1, Editor: 2 },
     TerminalExitReason: { Unknown: 0, Shutdown: 1, Process: 2, User: 3, Extension: 4 },
     TerminalShellExecutionCommandLineConfidence: { Low: 0, Medium: 1, High: 2 },
@@ -4620,58 +4486,6 @@ function createVscodeShim() {
         this.alignment = alignment;
       }
     },
-    DebugAdapterExecutable: class {
-      constructor(command, args, options) {
-        this.command = command;
-        this.args = args || [];
-        this.options = options;
-      }
-    },
-    DebugAdapterServer: class {
-      constructor(port, host) {
-        this.port = port;
-        this.host = host;
-      }
-    },
-    DebugAdapterNamedPipeServer: class {
-      constructor(path) {
-        this.path = path;
-      }
-    },
-    DebugAdapterInlineImplementation: class {
-      constructor(implementation) {
-        this.implementation = implementation;
-      }
-    },
-    Breakpoint: class {
-      constructor(enabled, condition, hitCondition, logMessage) {
-        this.id = Math.random().toString(36).slice(2);
-        this.enabled = enabled !== undefined ? enabled : true;
-        this.condition = condition;
-        this.hitCondition = hitCondition;
-        this.logMessage = logMessage;
-      }
-    },
-    SourceBreakpoint: class {
-      constructor(location, enabled, condition, hitCondition, logMessage) {
-        this.id = Math.random().toString(36).slice(2);
-        this.location = location;
-        this.enabled = enabled !== undefined ? enabled : true;
-        this.condition = condition;
-        this.hitCondition = hitCondition;
-        this.logMessage = logMessage;
-      }
-    },
-    FunctionBreakpoint: class {
-      constructor(functionName, enabled, condition, hitCondition, logMessage) {
-        this.id = Math.random().toString(36).slice(2);
-        this.functionName = functionName;
-        this.enabled = enabled !== undefined ? enabled : true;
-        this.condition = condition;
-        this.hitCondition = hitCondition;
-        this.logMessage = logMessage;
-      }
-    },
     TabInputText: class {
       constructor(uri) {
         this.uri = uri;
@@ -4709,88 +4523,6 @@ function createVscodeShim() {
     },
     TabInputTerminal: class {
       constructor() {}
-    },
-    TestTag: class {
-      constructor(id) {
-        this.id = id;
-      }
-    },
-    TestRunRequest: class {
-      constructor(include, exclude, profile, continuous, preserveFocus) {
-        this.include = include;
-        this.exclude = exclude;
-        this.profile = profile;
-        this.continuous = continuous;
-        this.preserveFocus = preserveFocus !== undefined ? preserveFocus : false;
-      }
-    },
-    TestMessage: class {
-      constructor(message) {
-        this.message = message;
-      }
-      static diff(message, expected, actual) {
-        const msg = new api.TestMessage(message);
-        msg.expectedOutput = expected;
-        msg.actualOutput = actual;
-        return msg;
-      }
-    },
-    TestCoverageCount: class {
-      constructor(covered, total) {
-        this.covered = covered;
-        this.total = total;
-      }
-    },
-    FileCoverage: class {
-      constructor(uri, statementCoverage, branchCoverage, declarationCoverage, includesTests) {
-        this.uri = uri;
-        this.statementCoverage = statementCoverage;
-        this.branchCoverage = branchCoverage;
-        this.declarationCoverage = declarationCoverage;
-        this.includesTests = includesTests;
-      }
-      static fromDetails(uri, details) {
-        let sCov = 0, sTotal = 0, bCov = 0, bTotal = 0, dCov = 0, dTotal = 0;
-        for (const d of details) {
-          if (d instanceof api.StatementCoverage) {
-            sTotal++;
-            if (d.executed) sCov++;
-            for (const b of d.branches || []) {
-              bTotal++;
-              if (b.executed) bCov++;
-            }
-          } else if (d instanceof api.DeclarationCoverage) {
-            dTotal++;
-            if (d.executed) dCov++;
-          }
-        }
-        return new api.FileCoverage(uri,
-          new api.TestCoverageCount(sCov, sTotal),
-          bTotal > 0 ? new api.TestCoverageCount(bCov, bTotal) : undefined,
-          dTotal > 0 ? new api.TestCoverageCount(dCov, dTotal) : undefined
-        );
-      }
-    },
-    StatementCoverage: class {
-      constructor(executed, location, branches) {
-        this.executed = executed;
-        this.location = location;
-        this.branches = branches || [];
-      }
-    },
-    BranchCoverage: class {
-      constructor(executed, location, label) {
-        this.executed = executed;
-        this.location = location;
-        this.label = label;
-      }
-    },
-    DeclarationCoverage: class {
-      constructor(name, executed, location) {
-        this.name = name;
-        this.executed = executed;
-        this.location = location;
-      }
     },
     ChatResponseMarkdownPart: class {
       constructor(value) {
@@ -4889,12 +4621,10 @@ function createVscodeShim() {
     extensions,
     env,
     tasks,
-    debug,
     notebooks,
     scm,
     comments,
     authentication,
-    tests,
     version: '1.110.0',
     l10n: {
       t: (message, ...args) => {

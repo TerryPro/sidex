@@ -43,8 +43,7 @@ export namespace Extensions {
 export const enum ViewContainerLocation {
 	Sidebar,
 	Panel,
-	AuxiliaryBar,
-	Sidex
+	AuxiliaryBar
 }
 
 export function ViewContainerLocationToString(viewContainerLocation: ViewContainerLocation) {
@@ -55,8 +54,6 @@ export function ViewContainerLocationToString(viewContainerLocation: ViewContain
 			return 'panel';
 		case ViewContainerLocation.AuxiliaryBar:
 			return 'auxiliarybar';
-		case ViewContainerLocation.Sidex:
-			return 'sidex';
 	}
 }
 

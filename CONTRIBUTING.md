@@ -11,7 +11,7 @@ npm install
 npm run tauri dev
 ```
 
-See the [README](./README.md) for full prerequisites. The editor runs standalone with no account of any kind; the AI chat panel additionally needs the agent server built (Go 1.26+) and a model provider of your own — see [AI Agent](./README.md#ai-agent) in the README.
+See the [README](./README.md) for full prerequisites. The editor runs standalone with no account of any kind and no hosted services.
 
 ## How to Contribute
 
@@ -39,12 +39,6 @@ Check [Issues](https://github.com/Sidenai/sidex/issues) for open tasks. If you d
 - Use `Result<T, String>` for command return types
 - Use `tokio` for async work
 
-### Go (`sidexai/sidex-server`)
-- This is the agent server: agent loop, tools, MCP, memory, context compression
-- Build with `go build -tags fts5 -o sidex-server ./cmd/server` from `sidexai/sidex-server`
-- It must keep working with no account and no hosted service — credentials come from its process environment only (`SIDEX_PROVIDER_<PROVIDER>_KEY` / `_BASE_URL` / `_AUTH`), never a config file
-- Test against a provider you have your own credentials for; there's no shared or hosted backend to test against
-
 ### General
 - Keep PRs focused — one feature or fix per PR when possible
 - If you're making a big architectural change, open an issue first to discuss
@@ -53,8 +47,7 @@ Check [Issues](https://github.com/Sidenai/sidex/issues) for open tasks. If you d
 
 - `src/vs/` — The VSCode workbench (TypeScript)
 - `src-tauri/src/` — Rust backend replacing Electron
-- `sidexai/sidex-server/` — Go agent server (chat, tools, MCP, memory)
-- `crates/` — Rust support crates: agent tools, context engine, git, LSP, DAP, terminal, extensions, and more
+- `crates/` — Rust support crates: git, LSP, DAP, terminal, extensions, text, syntax, and more
 - `ARCHITECTURE.md` — How VSCode's architecture maps to Tauri
 
 ## Questions?

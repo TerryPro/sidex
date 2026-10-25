@@ -1,0 +1,267 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "SideX 主要功能组成",
+    "locale": "zh-CN",
+    "output": ".archify/architecture-sidex-overview-20261025-164423/sidex-overview.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/TerryPro/sidex",
+      "provider": "github",
+      "link_mode": "web",
+      "revision": "ad978652682270a593e7029269beff5411477a70"
+    }
+  },
+  "components": [
+    {
+      "id": "user",
+      "type": "external",
+      "label": "用户",
+      "sublabel": "桌面窗口",
+      "pos": [20, 214],
+      "size": [110, 64]
+    },
+    {
+      "id": "workbench",
+      "type": "frontend",
+      "label": "Workbench 工作台",
+      "sublabel": "布局 · 面板 · 命令",
+      "pos": [210, 206],
+      "size": [180, 88],
+      "sources": [
+        { "path": "src/vs/workbench/workbench.web.main.ts", "line": 14, "end_line": 28, "label": "workbench 入口" },
+        { "path": "src/vs/workbench/browser/parts/editor/editorPart.ts", "label": "编辑器分区" }
+      ]
+    },
+    {
+      "id": "monaco",
+      "type": "frontend",
+      "label": "Monaco 编辑器",
+      "sublabel": "语法 · 补全",
+      "pos": [210, 110],
+      "size": [180, 64],
+      "sources": [
+        { "path": "src/vs/editor/editor.main.ts", "line": 6, "end_line": 16 }
+      ]
+    },
+    {
+      "id": "terminalUI",
+      "type": "frontend",
+      "label": "终端面板",
+      "sublabel": "xterm.js · WebGL",
+      "pos": [210, 322],
+      "size": [180, 64],
+      "sources": [
+        { "path": "src/vs/workbench/contrib/terminal/browser/tauriTerminalBackend.ts", "line": 1, "end_line": 4 },
+        { "path": "src/vs/workbench/contrib/terminal/browser/terminalView.ts" }
+      ]
+    },
+    {
+      "id": "chatUI",
+      "type": "frontend",
+      "label": "SideX Chat 面板",
+      "sublabel": "对话 · 内联 diff",
+      "pos": [210, 414],
+      "size": [180, 72],
+      "sources": [
+        { "path": "src/vs/workbench/contrib/sidexChat/browser/sidexChat.contribution.ts", "line": 32, "end_line": 58 },
+        { "path": "src/vs/workbench/contrib/sidexChat/browser/localToolExecutor.ts", "line": 3 }
+      ]
+    },
+    {
+      "id": "ipc",
+      "type": "backend",
+      "label": "Tauri IPC",
+      "sublabel": "invoke() / 事件",
+      "pos": [510, 100],
+      "size": [110, 560],
+      "sources": [
+        { "path": "src/vs/sidex-bridge.ts", "line": 1, "end_line": 41 },
+        { "path": "src-tauri/src/lib.rs", "line": 686, "end_line": 700, "label": "命令注册" }
+      ]
+    },
+    {
+      "id": "lspDap",
+      "type": "backend",
+      "label": "语言与调试",
+      "sublabel": "LSP / DAP",
+      "pos": [740, 112],
+      "size": [180, 58],
+      "sources": [
+        { "path": "src-tauri/src/commands/lsp.rs", "line": 59, "end_line": 62 },
+        { "path": "src-tauri/src/commands/debug.rs", "line": 10, "end_line": 18 }
+      ]
+    },
+    {
+      "id": "svcFile",
+      "type": "backend",
+      "label": "文件 / 搜索 / 监听",
+      "sublabel": "fs · search · notify",
+      "pos": [740, 190],
+      "size": [180, 58],
+      "sources": [
+        { "path": "src-tauri/src/commands/fs.rs" },
+        { "path": "src-tauri/src/commands/search.rs", "line": 45 },
+        { "path": "src-tauri/src/commands/watch.rs" }
+      ]
+    },
+    {
+      "id": "svcGit",
+      "type": "backend",
+      "label": "Git 集成",
+      "sublabel": "diff · commit · push",
+      "pos": [740, 268],
+      "size": [180, 58],
+      "sources": [
+        { "path": "src-tauri/src/commands/git.rs", "line": 75 }
+      ]
+    },
+    {
+      "id": "storage",
+      "type": "database",
+      "label": "SQLite 存储",
+      "sublabel": "设置 · 会话 · 历史",
+      "pos": [740, 346],
+      "size": [170, 58],
+      "sources": [
+        { "path": "src-tauri/src/commands/storage.rs", "line": 109 }
+      ]
+    },
+    {
+      "id": "extPlatform",
+      "type": "backend",
+      "label": "扩展平台",
+      "sublabel": "Open VSX 市场",
+      "pos": [740, 424],
+      "size": [180, 58],
+      "sources": [
+        { "path": "src-tauri/src/commands/extensions.rs", "line": 63 }
+      ]
+    },
+    {
+      "id": "termSvc",
+      "type": "backend",
+      "label": "终端 PTY",
+      "sublabel": "portable-pty",
+      "pos": [740, 502],
+      "size": [180, 58],
+      "sources": [
+        { "path": "src-tauri/src/commands/terminal.rs", "line": 94 }
+      ]
+    },
+    {
+      "id": "supportAI",
+      "type": "backend",
+      "label": "AI 工具 / 索引",
+      "sublabel": "sidex-agent · sidex-context",
+      "pos": [740, 580],
+      "size": [180, 58],
+      "sources": [
+        { "path": "crates/sidex-agent/src/lib.rs", "line": 1, "end_line": 9 },
+        { "path": "crates/sidex-context/src/lib.rs", "line": 1, "end_line": 21 }
+      ]
+    },
+    {
+      "id": "agentServer",
+      "type": "backend",
+      "label": "sidex-server",
+      "sublabel": "Go · 本地子进程",
+      "pos": [740, 700],
+      "size": [180, 78],
+      "sources": [
+        { "path": "src-tauri/src/server.rs", "line": 1, "end_line": 17 },
+        { "path": "sidexai/sidex-server/cmd/server/main.go", "line": 26 },
+        { "path": "sidexai/sidex-server/cmd/server/main.go", "line": 102, "end_line": 102 }
+      ]
+    },
+    {
+      "id": "providers",
+      "type": "external",
+      "label": "模型 API",
+      "sublabel": "Anthropic · OpenAI 兼容",
+      "pos": [1000, 708],
+      "size": [170, 64],
+      "sources": [
+        { "path": "src-tauri/src/commands/providers.rs", "line": 356, "end_line": 359 }
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Tauri Webview · Workbench 前端",
+      "wraps": ["monaco", "workbench", "terminalUI", "chatUI"]
+    },
+    {
+      "kind": "region",
+      "label": "Tauri Rust 后端 · 本机系统能力",
+      "wraps": ["lspDap", "svcFile", "svcGit", "storage", "extPlatform", "termSvc", "supportAI"]
+    },
+    {
+      "kind": "security-group",
+      "label": "仅 127.0.0.1 回环 · 无账号",
+      "wraps": ["agentServer"]
+    }
+  ],
+  "connections": [
+    { "id": "user-workbench", "from": "user", "to": "workbench", "label": "使用", "fromSide": "right", "toSide": "left", "variant": "emphasis" },
+    { "id": "workbench-ipc", "from": "workbench", "to": "ipc", "label": "invoke()", "fromSide": "right", "toSide": "left" },
+    { "id": "monaco-ipc", "from": "monaco", "to": "ipc", "label": "补全 / 高亮", "fromSide": "right", "toSide": "left" },
+    { "id": "terminal-ipc", "from": "terminalUI", "to": "ipc", "label": "PTY 收发", "fromSide": "right", "toSide": "left" },
+    { "id": "chat-ipc", "from": "chatUI", "to": "ipc", "label": "工具 / 会话", "fromSide": "right", "toSide": "left" },
+    { "id": "chat-agent", "from": "chatUI", "to": "agentServer", "label": "WS 会话", "fromSide": "bottom", "toSide": "left", "via": [[300, 739]] },
+    { "id": "ipc-lsp", "from": "ipc", "to": "lspDap", "label": "LSP / DAP", "fromSide": "right", "toSide": "left" },
+    { "id": "ipc-files", "from": "ipc", "to": "svcFile", "label": "文件 / 搜索", "fromSide": "right", "toSide": "left" },
+    { "id": "ipc-git", "from": "ipc", "to": "svcGit", "label": "Git", "fromSide": "right", "toSide": "left" },
+    { "id": "ipc-storage", "from": "ipc", "to": "storage", "label": "SQLite", "fromSide": "right", "toSide": "left" },
+    { "id": "ipc-ext", "from": "ipc", "to": "extPlatform", "label": "扩展市场", "fromSide": "right", "toSide": "left" },
+    { "id": "ipc-term", "from": "ipc", "to": "termSvc", "label": "PTY 进程", "fromSide": "right", "toSide": "left" },
+    { "id": "ipc-aitools", "from": "ipc", "to": "supportAI", "label": "AI 工具", "fromSide": "right", "toSide": "left" },
+    { "id": "agent-providers", "from": "agentServer", "to": "providers", "label": "模型 API", "fromSide": "right", "toSide": "left", "variant": "emphasis" }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "界面层 · Tauri Webview",
+      "items": [
+        "Workbench 直接移植 VSCode 的布局、命令与状态栏",
+        "Monaco + textmate WASM 负责语法高亮与补全",
+        "终端面板基于 xterm.js，PTY 由 Rust 提供",
+        "Chat 面板承载对话、内联 diff 与工具确认"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "本机系统能力 · Rust",
+      "items": [
+        "fs / search / notify：文件读写、全文检索、文件监听",
+        "Git 命令覆盖 status、diff、log、commit、push、stash",
+        "rusqlite 保存设置、会话与编辑历史",
+        "子进程管理 LSP 语言服务与 DAP 调试适配器",
+        "扩展平台从 Open VSX 安装扩展"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "AI 子系统 · 全本机",
+      "items": [
+        "Rust 启动时 spawn sidex-server 并监督重启（server.rs）",
+        "凭据只经进程环境注入，不落配置文件、不下发 webview",
+        "sidex-agent 执行读写文件、命令、git、搜索工具",
+        "sidex-context 负责分块、嵌入、BM25 与上下文组装",
+        "MCP 客户端、hooks、会话与记忆都在 sidex-server 内"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "跨层支撑",
+      "items": [
+        "前端统一走 invoke() / 事件，命令注册于 lib.rs",
+        "独立 worker：editorWorker、textMateWorker、extensionHostWorker",
+        "WASM 扩展与远程开发走独立通道",
+        "无账号、无托管后端；服务只绑定回环地址"
+      ]
+    }
+  ]
+}

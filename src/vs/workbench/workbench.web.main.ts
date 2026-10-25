@@ -123,9 +123,6 @@ import './contrib/localization/browser/localization.contribution.js';
 // Preferences
 import './contrib/preferences/browser/keyboardLayoutPicker.js';
 
-// Debug
-import './contrib/debug/browser/extensionHostDebugService.js';
-
 // SideX: removed — welcome banner
 // import './contrib/welcomeBanner/browser/welcomeBanner.contribution.js';
 

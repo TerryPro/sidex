@@ -29,7 +29,9 @@ export default defineConfig({
     port: 1420,
     strictPort: true,
     watch: {
-      ignored: ['**/src-tauri/**'],
+      // `target/` is the workspace cargo output dir; watching it on Windows
+      // throws EBUSY while rustc is writing build artifacts.
+      ignored: ['**/src-tauri/**', '**/target/**'],
     },
   },
   envPrefix: ['VITE_', 'TAURI_'],

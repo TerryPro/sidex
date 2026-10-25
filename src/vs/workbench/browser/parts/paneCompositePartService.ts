@@ -12,7 +12,6 @@ import { PaneCompositeDescriptor } from '../panecomposite.js';
 import { AuxiliaryBarPart } from './auxiliarybar/auxiliaryBarPart.js';
 import { PanelPart } from './panel/panelPart.js';
 import { SidebarPart } from './sidebar/sidebarPart.js';
-import { SidexPart } from './sidex/sidexPart.js';
 import { IPaneComposite } from '../../common/panecomposite.js';
 import { ViewContainerLocation } from '../../common/views.js';
 import { IPaneCompositePartService } from '../../services/panecomposite/browser/panecomposite.js';
@@ -34,18 +33,15 @@ export class PaneCompositePartService extends Disposable implements IPaneComposi
 		const panelPart = instantiationService.createInstance(PanelPart);
 		const sideBarPart = instantiationService.createInstance(SidebarPart);
 		const auxiliaryBarPart = instantiationService.createInstance(AuxiliaryBarPart);
-		const sidexPart = instantiationService.createInstance(SidexPart);
 
 		this.paneCompositeParts.set(ViewContainerLocation.Panel, panelPart);
 		this.paneCompositeParts.set(ViewContainerLocation.Sidebar, sideBarPart);
 		this.paneCompositeParts.set(ViewContainerLocation.AuxiliaryBar, auxiliaryBarPart);
-		this.paneCompositeParts.set(ViewContainerLocation.Sidex, sidexPart);
 
 		const viewContainerLocations = [
 			ViewContainerLocation.Sidebar,
 			ViewContainerLocation.Panel,
-			ViewContainerLocation.AuxiliaryBar,
-			ViewContainerLocation.Sidex
+			ViewContainerLocation.AuxiliaryBar
 		];
 
 		const eventDisposables = this._register(new DisposableStore());

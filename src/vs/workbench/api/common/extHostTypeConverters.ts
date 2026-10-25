@@ -15,9 +15,8 @@ import * as marked from '../../../base/common/marked/marked.js';
 import { parse } from '../../../base/common/marshalling.js';
 import { Mimes } from '../../../base/common/mime.js';
 import { cloneAndChange } from '../../../base/common/objects.js';
-import { IPrefixTreeNode, WellDefinedPrefixTree } from '../../../base/common/prefixTree.js';
 import { ThemeIcon } from '../../../base/common/themables.js';
-import { isDefined, isEmptyObject, isNumber, isString, isUndefinedOrNull } from '../../../base/common/types.js';
+import { isEmptyObject, isNumber, isString, isUndefinedOrNull } from '../../../base/common/types.js';
 import { URI, UriComponents, isUriComponents } from '../../../base/common/uri.js';
 import { IURITransformer } from '../../../base/common/uriIpc.js';
 import { generateUuid } from '../../../base/common/uuid.js';
@@ -46,35 +45,16 @@ import {
 import { ProgressLocation as MainProgressLocation } from '../../../platform/progress/common/progress.js';
 import { DEFAULT_EDITOR_ASSOCIATION, SaveReason } from '../../common/editor.js';
 import { IViewBadge } from '../../common/views.js';
-import { DebugTreeItemCollapsibleState, IDebugVisualizationTreeItem } from '../../contrib/debug/common/debug.js';
 import * as notebooks from '../../contrib/notebook/common/notebookCommon.js';
 import { CellEditType } from '../../contrib/notebook/common/notebookCommon.js';
 import { ICellRange } from '../../contrib/notebook/common/notebookRange.js';
 import { InputValidationType } from '../../contrib/scm/common/scm.js';
 import * as search from '../../contrib/search/common/search.js';
-import { TestId } from '../../contrib/testing/common/testId.js';
-import {
-	CoverageDetails,
-	DetailType,
-	ICoverageCount,
-	IFileCoverage,
-	ISerializedTestResults,
-	ITestErrorMessage,
-	ITestItem,
-	ITestRunProfileReference,
-	ITestTag,
-	TestMessageType,
-	TestResultItem,
-	TestRunProfileBitset,
-	denamespaceTestTag,
-	namespaceTestTag
-} from '../../contrib/testing/common/testTypes.js';
 import { EditorGroupColumn } from '../../services/editor/common/editorGroupColumn.js';
 import { ACTIVE_GROUP, SIDE_GROUP } from '../../services/editor/common/editorService.js';
 import { Dto } from '../../services/extensions/common/proxyIdentifier.js';
 import * as extHostProtocol from './extHost.protocol.js';
 import { CommandsConverter } from './extHostCommands.js';
-import { getPrivateApiFor } from './extHostTestingPrivateApi.js';
 import * as types from './extHostTypes.js';
 
 export namespace Command {
@@ -1942,268 +1922,6 @@ export namespace NotebookRendererScript {
 	}
 }
 
-export namespace TestMessage {
-	export function from(message: vscode.TestMessage): ITestErrorMessage.Serialized {
-		return {
-			message: MarkdownString.fromStrict(message.message) || '',
-			type: TestMessageType.Error,
-			expected: message.expectedOutput,
-			actual: message.actualOutput,
-			contextValue: message.contextValue,
-			location: message.location && { range: Range.from(message.location.range), uri: message.location.uri },
-			stackTrace: message.stackTrace?.map(s => ({
-				label: s.label,
-				position: s.position && Position.from(s.position),
-				uri: s.uri && URI.revive(s.uri).toJSON()
-			}))
-		};
-	}
-
-	export function to(item: ITestErrorMessage.Serialized): vscode.TestMessage {
-		const message = new types.TestMessage(
-			typeof item.message === 'string' ? item.message : MarkdownString.to(item.message)
-		);
-		message.actualOutput = item.actual;
-		message.expectedOutput = item.expected;
-		message.contextValue = item.contextValue;
-		message.location = item.location ? location.to(item.location) : undefined;
-		return message;
-	}
-}
-
-export namespace TestTag {
-	export const namespace = namespaceTestTag;
-
-	export const denamespace = denamespaceTestTag;
-}
-
-export namespace TestRunProfile {
-	export function from(item: types.TestRunProfileBase): ITestRunProfileReference {
-		return {
-			controllerId: item.controllerId,
-			profileId: item.profileId,
-			group: TestRunProfileKind.from(item.kind)
-		};
-	}
-}
-
-export namespace TestRunProfileKind {
-	const profileGroupToBitset: { [K in vscode.TestRunProfileKind]: TestRunProfileBitset } = {
-		[types.TestRunProfileKind.Coverage]: TestRunProfileBitset.Coverage,
-		[types.TestRunProfileKind.Debug]: TestRunProfileBitset.Debug,
-		[types.TestRunProfileKind.Run]: TestRunProfileBitset.Run
-	};
-
-	export function from(kind: types.TestRunProfileKind): TestRunProfileBitset {
-		return profileGroupToBitset.hasOwnProperty(kind) ? profileGroupToBitset[kind] : TestRunProfileBitset.Run;
-	}
-}
-
-export namespace TestItem {
-	export type Raw = vscode.TestItem;
-
-	export function from(item: vscode.TestItem): ITestItem {
-		const ctrlId = getPrivateApiFor(item).controllerId;
-		return {
-			extId: TestId.fromExtHostTestItem(item, ctrlId).toString(),
-			label: item.label,
-			uri: URI.revive(item.uri),
-			busy: item.busy,
-			tags: item.tags.map(t => TestTag.namespace(ctrlId, t.id)),
-			range: editorRange.Range.lift(Range.from(item.range)),
-			description: item.description || null,
-			sortText: item.sortText || null,
-			error: item.error ? MarkdownString.fromStrict(item.error) || null : null
-		};
-	}
-
-	export function toPlain(item: ITestItem.Serialized): vscode.TestItem {
-		return {
-			parent: undefined,
-			error: undefined,
-			id: TestId.fromString(item.extId).localId,
-			label: item.label,
-			uri: URI.revive(item.uri),
-			tags: (item.tags || []).map(t => {
-				const { tagId } = TestTag.denamespace(t);
-				return new types.TestTag(tagId);
-			}),
-			children: {
-				add: () => {},
-				delete: () => {},
-				forEach: () => {},
-				*[Symbol.iterator]() {},
-				get: () => undefined,
-				replace: () => {},
-				size: 0
-			},
-			range: Range.to(item.range || undefined),
-			canResolveChildren: false,
-			busy: item.busy,
-			description: item.description || undefined,
-			sortText: item.sortText || undefined
-		};
-	}
-}
-
-export namespace TestTag {
-	export function from(tag: vscode.TestTag): ITestTag {
-		return { id: tag.id };
-	}
-
-	export function to(tag: ITestTag): vscode.TestTag {
-		return new types.TestTag(tag.id);
-	}
-}
-
-export namespace TestResults {
-	const convertTestResultItem = (
-		node: IPrefixTreeNode<TestResultItem.Serialized>,
-		parent?: vscode.TestResultSnapshot
-	): vscode.TestResultSnapshot | undefined => {
-		const item = node.value;
-		if (!item) {
-			return undefined; // should be unreachable
-		}
-
-		const snapshot: vscode.TestResultSnapshot = {
-			...TestItem.toPlain(item.item),
-			parent,
-			taskStates: item.tasks.map(t => ({
-				state: t.state as number as types.TestResultState,
-				duration: t.duration,
-				messages: t.messages
-					.filter((m): m is ITestErrorMessage.Serialized => m.type === TestMessageType.Error)
-					.map(TestMessage.to)
-			})),
-			children: []
-		} as any;
-
-		if (node.children) {
-			for (const child of node.children.values()) {
-				const c = convertTestResultItem(child, snapshot);
-				if (c) {
-					(snapshot as any).children.push(c);
-				}
-			}
-		}
-
-		return snapshot;
-	};
-
-	export function to(serialized: ISerializedTestResults): vscode.TestRunResult {
-		const tree = new WellDefinedPrefixTree<TestResultItem.Serialized>();
-		for (const item of serialized.items) {
-			tree.insert(TestId.fromString(item.item.extId).path, item);
-		}
-
-		// Get the first node with a value in each subtree of IDs.
-		const queue = [tree.nodes];
-		const roots: IPrefixTreeNode<TestResultItem.Serialized>[] = [];
-		while (queue.length) {
-			for (const node of queue.pop()!) {
-				if (node.value) {
-					roots.push(node);
-				} else if (node.children) {
-					queue.push(node.children.values());
-				}
-			}
-		}
-
-		return {
-			completedAt: serialized.completedAt,
-			results: roots.map(r => convertTestResultItem(r)).filter(isDefined)
-		};
-	}
-}
-
-export namespace TestCoverage {
-	function fromCoverageCount(count: vscode.TestCoverageCount): ICoverageCount {
-		return { covered: count.covered, total: count.total };
-	}
-
-	function fromLocation(location: vscode.Range | vscode.Position) {
-		return 'line' in location ? Position.from(location) : Range.from(location);
-	}
-
-	function toLocation(location: IPosition | editorRange.IRange): types.Position | types.Range;
-	function toLocation(location: IPosition | editorRange.IRange | undefined): types.Position | types.Range | undefined;
-	function toLocation(location: IPosition | editorRange.IRange | undefined): types.Position | types.Range | undefined {
-		if (!location) {
-			return undefined;
-		}
-		return 'endLineNumber' in location ? Range.to(location) : Position.to(location);
-	}
-
-	export function to(serialized: CoverageDetails.Serialized): vscode.FileCoverageDetail {
-		if (serialized.type === DetailType.Statement) {
-			const branches: vscode.BranchCoverage[] = [];
-			if (serialized.branches) {
-				for (const branch of serialized.branches) {
-					branches.push({
-						executed: branch.count,
-						location: toLocation(branch.location),
-						label: branch.label
-					});
-				}
-			}
-			return new types.StatementCoverage(
-				serialized.count,
-				toLocation(serialized.location),
-				serialized.branches?.map(b => new types.BranchCoverage(b.count, toLocation(b.location)!, b.label))
-			);
-		} else {
-			return new types.DeclarationCoverage(serialized.name, serialized.count, toLocation(serialized.location));
-		}
-	}
-
-	export function fromDetails(coverage: vscode.FileCoverageDetail): CoverageDetails.Serialized {
-		if (typeof coverage.executed === 'number' && coverage.executed < 0) {
-			throw new Error(`Invalid coverage count ${coverage.executed}`);
-		}
-
-		if ('branches' in coverage) {
-			return {
-				count: coverage.executed,
-				location: fromLocation(coverage.location),
-				type: DetailType.Statement,
-				branches: coverage.branches.length
-					? coverage.branches.map(b => ({
-							count: b.executed,
-							location: b.location && fromLocation(b.location),
-							label: b.label
-						}))
-					: undefined
-			};
-		} else {
-			return {
-				type: DetailType.Declaration,
-				name: coverage.name,
-				count: coverage.executed,
-				location: fromLocation(coverage.location)
-			};
-		}
-	}
-
-	export function fromFile(controllerId: string, id: string, coverage: vscode.FileCoverage): IFileCoverage.Serialized {
-		types.validateTestCoverageCount(coverage.statementCoverage);
-		types.validateTestCoverageCount(coverage.branchCoverage);
-		types.validateTestCoverageCount(coverage.declarationCoverage);
-
-		return {
-			id,
-			uri: coverage.uri,
-			statement: fromCoverageCount(coverage.statementCoverage),
-			branch: coverage.branchCoverage && fromCoverageCount(coverage.branchCoverage),
-			declaration: coverage.declarationCoverage && fromCoverageCount(coverage.declarationCoverage),
-			testIds:
-				coverage instanceof types.FileCoverage && coverage.includesTests.length
-					? coverage.includesTests.map(t => TestId.fromExtHostTestItem(t, controllerId).toString())
-					: undefined
-		};
-	}
-}
-
 export namespace CodeActionTriggerKind {
 	export function to(value: languages.CodeActionTriggerType): types.CodeActionTriggerKind {
 		switch (value) {
@@ -2537,18 +2255,6 @@ export namespace InlineCompletionHintStyle {
 	}
 }
 
-export namespace DebugTreeItem {
-	export function from(item: vscode.DebugTreeItem, id: number): IDebugVisualizationTreeItem {
-		return {
-			id,
-			label: item.label as string,
-			description: item.description as string,
-			canEdit: item.canEdit,
-			collapsibleState: (item.collapsibleState || DebugTreeItemCollapsibleState.None) as DebugTreeItemCollapsibleState,
-			contextValue: item.contextValue
-		};
-	}
-}
 
 export namespace IconPath {
 	export function fromThemeIcon(iconPath: vscode.ThemeIcon): languages.IconPath {

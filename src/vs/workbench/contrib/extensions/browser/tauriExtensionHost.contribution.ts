@@ -68,7 +68,6 @@ import { ITerminalService, ITerminalGroupService } from '../../terminal/browser/
 import { INotificationService, Severity as _Severity } from '../../../../platform/notification/common/notification.js';
 import { IProgressService, ProgressLocation } from '../../../../platform/progress/common/progress.js';
 import { IOpenerService } from '../../../../platform/opener/common/opener.js';
-import { IDebugService } from '../../debug/common/debug.js';
 import { IFileDialogService } from '../../../../platform/dialogs/common/dialogs.js';
 import { ITextFileService } from '../../../services/textfile/common/textfiles.js';
 import { IWebviewWorkbenchService } from '../../webviewPanel/browser/webviewWorkbenchService.js';
@@ -188,7 +187,6 @@ class TauriExtensionHostContribution extends Disposable implements IWorkbenchCon
 		@INotificationService private readonly notificationService: INotificationService,
 		@IProgressService private readonly progressService: IProgressService,
 		@IOpenerService private readonly openerService: IOpenerService,
-		@IDebugService private readonly debugService: IDebugService,
 		@IFileDialogService private readonly fileDialogService: IFileDialogService,
 		@ITextFileService private readonly textFileService: ITextFileService,
 		@IWebviewWorkbenchService private readonly webviewWorkbenchService: IWebviewWorkbenchService,
@@ -847,15 +845,6 @@ class TauriExtensionHostContribution extends Disposable implements IWorkbenchCon
 				break;
 			case 'treeViewReveal':
 				this.logService.trace(`[ExtHost] treeViewReveal: ${msg.viewId}`);
-				break;
-			case 'startDebugging':
-				this._onStartDebugging(msg.folder, msg.config);
-				break;
-			case 'stopDebugging':
-				this._onStopDebugging(msg.sessionId);
-				break;
-			case 'debugConsoleAppend':
-				this.logService.trace(`[ExtHost] debugConsole: ${msg.value}`);
 				break;
 			case 'executeTask':
 				this.logService.info(`[ExtHost] executeTask: ${msg.name} (${msg.source})`);
@@ -2726,29 +2715,6 @@ class TauriExtensionHostContribution extends Disposable implements IWorkbenchCon
 		if (instance) {
 			instance.dispose();
 			this._extTerminals.delete(id);
-		}
-	}
-
-	private async _onStartDebugging(_folder: any, config: any): Promise<void> {
-		try {
-			await this.debugService.startDebugging(undefined, config);
-		} catch (e) {
-			this.logService.warn(`[ExtHost] startDebugging failed:`, e);
-		}
-	}
-
-	private async _onStopDebugging(sessionId?: string): Promise<void> {
-		try {
-			if (sessionId) {
-				const session = this.debugService.getModel().getSessions().find((s: any) => s.getId() === sessionId);
-				if (session) {
-					await this.debugService.stopSession(session);
-					return;
-				}
-			}
-			await this.debugService.stopSession(undefined);
-		} catch (e) {
-			this.logService.warn(`[ExtHost] stopDebugging failed:`, e);
 		}
 	}
 

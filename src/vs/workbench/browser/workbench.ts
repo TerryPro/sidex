@@ -419,11 +419,6 @@ export class Workbench extends Layout {
 			role: 'none',
 			classes: ['auxiliarybar', 'basepanel', this.getSideBarPosition() === Position.LEFT ? 'right' : 'left']
 		},
-		{
-			id: Parts.SIDEX_PART,
-			role: 'none',
-			classes: ['sidex', 'basepanel', this.getSideBarPosition() === Position.LEFT ? 'right' : 'left']
-		},
 		{ id: Parts.STATUSBAR_PART, role: 'status', classes: ['statusbar'] }
 		]) {
 			const partContainer = this.createPart(id, role, classes);

@@ -72,11 +72,6 @@ const toggleTerminal: WatermarkEntry = {
 	id: 'workbench.action.terminal.toggleTerminal',
 	when: { web: ContextKeyExpr.equals('terminalProcessSupported', true) }
 };
-const startDebugging: WatermarkEntry = {
-	text: localize('watermark.startDebugging', 'Start Debugging'),
-	id: 'workbench.action.debug.start',
-	when: { web: ContextKeyExpr.equals('terminalProcessSupported', true) }
-};
 const openSettings: WatermarkEntry = {
 	text: localize('watermark.openSettings', 'Open Settings'),
 	id: 'workbench.action.openSettings'
@@ -93,7 +88,7 @@ const emptyWindowEntries: WatermarkEntry[] = coalesce([
 
 const workspaceEntries: WatermarkEntry[] = [...baseEntries];
 
-const otherEntries: WatermarkEntry[] = [gotoFile, findInFiles, startDebugging, toggleTerminal, openSettings];
+const otherEntries: WatermarkEntry[] = [gotoFile, findInFiles, toggleTerminal, openSettings];
 
 export class EditorGroupWatermark extends Disposable {
 	private static readonly CACHED_WHEN = 'editorGroupWatermark.whenConditions';

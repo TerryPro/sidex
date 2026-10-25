@@ -429,7 +429,14 @@ export class ViewDescriptorService extends Disposable implements IViewDescriptor
 	}
 
 	private getEffectiveViewContainerLocation(location: ViewContainerLocation): ViewContainerLocation {
-		// Sidex always stays in its own panel — never redirected
+		// Views persisted under a location that no longer exists (the removed
+		// Sidex part was numeric 3) are placed in the auxiliary bar so they stay
+		// reachable instead of pointing at a missing pane composite part.
+		if (location !== ViewContainerLocation.Sidebar
+			&& location !== ViewContainerLocation.Panel
+			&& location !== ViewContainerLocation.AuxiliaryBar) {
+			return ViewContainerLocation.AuxiliaryBar;
+		}
 		return location;
 	}
 

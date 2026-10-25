@@ -1,16 +1,11 @@
 mod app_dirs;
 mod commands;
-mod server;
 
-use commands::auth::AuthState;
 use commands::db_state::SidexDbState;
-use commands::debug::{DapClientStore, DebugAdapterStore};
 use commands::ext_host::ExtensionPlatformSupervisor;
 use commands::extension_diagnostics::ExtensionDiagnosticsStore;
 use commands::extension_wasm::WasmExtensionRuntime;
-use commands::index::IndexStore;
 use commands::lsp::LspState;
-use commands::orchestrate::OrchestrationStore;
 use commands::remote::RemoteManagerStore;
 use commands::settings::SettingsStore;
 use commands::storage::StorageDb;
@@ -22,7 +17,6 @@ use commands::window::restore_and_show;
 use std::sync::Arc;
 #[cfg(target_os = "macos")]
 use tauri::menu::{Menu, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
-use tauri::Listener;
 use tauri::Manager;
 
 #[cfg(target_os = "macos")]
@@ -182,11 +176,6 @@ fn build_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
                 .build(app)?,
         )
         .item(
-            &MenuItemBuilder::with_id("debug", "Run and Debug")
-                .accelerator("CmdOrCtrl+Shift+D")
-                .build(app)?,
-        )
-        .item(
             &MenuItemBuilder::with_id("extensions", "Extensions")
                 .accelerator("CmdOrCtrl+Shift+X")
                 .build(app)?,
@@ -205,11 +194,6 @@ fn build_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         .item(
             &MenuItemBuilder::with_id("terminal", "Terminal")
                 .accelerator("CmdOrCtrl+`")
-                .build(app)?,
-        )
-        .item(
-            &MenuItemBuilder::with_id("debug_console", "Debug Console")
-                .accelerator("CmdOrCtrl+Shift+Y")
                 .build(app)?,
         )
         .separator()
@@ -275,35 +259,6 @@ fn build_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         )
         .build()?;
 
-    let run_menu = SubmenuBuilder::with_id(app, "run_menu", "Run")
-        .item(
-            &MenuItemBuilder::with_id("start_debugging", "Start Debugging")
-                .accelerator("F5")
-                .build(app)?,
-        )
-        .item(
-            &MenuItemBuilder::with_id("run_without_debugging", "Run Without Debugging")
-                .accelerator("CmdOrCtrl+F5")
-                .build(app)?,
-        )
-        .item(
-            &MenuItemBuilder::with_id("stop_debugging", "Stop Debugging")
-                .accelerator("Shift+F5")
-                .build(app)?,
-        )
-        .item(
-            &MenuItemBuilder::with_id("restart_debugging", "Restart Debugging")
-                .accelerator("CmdOrCtrl+Shift+F5")
-                .build(app)?,
-        )
-        .separator()
-        .item(
-            &MenuItemBuilder::with_id("toggle_breakpoint", "Toggle Breakpoint")
-                .accelerator("F9")
-                .build(app)?,
-        )
-        .build()?;
-
     let terminal_menu = SubmenuBuilder::with_id(app, "terminal_menu", "Terminal")
         .item(
             &MenuItemBuilder::with_id("new_terminal", "New Terminal")
@@ -360,7 +315,6 @@ fn build_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
             &selection_menu,
             &view_menu,
             &go_menu,
-            &run_menu,
             &terminal_menu,
             &window_menu,
             &help_menu,
@@ -451,21 +405,12 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
-        .manage(AuthState::new())
         .manage(UpdateManagerState::new())
         .manage(Arc::new(commands::extensions::MarketplaceClientState::new()))
         .manage(Arc::new(TerminalStore::new()))
-        .manage(Arc::new(DebugAdapterStore::new()))
-        .manage(Arc::new(DapClientStore::new()))
         .manage(Arc::new(LspState::new()))
         .manage(Arc::new(TaskProcessStore::new()))
-        .manage(Arc::new(OrchestrationStore::new()))
         .manage(Arc::new(WatchStore::new()))
-        .manage(commands::browser::BrowserState::new())
-        .manage(commands::mcp::McpState::new())
-        .manage(commands::hooks::HooksState::default_global())
-        .manage(commands::next_gen_tools::CheckpointStore::new())
-        .manage(Arc::new(IndexStore::new(false)))
         .manage(ExtensionPlatformSupervisor::new())
         .manage(ExtensionDiagnosticsStore::new())
         .manage(Arc::new(SettingsStore::new()))
@@ -666,12 +611,6 @@ pub fn run() {
                     window.open_devtools();
                 }
             }
-
-
-            // Start the local agent server. Failure is non-fatal —
-            // the editor works without it, the chat panel just shows
-            // as disconnected.
-            server::initialize(app.handle());
             Ok(())
         })
         .on_menu_event(|app, event| {
@@ -684,25 +623,6 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
-            // AI Agent
-            commands::agent::agent_execute_tool,
-            // Local account, providers, and the local agent server
-            server::server_endpoint,
-            server::server_restart,
-            commands::providers_catalog,
-            commands::providers_status,
-            commands::providers_save,
-            commands::providers_delete,
-            commands::providers_set_cli_auth,
-            commands::providers_set_enabled,
-            commands::providers_detect_cli,
-            commands::providers_detect_local,
-            commands::providers_list_models,
-            commands::accounts_list,
-            commands::accounts_connect,
-            commands::accounts_disconnect,
-            commands::auth_get_session,
-            commands::auth_get_usage,
             // File system
             commands::read_file,
             commands::get_cwd,
@@ -734,14 +654,6 @@ pub fn run() {
             commands::simple_diff,
             commands::file_hash,
             commands::files_equal,
-            // Compression
-            commands::gzip_compress,
-            commands::gzip_decompress,
-            commands::gzip_compress_text,
-            commands::gzip_decompress_text,
-            commands::zip_list,
-            commands::zip_extract_file,
-            commands::zip_create,
             // Crypto
             commands::sha256_hash,
             commands::sha256_file,
@@ -794,16 +706,6 @@ pub fn run() {
             commands::storage_get,
             commands::storage_set,
             commands::storage_delete,
-            // Chat session persistence
-            commands::session_create,
-            commands::session_list,
-            commands::session_load,
-            commands::session_save_message,
-            commands::session_delete,
-            commands::session_search,
-            commands::session_update_title,
-            commands::session_pin,
-            commands::session_archive,
             // Layered settings
             commands::settings_get,
             commands::settings_update,
@@ -867,33 +769,11 @@ pub fn run() {
             commands::open_external_url,
             commands::env_shell,
             commands::env_app_host,
-            commands::debug_spawn_adapter,
-            commands::debug_send,
-            commands::debug_kill,
-            commands::debug_list_adapters,
-            commands::dap_get_launch_configs,
-            commands::dap_get_adapter_registry,
-            commands::dap_start_adapter,
-            commands::dap_send_request,
-            commands::dap_stop_adapter,
             commands::task_spawn,
             commands::task_kill,
             commands::task_list,
             commands::tasks_detect,
             commands::tasks_parse_config,
-            // Orchestration
-            commands::orch_start,
-            commands::orch_add_tasks,
-            commands::orch_spawn_task,
-            commands::orch_cancel,
-            commands::orch_status,
-            commands::orch_get_ready_tasks,
-            commands::orch_get_handoffs,
-            commands::orch_list,
-            // Context formatting
-            commands::context_format::context_search_toon,
-            commands::context_format::format_diagnostics_toon,
-            commands::context_format::format_file_tree_toon,
             // File watching
             commands::watch_start,
             commands::watch_stop,
@@ -944,10 +824,6 @@ pub fn run() {
             commands::extension_bisect_bad,
             commands::extension_bisect_reset,
             commands::extension_bisect_state,
-            // Index search
-            commands::index_build,
-            commands::index_stats,
-            commands::index_clear,
             // LSP management
             commands::lsp_get_server_registry,
             commands::lsp_get_supported_languages,
@@ -993,67 +869,19 @@ pub fn run() {
             commands::ext_api_call,
             // Menu i18n
             commands::update_menu_labels,
-            // Browser automation (native webview — zero extra memory)
-            commands::__browser_console_log,
-            commands::browser_navigate,
-            commands::browser_screenshot,
-            commands::browser_click,
-            commands::browser_type,
-            commands::browser_read,
-            commands::browser_scroll,
-            commands::browser_console,
-            commands::browser_eval,
-            commands::browser_close,
-            // MCP (Model Context Protocol) client
-            commands::mcp_list_servers,
-            commands::mcp_connect,
-            commands::mcp_disconnect,
-            commands::mcp_list_tools,
-            commands::mcp_call_tool,
-            commands::mcp_add_server,
-            commands::mcp_remove_server,
-            commands::mcp_reload_config,
-            // Hooks (lifecycle automation)
-            commands::hooks_list,
-            commands::hooks_trigger,
-            commands::hooks_reload,
-            commands::hooks_add,
-            commands::hooks_remove,
-            commands::hooks_toggle,
-            commands::hooks_test,
-            // Next-gen editing tools
-            commands::next_gen_tools::semantic_edit,
-            commands::next_gen_tools::multi_edit_file,
-            commands::next_gen_tools::understand_symbol,
-            commands::next_gen_tools::diff_preview,
-            commands::next_gen_tools::batch_read_files,
-            commands::next_gen_tools::context_search,
-            commands::next_gen_tools::checkpoint_create,
-            commands::next_gen_tools::checkpoint_rollback,
-            commands::next_gen_tools::analyze_error,
         ])
         .build(tauri::generate_context!())
         .expect("error while running tauri application")
         .run(|app_handle, event| {
             // Kill every child process we spawned when the app exits —
-            // PTY shells, build tasks, debug adapters, and the extension
+            // PTY shells, build tasks, and the extension
             // host would otherwise outlive the editor as orphans.
             if let tauri::RunEvent::Exit = event {
                 if let Some(store) = app_handle.try_state::<Arc<TaskProcessStore>>() {
                     store.kill_all();
                 }
-                if let Some(store) = app_handle.try_state::<Arc<DebugAdapterStore>>() {
-                    store.kill_all();
-                }
                 if let Some(supervisor) = app_handle.try_state::<ExtensionPlatformSupervisor>() {
                     let _ = supervisor.stop();
-                }
-                // Every other child-process owner is stopped explicitly here
-                // rather than left to Drop; the agent server needs the same
-                // treatment or it outlives the app and holds the state
-                // database locked against the next launch.
-                if let Some(server) = app_handle.try_state::<Arc<server::LocalServer>>() {
-                    server.shutdown();
                 }
             }
         });

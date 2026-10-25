@@ -28,7 +28,6 @@ import { DisposableStore, toDisposable } from '../../../base/common/lifecycle.js
 import { createDecorator } from '../../../platform/instantiation/common/instantiation.js';
 import { IExtHostRpcService } from './extHostRpcService.js';
 import { ISelection } from '../../../editor/common/core/selection.js';
-import { TestItemImpl } from './extHostTestItem.js';
 import { VSBuffer } from '../../../base/common/buffer.js';
 import { SerializableObjectWithBuffers } from '../../services/extensions/common/proxyIdentifier.js';
 import { toErrorMessage } from '../../../base/common/errorMessage.js';
@@ -531,18 +530,6 @@ export class ApiCommandArgument<V, O = V> {
 		'A type hierarchy item',
 		v => v instanceof extHostTypes.TypeHierarchyItem,
 		extHostTypeConverter.TypeHierarchyItem.from
-	);
-	static readonly TestItem = new ApiCommandArgument(
-		'testItem',
-		'A VS Code TestItem',
-		v => v instanceof TestItemImpl,
-		extHostTypeConverter.TestItem.from
-	);
-	static readonly TestProfile = new ApiCommandArgument(
-		'testProfile',
-		'A VS Code test profile',
-		v => v instanceof extHostTypes.TestRunProfileBase,
-		extHostTypeConverter.TestRunProfile.from
 	);
 
 	constructor(

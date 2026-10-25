@@ -871,28 +871,6 @@ const newCommands: ApiCommand[] = [
 			v => v.map(typeConverters.TypeHierarchyItem.to)
 		)
 	),
-	// --- testing
-	new ApiCommand(
-		'vscode.revealTestInExplorer',
-		'_revealTestInExplorer',
-		'Reveals a test instance in the explorer',
-		[ApiCommandArgument.TestItem],
-		ApiCommandResult.Void
-	),
-	new ApiCommand(
-		'vscode.startContinuousTestRun',
-		'testing.startContinuousRunFromExtension',
-		'Starts running the given tests with continuous run mode.',
-		[ApiCommandArgument.TestProfile, ApiCommandArgument.Arr(ApiCommandArgument.TestItem)],
-		ApiCommandResult.Void
-	),
-	new ApiCommand(
-		'vscode.stopContinuousTestRun',
-		'testing.stopContinuousRunFromExtension',
-		'Stops running the given tests with continuous run mode.',
-		[ApiCommandArgument.Arr(ApiCommandArgument.TestItem)],
-		ApiCommandResult.Void
-	),
 	// --- continue edit session
 	new ApiCommand(
 		'vscode.experimental.editSession.continue',

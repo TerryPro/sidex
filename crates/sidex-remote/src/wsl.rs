@@ -105,22 +105,6 @@ pub fn exec_in_wsl(_distro: &str, _command: &str) -> Result<ExecOutput> {
     wsl_unavailable()
 }
 
-/// Install the `SideX` Server binary inside the given WSL distro.
-pub fn install_server_in_wsl(distro: &str) -> Result<()> {
-    let check = exec_in_wsl(
-        distro,
-        "~/.sidex-server/sidex-server --version 2>/dev/null || echo missing",
-    )?;
-    let version = env!("CARGO_PKG_VERSION");
-    if check.stdout.trim() == version {
-        log::info!("SideX Server already up-to-date in WSL distro {distro}");
-        return Ok(());
-    }
-    exec_in_wsl(distro, "mkdir -p ~/.sidex-server")?;
-    log::info!("installing SideX Server {version} in WSL distro {distro}");
-    Ok(())
-}
-
 /// List distros and connect to the named one, returning a [`WslConnection`].
 #[cfg(target_os = "windows")]
 pub async fn connect_distro(name: &str) -> Result<WslConnection> {

@@ -35,7 +35,6 @@ import {
 	Extensions as ViewContainerExtensions,
 	ViewContainerLocation
 } from '../../common/views.js';
-import { VIEWLET_ID as DEBUG } from '../../contrib/debug/common/debug.js';
 import { VIEWLET_ID as EXPLORER } from '../../contrib/files/common/files.js';
 const REMOTE = 'workbench.view.remote'; // Stub - remote feature removed
 import { VIEWLET_ID as SCM } from '../../contrib/scm/common/scm.js';
@@ -290,12 +289,6 @@ const viewsContribution: IJSONSchema = {
 	properties: {
 		explorer: {
 			description: localize('views.explorer', 'Contributes views to Explorer container in the Activity bar'),
-			type: 'array',
-			items: viewDescriptor,
-			default: []
-		},
-		debug: {
-			description: localize('views.debug', 'Contributes views to Debug container in the Activity bar'),
 			type: 'array',
 			items: viewDescriptor,
 			default: []
@@ -830,8 +823,6 @@ class ViewsExtensionHandler implements IWorkbenchContribution {
 		switch (value) {
 			case 'explorer':
 				return this.viewContainersRegistry.get(EXPLORER);
-			case 'debug':
-				return this.viewContainersRegistry.get(DEBUG);
 			case 'scm':
 				return this.viewContainersRegistry.get(SCM);
 			case 'remote':
@@ -845,7 +836,6 @@ class ViewsExtensionHandler implements IWorkbenchContribution {
 		switch (container.id) {
 			case EXPLORER:
 			case SCM:
-			case DEBUG:
 				return true;
 		}
 		return false;

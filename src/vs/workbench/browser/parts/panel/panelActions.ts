@@ -529,20 +529,7 @@ export class MovePanelToSecondarySideBarAction extends MoveViewsBetweenPanelsAct
 registerAction2(MovePanelToSidePanelAction);
 registerAction2(MovePanelToSecondarySideBarAction);
 
-// --- Move Sidex Views To Panel
-
-class MoveSidePanelToPanelAction extends MoveViewsBetweenPanelsAction {
-	static readonly ID = 'workbench.action.moveSidePanelToPanel';
-
-	constructor() {
-		super(ViewContainerLocation.AuxiliaryBar, ViewContainerLocation.Panel, {
-			id: MoveSidePanelToPanelAction.ID,
-			title: localize2('moveSidePanelToPanel', 'Move Sidex Views To Panel'),
-			category: Categories.View,
-			f1: false
-		});
-	}
-}
+// --- Move Secondary Side Bar Views To Panel
 
 export class MoveSecondarySideBarToPanelAction extends MoveViewsBetweenPanelsAction {
 	static readonly ID = 'workbench.action.moveSecondarySideBarToPanel';
@@ -550,11 +537,10 @@ export class MoveSecondarySideBarToPanelAction extends MoveViewsBetweenPanelsAct
 	constructor() {
 		super(ViewContainerLocation.AuxiliaryBar, ViewContainerLocation.Panel, {
 			id: MoveSecondarySideBarToPanelAction.ID,
-			title: localize2('moveSidePanelToPanel', 'Move Sidex Views To Panel'),
+			title: localize2('moveSecondarySideBarToPanel', 'Move Secondary Side Bar Views To Panel'),
 			category: Categories.View,
 			f1: true
 		});
 	}
 }
-registerAction2(MoveSidePanelToPanelAction);
 registerAction2(MoveSecondarySideBarToPanelAction);

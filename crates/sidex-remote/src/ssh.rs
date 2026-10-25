@@ -49,7 +49,6 @@ pub enum ConnectionState {
     Disconnected,
     Connecting,
     Authenticating,
-    InstallingServer,
     Connected,
     Reconnecting { attempt: u32 },
 }
@@ -244,36 +243,6 @@ impl SshConnection {
             direction: ForwardDirection::RemoteToLocal,
             is_active: true,
         });
-        Ok(())
-    }
-
-    pub async fn install_server(&mut self) -> Result<()> {
-        self.state = ConnectionState::InstallingServer;
-        let version = env!("CARGO_PKG_VERSION");
-        let check = self
-            .exec_command("~/.sidex-server/sidex-server --version 2>/dev/null || echo missing")
-            .await?;
-
-        if check.stdout.trim() == version {
-            log::info!("SideX Server {version} already installed");
-            self.state = ConnectionState::Connected;
-            return Ok(());
-        }
-
-        let platform = self.remote_platform.unwrap_or(Platform::Linux);
-        let arch_out = self.exec_command("uname -m").await?;
-        let arch = arch_out.stdout.trim();
-        let _target = match (platform, arch) {
-            (Platform::Linux, "x86_64") => "x86_64-unknown-linux-gnu",
-            (Platform::Linux, "aarch64") => "aarch64-unknown-linux-gnu",
-            (Platform::MacOS, "x86_64") => "x86_64-apple-darwin",
-            (Platform::MacOS, "arm64") => "aarch64-apple-darwin",
-            _ => bail!("unsupported remote platform: {platform:?} / {arch}"),
-        };
-
-        self.exec_command("mkdir -p ~/.sidex-server").await?;
-        log::info!("installing SideX Server {version} on remote");
-        self.state = ConnectionState::Connected;
         Ok(())
     }
 
