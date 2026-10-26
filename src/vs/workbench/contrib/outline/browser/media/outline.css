@@ -1,0 +1,79 @@
+/*---------------------------------------------------------------------------------------------
+ *  SideX: Outline view for the active editor.
+ *--------------------------------------------------------------------------------------------*/
+
+.outline-list {
+	height: 100%;
+	overflow: auto;
+	padding: 2px 0;
+	/* Match the 10px overlay scrollbar the explorer and other lists use. */
+	scrollbar-width: thin;
+	scrollbar-color: var(--vscode-scrollbarSlider-background) transparent;
+}
+
+.outline-list::-webkit-scrollbar {
+	width: 10px;
+	height: 10px;
+}
+
+.outline-list::-webkit-scrollbar-track {
+	background: transparent;
+}
+
+.outline-list::-webkit-scrollbar-thumb {
+	background: var(--vscode-scrollbarSlider-background);
+	border-radius: 4px;
+}
+
+.outline-list::-webkit-scrollbar-thumb:hover {
+	background: var(--vscode-scrollbarSlider-hoverBackground);
+}
+
+.outline-list::-webkit-scrollbar-thumb:active {
+	background: var(--vscode-scrollbarSlider-activeBackground);
+}
+
+.outline-list::-webkit-scrollbar-corner {
+	background: transparent;
+}
+
+.outline-row {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	height: 22px;
+	padding-right: 8px;
+	cursor: pointer;
+	white-space: nowrap;
+	overflow: hidden;
+	font-size: 12px;
+}
+
+.outline-row:hover {
+	background: var(--vscode-list-hoverBackground);
+}
+
+.outline-row .codicon {
+	font-size: 14px;
+	flex: none;
+	/* Colors come from the symbolIcon.* tokens via the `codicon-colored` class
+	   that symbolIcons.css targets. */
+}
+
+.outline-label {
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.outline-detail {
+	margin-left: 6px;
+	opacity: 0.7;
+	font-size: 11px;
+	flex: none;
+}
+
+.outline-empty {
+	padding: 8px 12px;
+	font-size: 12px;
+	opacity: 0.7;
+}

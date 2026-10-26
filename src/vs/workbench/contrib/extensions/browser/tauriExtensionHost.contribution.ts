@@ -65,6 +65,7 @@ import {
 	wasmProvideHoverAll,
 	wasmProvideDefinitionAll,
 	wasmProvideDocumentSymbolsAll,
+	wasmProvideDocumentLinksAll,
 	wasmProvideFormattingAll,
 	wasmProvideReferencesAll,
 	wasmProvideTypeDefinitionAll,
@@ -143,6 +144,9 @@ function sanitizeForExtHost(text: string): string {
 		.replace(/[\u200b-\u200f\u202a-\u202e\u2060\ufeff]/g, '')
 		.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '');
 }
+
+/** Retry points (ms) for pulling language-server diagnostics after a sync. */
+const DIAGNOSTIC_REFRESH_DELAYS = [1500, 5000, 12000];
 
 
 
@@ -320,7 +324,6 @@ class TauriExtensionHostContribution extends Disposable implements IWorkbenchCon
 			// directly as a fallback; `_registerWasmProviders` is idempotent.
 			setTimeout(() => this._registerWasmProviders(), 800);
 		}
-
 		const workspaceFolders = this.workspaceContextService
 			.getWorkspace()
 			.folders
@@ -332,6 +335,12 @@ class TauriExtensionHostContribution extends Disposable implements IWorkbenchCon
 		}
 
 		this._syncDocumentsToWasm();
+
+		// Editors restored from the previous session can reach the model service
+		// after bootstrap, so sweep again once the workbench has settled.
+		for (const delay of [3000, 8000, 15000]) {
+			setTimeout(() => this._syncDocumentsToWasm(), delay);
+		}
 	}
 
 	private _wasmDocSyncInitialized = false;
@@ -349,23 +358,21 @@ class TauriExtensionHostContribution extends Disposable implements IWorkbenchCon
 			.catch(() => {});
 	}
 
-	private readonly _diagnosticTimers = new Map<string, ReturnType<typeof setTimeout>>();
+	private readonly _diagnosticTimers = new Map<string, ReturnType<typeof setTimeout>[]>();
 
 	/**
-	 * Language servers compute diagnostics asynchronously, so poll once more
-	 * shortly after a sync to pick up whatever they pushed in the meantime.
+	 * Language servers compute diagnostics asynchronously and at very different
+	 * speeds, so poll a few times after a sync to pick up whatever they pushed.
 	 */
-	private _scheduleDiagnosticRefresh(model: ITextModel, delay = 1500): void {
+	private _scheduleDiagnosticRefresh(model: ITextModel): void {
 		const key = model.uri.toString();
-		const existing = this._diagnosticTimers.get(key);
-		if (existing !== undefined) {
-			clearTimeout(existing);
+		for (const timer of this._diagnosticTimers.get(key) ?? []) {
+			clearTimeout(timer);
 		}
-		const timer = setTimeout(() => {
-			this._diagnosticTimers.delete(key);
+		const timers = DIAGNOSTIC_REFRESH_DELAYS.map(delay => setTimeout(() => {
 			void this._refreshWasmDiagnostics(model);
-		}, delay);
-		this._diagnosticTimers.set(key, timer);
+		}, delay));
+		this._diagnosticTimers.set(key, timers);
 	}
 
 	private _severityToMarker(severity: IWasmDiagnostic['severity']): MarkerSeverity {
@@ -492,8 +499,17 @@ class TauriExtensionHostContribution extends Disposable implements IWorkbenchCon
 		} catch (error) {
 			this._activatedLanguages.delete(languageId);
 			this.logService.warn(`[ExtHost] failed to activate WASM extensions for ${languageId}: ${(error as Error)?.message ?? String(error)}`);
+			// A transient failure (e.g. the runtime was busy bootstrapping) should
+			// not leave the language without its extension for the whole session.
+			const attempts = (this._activationAttempts.get(languageId) ?? 0) + 1;
+			this._activationAttempts.set(languageId, attempts);
+			if (attempts < 3) {
+				setTimeout(() => { void this._ensureLanguageActivated(languageId); }, 2000);
+			}
 		}
 	}
+
+	private readonly _activationAttempts = new Map<string, number>();
 
 	private _syncDocumentsToWasm(): void {
 		for (const model of this.modelService.getModels()) {
@@ -709,6 +725,32 @@ class TauriExtensionHostContribution extends Disposable implements IWorkbenchCon
 						return null;
 					}
 				},
+			})
+		);
+
+		this._wasmProviderRegistrations.push(
+			this.languageFeatures.linkProvider.register(wasmLanguages, {
+				provideLinks: async (model, _token) => {
+					try {
+						const result = await wasmProvideDocumentLinksAll(
+							model.uri.toString(),
+							model.getLanguageId(),
+							model.getVersionId(),
+						);
+						if (!Array.isArray(result) || !result.length) {
+							return null;
+						}
+						return {
+							links: result.map((l: any) => ({
+								range: toVscRange(l.range),
+								url: typeof l.target === 'string' && l.target.length > 0 ? URI.parse(l.target) : undefined,
+							})),
+							dispose: () => { }
+						} satisfies ILinksList;
+					} catch {
+						return null;
+					}
+				}
 			})
 		);
 
@@ -1034,7 +1076,7 @@ class TauriExtensionHostContribution extends Disposable implements IWorkbenchCon
 		this._treeViews.clear();
 		this._modelContentListeners.forEach(d => d.dispose());
 		this._modelContentListeners.clear();
-		this._diagnosticTimers.forEach(t => clearTimeout(t));
+		this._diagnosticTimers.forEach(timers => timers.forEach(t => clearTimeout(t)));
 		this._diagnosticTimers.clear();
 		this._trackedEditors.forEach(entry => entry.listeners.forEach(l => l.dispose()));
 		this._trackedEditors.clear();

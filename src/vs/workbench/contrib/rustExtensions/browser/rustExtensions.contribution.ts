@@ -132,7 +132,7 @@ class RustExtensionsView extends ViewPane {
 		row.title = `${extension.path}\n${extension.wasmBinary}`;
 
 		const icon = $('span.rust-ext-icon.codicon');
-		icon.classList.add(extension.loaded ? 'codicon-extensions' : 'codicon-circle-large-outline');
+		icon.classList.add(extension.loaded ? 'codicon-chip' : 'codicon-circle-large-outline');
 		row.appendChild(icon);
 
 		const info = $('.rust-ext-info');
@@ -170,7 +170,7 @@ const container = Registry.as<IViewContainersRegistry>(ViewExtensions.ViewContai
 		title: localize2('rustExtensions.containerTitle', 'Rust 扩展'),
 		ctorDescriptor: new SyncDescriptor(ViewPaneContainer, [VIEW_CONTAINER_ID, { mergeViewWithContainerWhenSingleView: true }]),
 		hideIfEmpty: false,
-		icon: Codicon.extensions,
+		icon: Codicon.chip,
 		order: 6
 	},
 	ViewContainerLocation.Sidebar,
@@ -179,7 +179,7 @@ const container = Registry.as<IViewContainersRegistry>(ViewExtensions.ViewContai
 
 const viewDescriptor: IViewDescriptor = {
 	id: VIEW_ID,
-	containerIcon: Codicon.extensions,
+	containerIcon: Codicon.chip,
 	name: localize2('rustExtensions.viewTitle', '已加载的 Rust 扩展'),
 	ctorDescriptor: new SyncDescriptor(RustExtensionsView),
 	canToggleVisibility: false,

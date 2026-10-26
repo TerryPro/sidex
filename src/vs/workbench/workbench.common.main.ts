@@ -199,6 +199,11 @@ import './contrib/quickaccess/browser/quickAccess.contribution.js';
 import './contrib/files/browser/explorerViewlet.js';
 import './contrib/files/browser/fileActions.contribution.js';
 import './contrib/files/browser/files.contribution.js';
+import './contrib/outline/browser/outline.contribution.js';
+import './contrib/timeline/browser/timeline.service.contribution.js';
+import './contrib/timeline/browser/timeline.contribution.js';
+import './contrib/timeline/browser/gitTimeline.contribution.js';
+import './contrib/jsonSymbols/browser/jsonSymbols.contribution.js';
 
 // Bulk Edit
 import './contrib/bulkEdit/browser/bulkEditService.js';
@@ -253,6 +258,8 @@ import './contrib/externalTerminal/browser/externalTerminal.contribution.js';
 
 // Markdown
 import './contrib/markdown/browser/markdown.contribution.js';
+import './contrib/mermaidPreview/browser/mermaidPreview.contribution.js';
+import './contrib/htmlPreview/browser/htmlPreview.contribution.js';
 import './contrib/rustExtensions/browser/rustExtensions.contribution.js';
 
 // Keybindings Contributions

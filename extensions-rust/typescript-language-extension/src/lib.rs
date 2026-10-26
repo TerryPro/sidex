@@ -340,6 +340,75 @@ fn lang_from_uri(uri: &str) -> String {
     "javascript".to_string()
 }
 
+fn percent_decode(input: &str) -> String {
+    let bytes = input.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'%'
+            && bytes.get(index + 1).is_some_and(u8::is_ascii_hexdigit)
+            && bytes.get(index + 2).is_some_and(u8::is_ascii_hexdigit)
+        {
+            if let Ok(value) = u8::from_str_radix(&input[index + 1..index + 3], 16) {
+                out.push(value);
+                index += 3;
+                continue;
+            }
+        }
+        out.push(bytes[index]);
+        index += 1;
+    }
+    String::from_utf8_lossy(&out).to_string()
+}
+
+/// tsserver works with plain OS paths, while the workbench passes `file:///f%3A/...` URIs.
+fn uri_to_file_path(uri: &str) -> String {
+    let raw = uri.strip_prefix("file://").unwrap_or(uri);
+    let decoded = percent_decode(raw);
+    let bytes = decoded.as_bytes();
+    if bytes.len() >= 3 && bytes[0] == b'/' && bytes[2] == b':' {
+        return decoded[1..].to_string();
+    }
+    decoded
+}
+
+/// Builds the URI form the workbench uses for a file on disk.
+fn file_uri_from_path(path: &str) -> String {
+    let normalized = path.replace('\\', "/");
+    let mut encoded = String::with_capacity(normalized.len() + 8);
+    for (index, ch) in normalized.chars().enumerate() {
+        if ch == ':' && index == 1 {
+            encoded.push_str("%3A");
+        } else {
+            encoded.push(ch);
+        }
+    }
+    format!("file:///{encoded}")
+}
+
+/// TypeScript sources are written with `.js` import specifiers that tsserver resolves
+/// literally when no project is loaded. Fall back to the matching `.ts` file on disk.
+fn existing_source_file(path: &str) -> String {
+    if host::stat_file(&file_uri_from_path(path)).is_ok() {
+        return path.to_string();
+    }
+    let alternatives = [
+        (".js", ".ts"),
+        (".jsx", ".tsx"),
+        (".mjs", ".mts"),
+        (".cjs", ".cts"),
+    ];
+    for (extension, replacement) in alternatives {
+        if let Some(stem) = path.strip_suffix(extension) {
+            let candidate = format!("{stem}{replacement}");
+            if host::stat_file(&file_uri_from_path(&candidate)).is_ok() {
+                return candidate;
+            }
+        }
+    }
+    path.to_string()
+}
+
 /// Scans document text and returns words matching the prefix at the cursor.
 /// Used as a fallback when tsserver returns no completions (e.g. at declaration sites).
 fn word_completions_from_doc(ctx: &DocumentContext, pos: Position) -> Option<CompletionList> {
@@ -401,7 +470,7 @@ fn tsserver_request(
     pos: Option<Position>,
     extra: Option<&str>,
 ) -> Option<String> {
-    let file = ctx.uri.strip_prefix("file://").unwrap_or(&ctx.uri);
+    let file = uri_to_file_path(&ctx.uri);
     let pos_str = pos
         .map(|p| format!(r#","line":{},"offset":{}"#, p.line + 1, p.character + 1))
         .unwrap_or_default();
@@ -489,7 +558,7 @@ fn parse_ts_locations(json: &str) -> Option<Vec<Location>> {
             .unwrap_or(1)
             .saturating_sub(1);
         locs.push(Location {
-            uri: format!("file://{file}"),
+            uri: file_uri_from_path(&existing_source_file(&file)),
             range: Range {
                 start: Position {
                     line: start_line,
@@ -510,33 +579,192 @@ fn parse_ts_locations(json: &str) -> Option<Vec<Location>> {
     }
 }
 
-fn parse_ts_symbols(json: &str) -> Option<Vec<DocumentSymbol>> {
-    let mut symbols = Vec::new();
-    let mut search = json;
-    while let Some(name_pos) = search.find("\"text\":") {
-        if let Some(name) = extract_string_value(&search[name_pos + 7..]) {
-            let kind_str = extract_field_from_str(&search[name_pos..], "kind").unwrap_or_default();
-            let line = extract_field_from_str(&search[name_pos..], "line")
-                .and_then(|s| s.parse::<u32>().ok())
-                .unwrap_or(1)
-                .saturating_sub(1);
-            symbols.push(DocumentSymbol {
-                name,
-                detail: None,
-                kind: ts_kind_to_symbol_kind(&kind_str),
-                range: Range {
-                    start: Position { line, character: 0 },
-                    end: Position { line, character: 0 },
-                },
-                selection_range: Range {
-                    start: Position { line, character: 0 },
-                    end: Position { line, character: 0 },
-                },
-            });
-            search = &search[name_pos + 7..];
-        } else {
-            break;
+/// Returns the raw body of the JSON array stored under `key`.
+fn find_array_body<'a>(json: &'a str, key: &str) -> Option<&'a str> {
+    let start = json.find(&format!("\"{key}\":"))?;
+    let rest = &json[start..];
+    let open = rest.find('[')?;
+    let mut depth = 0i32;
+    let mut in_string = false;
+    let mut escaped = false;
+    for (offset, ch) in rest[open..].char_indices() {
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == '"' {
+                in_string = false;
+            }
+            continue;
         }
+        match ch {
+            '"' => in_string = true,
+            '[' => depth += 1,
+            ']' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(&rest[open + 1..open + offset]);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Returns the raw body of the JSON object stored under `key`.
+fn find_object_body<'a>(json: &'a str, key: &str) -> Option<&'a str> {
+    let start = json.find(&format!("\"{key}\":"))?;
+    let rest = &json[start..];
+    let open = rest.find('{')?;
+    let mut depth = 0i32;
+    let mut in_string = false;
+    let mut escaped = false;
+    for (offset, ch) in rest[open..].char_indices() {
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == '"' {
+                in_string = false;
+            }
+            continue;
+        }
+        match ch {
+            '"' => in_string = true,
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(&rest[open + 1..open + offset]);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Splits an array body into the top level object literals it contains.
+fn object_list(body: &str) -> Vec<String> {
+    let mut items = Vec::new();
+    let mut depth = 0i32;
+    let mut start = None;
+    let mut in_string = false;
+    let mut escaped = false;
+    for (offset, ch) in body.char_indices() {
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == '"' {
+                in_string = false;
+            }
+            continue;
+        }
+        match ch {
+            '"' => in_string = true,
+            '{' => {
+                if depth == 0 {
+                    start = Some(offset);
+                }
+                depth += 1;
+            }
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    if let Some(begin) = start.take() {
+                        items.push(body[begin..=offset].to_string());
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    items
+}
+
+fn span_positions(span: &str) -> Option<(Position, Position)> {
+    let read = |part: &str| -> Option<Position> {
+        let line = extract_field_from_str(part, "line")?.parse::<u32>().ok()?;
+        let offset = extract_field_from_str(part, "offset")?.parse::<u32>().ok()?;
+        Some(Position {
+            line: line.saturating_sub(1),
+            character: offset.saturating_sub(1),
+        })
+    };
+    let start = read(find_object_body(span, "start")?)?;
+    let end = read(find_object_body(span, "end")?)?;
+    Some((start, end))
+}
+
+/// Parses one `navtree` item into a flat symbol. Nested `childItems` of classes,
+/// interfaces, enums and namespaces are emitted afterwards with an increased depth.
+fn parse_ts_item(item: &str, depth: u32) -> Option<DocumentSymbol> {
+    let name = extract_field_from_str(item, "text")?;
+    let kind = ts_kind_to_symbol_kind(&extract_field_from_str(item, "kind").unwrap_or_default());
+
+    let range = find_array_body(item, "spans")
+        .and_then(|body| object_list(body).into_iter().next())
+        .and_then(|span| span_positions(&span))
+        .map(|(start, end)| Range { start, end });
+
+    let selection = find_object_body(item, "nameSpan")
+        .and_then(|body| span_positions(body))
+        .map(|(start, end)| Range { start, end })
+        .or_else(|| range.clone());
+
+    let empty = Range {
+        start: Position { line: 0, character: 0 },
+        end: Position { line: 0, character: 0 },
+    };
+
+    Some(DocumentSymbol {
+        name,
+        detail: None,
+        kind,
+        range: range.unwrap_or_else(|| empty.clone()),
+        selection_range: selection.unwrap_or(empty),
+        depth,
+    })
+}
+
+/// Only namespaces, classes, interfaces and enums contribute children; the items
+/// inside function bodies (local variables, anonymous functions) are noise in an
+/// outline, and VS Code hides them as well.
+fn ts_kind_has_children(kind: &str) -> bool {
+    matches!(
+        kind,
+        "module" | "namespace" | "class" | "interface" | "enum" | "object literal"
+    )
+}
+
+fn collect_ts_item(item: &str, depth: u32, out: &mut Vec<DocumentSymbol>) {
+    let kind = extract_field_from_str(item, "kind").unwrap_or_default();
+    // Import bindings are not symbols in VS Code's outline.
+    if kind == "alias" {
+        return;
+    }
+    if let Some(symbol) = parse_ts_item(item, depth) {
+        out.push(symbol);
+    }
+    if ts_kind_has_children(&kind) {
+        if let Some(body) = find_array_body(item, "childItems") {
+            for child in object_list(body) {
+                collect_ts_item(&child, depth + 1, out);
+            }
+        }
+    }
+}
+
+fn parse_ts_symbols(json: &str) -> Option<Vec<DocumentSymbol>> {
+    let body = find_array_body(json, "childItems")?;
+    let mut symbols = Vec::new();
+    for item in object_list(body) {
+        collect_ts_item(&item, 0, &mut symbols);
     }
     if symbols.is_empty() {
         None
@@ -584,7 +812,7 @@ fn parse_ts_rename(json: &str) -> Option<RenameResult> {
                 .and_then(|s| s.parse::<u32>().ok())
                 .unwrap_or(1);
         edits.push(ResourceTextEdit {
-            uri: format!("file://{file}"),
+            uri: file_uri_from_path(&existing_source_file(&file)),
             edits: vec![TextEdit {
                 range: Range {
                     start: Position {

@@ -314,50 +314,6 @@
 .monaco-workbench .part.titlebar .sidex-search-shortcut {
 	display: none;
 }
-/* --- Profile/Settings unified pill button (Windsurf style, rounded 6px) --- */
-.monaco-workbench .part.titlebar .sidex-profile-button {
-	display: flex;
-	align-items: center;
-	height: 24px;
-	padding: 2px 6px 2px 4px;
-	border-radius: 6px;
-	background-color: color-mix(in srgb, var(--vscode-titleBar-activeForeground, #cccccc) 8%, transparent);
-	cursor: pointer;
-	-webkit-app-region: no-drag;
-	z-index: 2500;
-	transition: background-color 100ms ease;
-	margin-left: 6px;
-	box-sizing: border-box;
-}
-
-.monaco-workbench .part.titlebar .sidex-profile-button:hover {
-	background-color: color-mix(in srgb, var(--vscode-titleBar-activeForeground, #cccccc) 16%, transparent);
-}
-
-.monaco-workbench .part.titlebar .sidex-profile-initials {
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	width: 18px;
-	height: 18px;
-	border-radius: 4px;
-	background-color: var(--vscode-button-background, #007fd4);
-	color: var(--vscode-button-foreground, #ffffff);
-	font-size: 9px;
-	font-weight: 600;
-	user-select: none;
-	margin-right: 4px;
-}
-
-.monaco-workbench .part.titlebar .sidex-profile-chevron {
-	font-size: 10px;
-	color: var(--vscode-titleBar-activeForeground);
-	opacity: 0.6;
-}
-
-.monaco-workbench .part.titlebar .sidex-profile-button:hover .sidex-profile-chevron {
-	opacity: 0.9;
-}
 
 /* Breadcrumbs are styled inside the center bar section above */
 
@@ -672,9 +628,9 @@
 	display: none !important;
 }
 
-/* Action Tool Bar Controls — hidden in Sidex (we use custom titlebar buttons) */
+/* Action Tool Bar Controls (layout controls) */
 .monaco-workbench .part.titlebar > .titlebar-container > .titlebar-right > .action-toolbar-container {
-	display: none !important;
+	display: flex;
 }
 
 .monaco-workbench .part.titlebar > .titlebar-container > .titlebar-right > .action-toolbar-container .codicon {

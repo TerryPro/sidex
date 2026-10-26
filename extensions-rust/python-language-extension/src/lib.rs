@@ -188,7 +188,14 @@ impl SidexExtension for PythonLanguageExtension {
     fn provide_type_hierarchy_subtypes(_: DocumentContext, _: Position) -> Vec<DocumentSymbol> { vec![] }
     fn provide_type_hierarchy_supertypes(_: DocumentContext, _: Position) -> Vec<DocumentSymbol> { vec![] }
     fn provide_linked_editing_ranges(_: DocumentContext, _: Position) -> Vec<Range> { vec![] }
-    fn on_document_opened(_: DocumentContext) {}
+    fn on_document_opened(ctx: DocumentContext) {
+        if ctx.language_id != "python" {
+            return;
+        }
+        // Starting the server on open lets pyright register the file, which is
+        // what makes it push diagnostics.
+        let _ = lsp_request(SERVER, CMD, "textDocument/diagnostic", &ctx, None);
+    }
     fn on_document_closed(_: DocumentContext) {}
     fn on_document_changed(_: DocumentContext, _: Vec<TextEdit>) {}
     fn on_document_saved(_: DocumentContext, _: u32) {}
@@ -416,6 +423,7 @@ fn parse_lsp_symbols(json: &str) -> Option<Vec<DocumentSymbol>> {
                     kind,
                     range,
                     selection_range: range,
+                    depth: 0,
                 });
             }
             pos = next;

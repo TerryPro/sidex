@@ -4,6 +4,7 @@ members = [
   "cpp-language-extension",
   "css-language-extension",
   "go-language-extension",
+  "markdown-language-extension",
   "merge-conflict-extension",
   "python-language-extension",
   "rust-language-extension",

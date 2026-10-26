@@ -342,6 +342,12 @@ export async function wasmProvideFormattingAll(
   return invoke<any>('wasm_provide_formatting_all', { uri, languageId, version, tabSize, insertSpaces });
 }
 
+export async function wasmProvideDocumentLinksAll(
+  uri: string, languageId: string, version: number,
+): Promise<any> {
+  return invoke<any>('wasm_provide_document_links_all', { uri, languageId, version });
+}
+
 export async function wasmProvideReferencesAll(
   uri: string, languageId: string, version: number, line: number, character: number,
 ): Promise<any> {

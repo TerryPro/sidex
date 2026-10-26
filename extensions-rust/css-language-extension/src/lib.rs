@@ -291,7 +291,14 @@ impl SidexExtension for CssLanguageExtension {
     fn provide_type_hierarchy_subtypes(_: DocumentContext, _: Position) -> Vec<DocumentSymbol> { vec![] }
     fn provide_type_hierarchy_supertypes(_: DocumentContext, _: Position) -> Vec<DocumentSymbol> { vec![] }
     fn provide_linked_editing_ranges(_: DocumentContext, _: Position) -> Vec<Range> { vec![] }
-    fn on_document_opened(_: DocumentContext) {}
+    fn on_document_opened(ctx: DocumentContext) {
+        if !matches!(ctx.language_id.as_str(), "css" | "scss" | "less") {
+            return;
+        }
+        // Starting the server on open lets it register the file, which is what
+        // makes it push diagnostics.
+        let _ = lsp_request("textDocument/diagnostic", &ctx, None, "");
+    }
     fn on_document_closed(_: DocumentContext) {}
     fn on_document_changed(_: DocumentContext, _: Vec<TextEdit>) {}
     fn on_document_saved(_: DocumentContext, _: u32) {}
@@ -561,6 +568,7 @@ fn parse_lsp_symbols(json: &str) -> Option<Vec<DocumentSymbol>> {
                     start: Position { line, character: 0 },
                     end: Position { line, character: 0 },
                 },
+                depth: 0,
             });
             s = &s[np + 7..];
         } else {

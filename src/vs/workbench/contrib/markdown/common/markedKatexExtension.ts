@@ -85,6 +85,12 @@ export namespace MarkedKatexExtension {
 			tokenizer(src: string, _tokens: marked.Token[]) {
 				const match = src.match(ruleReg);
 				if (match) {
+					// The rule allows a single preceding character. Let inline code spans and
+					// escaped dollars keep their own tokens instead of swallowing them here.
+					const leading = match[0][0];
+					if (leading === '`' || leading === '\\') {
+						return;
+					}
 					return {
 						type: 'inlineKatex',
 						raw: match[0],

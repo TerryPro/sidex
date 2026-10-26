@@ -92,6 +92,7 @@ interface common-types {
         kind: u32,
         range: range,
         selection-range: range,
+        depth: u32,
     }
 
     record code-action {

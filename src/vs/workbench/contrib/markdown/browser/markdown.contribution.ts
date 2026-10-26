@@ -24,6 +24,9 @@ import { KeybindingWeight, KeybindingsRegistry } from '../../../../platform/keyb
 import { KeyChord, KeyCode, KeyMod } from '../../../../base/common/keyCodes.js';
 import { Codicon } from '../../../../base/common/codicons.js';
 import { localize } from '../../../../nls.js';
+import { ICodeEditorService } from '../../../../editor/browser/services/codeEditorService.js';
+import { Selection } from '../../../../editor/common/core/selection.js';
+import type { ICodeEditor } from '../../../../editor/browser/editorBrowser.js';
 
 let _previewManager: MarkdownPreviewManager | undefined;
 
@@ -179,4 +182,68 @@ KeybindingsRegistry.registerKeybindingRule({
 	weight: KeybindingWeight.WorkbenchContrib,
 	primary: KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.KeyV,
 	when: markdownWhen
+});
+
+const markdownEditorFocusWhen = ContextKeyExpr.and(
+	ContextKeyExpr.equals('editorLangId', 'markdown'),
+	ContextKeyExpr.equals('editorTextFocus', true)
+);
+
+/** Wraps the selection (or inserts an empty pair) with the given markers. */
+function wrapSelection(editor: ICodeEditor | null, marker: string): void {
+	const model = editor?.getModel();
+	const selection = editor?.getSelection();
+	if (!editor || !model || !selection) {
+		return;
+	}
+
+	const selected = model.getValueInRange(selection);
+	if (selected.length === 0) {
+		const column = selection.startColumn + marker.length;
+		editor.executeEdits('markdown', [{ range: selection, text: marker + marker }], [
+			new Selection(selection.startLineNumber, column, selection.startLineNumber, column)
+		]);
+	} else {
+		editor.executeEdits('markdown', [{ range: selection, text: marker + selected + marker }]);
+	}
+	editor.focus();
+}
+
+CommandsRegistry.registerCommand('markdown.toggleBold', accessor => {
+	wrapSelection(accessor.get(ICodeEditorService).getActiveCodeEditor(), '**');
+});
+
+CommandsRegistry.registerCommand('markdown.toggleItalic', accessor => {
+	wrapSelection(accessor.get(ICodeEditorService).getActiveCodeEditor(), '*');
+});
+
+CommandsRegistry.registerCommand('markdown.toggleInlineCode', accessor => {
+	wrapSelection(accessor.get(ICodeEditorService).getActiveCodeEditor(), '`');
+});
+
+MenuRegistry.appendMenuItem(MenuId.CommandPalette, {
+	command: { id: 'markdown.toggleBold', title: localize('markdown.toggleBold', 'Markdown: 切换粗体') },
+	when: markdownWhen
+});
+MenuRegistry.appendMenuItem(MenuId.CommandPalette, {
+	command: { id: 'markdown.toggleItalic', title: localize('markdown.toggleItalic', 'Markdown: 切换斜体') },
+	when: markdownWhen
+});
+MenuRegistry.appendMenuItem(MenuId.CommandPalette, {
+	command: { id: 'markdown.toggleInlineCode', title: localize('markdown.toggleInlineCode', 'Markdown: 切换行内代码') },
+	when: markdownWhen
+});
+
+KeybindingsRegistry.registerKeybindingRule({
+	id: 'markdown.toggleBold',
+	weight: KeybindingWeight.WorkbenchContrib,
+	primary: KeyMod.CtrlCmd | KeyCode.KeyB,
+	when: markdownEditorFocusWhen
+});
+
+KeybindingsRegistry.registerKeybindingRule({
+	id: 'markdown.toggleItalic',
+	weight: KeybindingWeight.WorkbenchContrib,
+	primary: KeyMod.CtrlCmd | KeyCode.KeyI,
+	when: markdownEditorFocusWhen
 });

@@ -141,7 +141,10 @@ impl TsServerProcess {
         self.stdin.write_all(b"\n").ok()?;
         self.stdin.flush().ok()?;
 
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(8);
+        // `navtree` has to wait for tsserver to finish loading the project the first
+        // time a file is opened, which regularly exceeds the interactive budget.
+        let timeout = if command == "navtree" { 20 } else { 8 };
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(timeout);
 
         loop {
             if std::time::Instant::now() > deadline {
@@ -410,6 +413,10 @@ fn decode_uri(uri: &str) -> String {
 
 impl Drop for LspServerProcess {
     fn drop(&mut self) {
+        // Kill before reading stderr: reading a live child's stderr blocks until
+        // it exits, and callers usually hold the runtime lock while dropping.
+        let _ = self.child.kill();
+        let _ = self.child.wait();
         if let Some(mut stderr) = self.child.stderr.take() {
             use std::io::Read;
             let mut buf = String::new();
@@ -420,7 +427,6 @@ impl Drop for LspServerProcess {
                 }
             }
         }
-        let _ = self.child.kill();
         log::info!("[lsp:{}] killed", self.server_name);
     }
 }
@@ -669,8 +675,50 @@ struct DocumentData {
     language_id: String,
 }
 
-fn uri_to_path(uri: &str) -> &str {
-    uri.strip_prefix("file://").unwrap_or(uri)
+fn percent_decode(input: &str) -> String {
+    let bytes = input.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'%'
+            && bytes.get(index + 1).is_some_and(u8::is_ascii_hexdigit)
+            && bytes.get(index + 2).is_some_and(u8::is_ascii_hexdigit)
+        {
+            if let Ok(value) = u8::from_str_radix(&input[index + 1..index + 3], 16) {
+                out.push(value);
+                index += 3;
+                continue;
+            }
+        }
+        out.push(bytes[index]);
+        index += 1;
+    }
+    String::from_utf8_lossy(&out).to_string()
+}
+
+fn uri_to_path(uri: &str) -> String {
+    let raw = uri.strip_prefix("file://").unwrap_or(uri);
+    let decoded = percent_decode(raw);
+    // Windows file URIs look like "/c:/Users/..." — drop the leading slash.
+    let bytes = decoded.as_bytes();
+    if bytes.len() >= 3 && bytes[0] == b'/' && bytes[2] == b':' {
+        return decoded[1..].to_string();
+    }
+    decoded
+}
+
+/// Inverse of [`uri_to_path`]: builds the URI the workbench uses for a file path.
+fn path_to_file_uri(path: &str) -> String {
+    let normalized = path.replace('\\', "/");
+    let mut encoded = String::with_capacity(normalized.len() + 8);
+    for (index, ch) in normalized.chars().enumerate() {
+        if ch == ':' && index == 1 {
+            encoded.push_str("%3A");
+        } else {
+            encoded.push(ch);
+        }
+    }
+    format!("file:///{encoded}")
 }
 
 fn is_within_workspace(path: &str, workspace_folders: &[String]) -> bool {
@@ -684,7 +732,7 @@ fn is_within_workspace(path: &str, workspace_folders: &[String]) -> bool {
 }
 
 fn require_workspace_path(uri: &str, workspace_folders: &[String]) -> Result<String, String> {
-    let path = uri_to_path(uri).to_string();
+    let path = uri_to_path(uri);
     if !is_within_workspace(&path, workspace_folders) {
         return Err("access denied: path is outside workspace".to_string());
     }
@@ -863,7 +911,7 @@ impl wit_bindings::sidex::extension::host_api::Host for WasmHostState {
     fn stat_file(&mut self, uri: String) -> Result<wit_types::FileStat, String> {
         use std::time::UNIX_EPOCH;
         let path = uri_to_path(&uri);
-        let meta = std::fs::metadata(path).map_err(|e| e.to_string())?;
+        let meta = std::fs::metadata(&path).map_err(|e| e.to_string())?;
         let ctime = meta
             .created()
             .ok()
@@ -891,7 +939,7 @@ impl wit_bindings::sidex::extension::host_api::Host for WasmHostState {
 
     fn list_dir(&mut self, uri: String) -> Result<Vec<String>, String> {
         let path = uri_to_path(&uri);
-        let entries = std::fs::read_dir(path).map_err(|e| e.to_string())?;
+        let entries = std::fs::read_dir(&path).map_err(|e| e.to_string())?;
         Ok(entries
             .flatten()
             .map(|e| e.file_name().to_string_lossy().to_string())
@@ -1145,7 +1193,7 @@ impl wit_bindings::sidex::extension::host_api::Host for WasmHostState {
     }
     fn list_dir_with_types(&mut self, uri: String) -> Result<Vec<(String, u32)>, String> {
         let path = uri_to_path(&uri);
-        let entries = std::fs::read_dir(path).map_err(|e| e.to_string())?;
+        let entries = std::fs::read_dir(&path).map_err(|e| e.to_string())?;
         Ok(entries
             .flatten()
             .map(|e| {
@@ -1970,7 +2018,7 @@ impl WasmHostState {
         let uri = if file.starts_with('/') {
             format!("file://{file}")
         } else {
-            file.to_string()
+            path_to_file_uri(file)
         };
         let (content, script_kind) = if let Some(doc) = self.documents.get(&uri) {
             let kind = if doc.language_id.contains("react") {
@@ -2060,8 +2108,13 @@ impl WasmHostState {
                             &format!("/usr/bin/{cmd}"),
                         ],
                     )
-                })
-                .ok_or_else(|| format!("lsp: {cmd} binary not found"))?;
+                });
+            let Some(binary) = binary else {
+                // Extensions ignore this error, so log it: a missing server is the
+                // usual reason a language shows no features at all.
+                log::warn!("[lsp:{server_name}] binary not found: {cmd}");
+                return Err(format!("lsp: {cmd} binary not found"));
+            };
 
             let cargo_dir = env!("CARGO_MANIFEST_DIR");
             let resolved_args: Vec<String> = extra_args
@@ -2307,6 +2360,8 @@ struct WasmRuntimeState {
     manifests: HashMap<String, ExtensionManifest>,
     shared_documents: HashMap<String, DocumentData>,
     shared_workspace_folders: Vec<String>,
+    /// Document symbols per `(uri, version)`, so outline refreshes are cheap.
+    symbol_cache: HashMap<(String, u32), Vec<serde_json::Value>>,
 }
 
 /// Activation events that should fire as soon as the workbench is up.
@@ -2348,6 +2403,7 @@ impl WasmExtensionRuntime {
                 manifests: HashMap::new(),
                 shared_documents: HashMap::new(),
                 shared_workspace_folders: Vec::new(),
+                symbol_cache: HashMap::new(),
             }),
         })
     }
@@ -2746,6 +2802,40 @@ fn serialize_location(l: &wit_types::Location) -> serde_json::Value {
         "uri": l.uri,
         "range": serialize_range(&l.range),
     })
+}
+
+/// Extensions return a flat list where each entry knows its depth (WIT cannot
+/// describe recursive records). Rebuild the tree the workbench expects.
+fn serialize_document_symbols(symbols: &[(u32, serde_json::Value)]) -> Vec<serde_json::Value> {
+    fn build(
+        symbols: &[(u32, serde_json::Value)],
+        index: &mut usize,
+        depth: u32,
+        out: &mut Vec<serde_json::Value>,
+    ) {
+        while *index < symbols.len() {
+            let (symbol_depth, ref_value) = &symbols[*index];
+            if *symbol_depth < depth {
+                return;
+            }
+            *index += 1;
+            let mut node = ref_value.clone();
+            let mut children = Vec::new();
+            build(symbols, index, symbol_depth + 1, &mut children);
+            if let Some(object) = node.as_object_mut() {
+                object.insert("children".to_string(), serde_json::Value::Array(children));
+            }
+            out.push(node);
+        }
+    }
+
+    let mut out = Vec::new();
+    let mut index = 0;
+    // Start at the shallowest depth the provider reported, so files whose outline
+    // starts at (for example) `H2` keep their relative indentation.
+    let start_depth = symbols.first().map_or(0, |(depth, _)| *depth);
+    build(symbols, &mut index, start_depth, &mut out);
+    out
 }
 
 fn serialize_workspace_edit(edit: &wit_types::WorkspaceEdit) -> serde_json::Value {
@@ -3263,9 +3353,17 @@ pub async fn wasm_provide_document_symbols_all(
     state: State<'_, Arc<WasmExtensionRuntime>>,
 ) -> Result<Vec<serde_json::Value>, String> {
     let mut guard = state.inner.lock().map_err(|e| e.to_string())?;
+
+    // The outline refreshes on every editor switch; keep the last result per
+    // document version so repeated refreshes do not hit tsserver again.
+    let cache_key = (uri.clone(), version);
+    if let Some(cached) = guard.symbol_cache.get(&cache_key) {
+        return Ok(cached.clone());
+    }
+
     let ctx = make_doc_ctx(&uri, &language_id, version);
 
-    let mut all_symbols = Vec::new();
+    let mut flat: Vec<(u32, serde_json::Value)> = Vec::new();
     let ext_ids: Vec<String> = guard.extensions.keys().cloned().collect();
     for ext_id in &ext_ids {
         if let Some(ext) = guard.extensions.get_mut(ext_id) {
@@ -3276,13 +3374,16 @@ pub async fn wasm_provide_document_symbols_all(
             {
                 Ok(symbols) => {
                     for s in &symbols {
-                        all_symbols.push(serde_json::json!({
-                            "name": s.name,
-                            "detail": s.detail,
-                            "kind": s.kind,
-                            "range": serialize_range(&s.range),
-                            "selectionRange": serialize_range(&s.selection_range),
-                        }));
+                        flat.push((
+                            s.depth,
+                            serde_json::json!({
+                                "name": s.name,
+                                "detail": s.detail,
+                                "kind": s.kind,
+                                "range": serialize_range(&s.range),
+                                "selectionRange": serialize_range(&s.selection_range),
+                            }),
+                        ));
                     }
                 }
                 Err(e) => {
@@ -3290,6 +3391,17 @@ pub async fn wasm_provide_document_symbols_all(
                 }
             }
         }
+    }
+
+    let all_symbols = serialize_document_symbols(&flat);
+
+    // Only cache real results: an empty answer may just mean the language
+    // extension has not been activated yet.
+    if !all_symbols.is_empty() {
+        if guard.symbol_cache.len() > 32 {
+            guard.symbol_cache.clear();
+        }
+        guard.symbol_cache.insert(cache_key, all_symbols.clone());
     }
     Ok(all_symbols)
 }

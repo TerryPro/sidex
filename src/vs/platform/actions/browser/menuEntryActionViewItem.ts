@@ -349,10 +349,15 @@ export class MenuEntryActionViewItem<
 			return;
 		}
 
-		const icon =
+		const toggledIcon =
 			this._commandAction.checked && isICommandActionToggleInfo(item.toggled) && item.toggled.icon
 				? item.toggled.icon
-				: item.icon;
+				: undefined;
+		// Alternate actions (shown while Alt is held) usually have no icon of
+		// their own; falling back to the primary icon keeps the button visible
+		// instead of blanking it for the duration of the key press.
+		const fallbackIcon = item !== this._menuItemAction.item ? this._menuItemAction.item.icon : undefined;
+		const icon = toggledIcon ?? item.icon ?? fallbackIcon;
 
 		if (!icon) {
 			return;

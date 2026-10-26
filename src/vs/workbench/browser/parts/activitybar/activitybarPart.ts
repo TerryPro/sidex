@@ -191,7 +191,9 @@ export class ActivitybarPart extends Part {
 			},
 			Parts.ACTIVITYBAR_PART,
 			this.paneCompositePart,
-			false
+			// Render the global activities (Accounts/Manage gear) at the bottom,
+			// like VS Code does.
+			true
 		);
 	}
 

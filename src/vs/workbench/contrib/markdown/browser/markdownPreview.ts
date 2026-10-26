@@ -21,6 +21,10 @@ import { ILanguageService } from '../../../../editor/common/languages/language.j
 import { tokenizeToString } from '../../../../editor/common/languages/textToHtmlTokenizer.js';
 import { DEFAULT_MARKDOWN_STYLES } from './markdownDocumentRenderer.js';
 import { markedGfmHeadingIdPlugin } from './markedGfmHeadingIdPlugin.js';
+import { MarkedKatexSupport } from './markedKatexSupport.js';
+import { MarkedKatexExtension } from '../common/markedKatexExtension.js';
+import { escapeHtml, renderMermaid } from './mermaidRenderer.js';
+import katexStyles from 'katex/dist/katex.min.css?inline';
 import { sanitizeHtml } from '../../../../base/browser/domSanitize.js';
 import { allowedMarkdownHtmlAttributes, allowedMarkdownHtmlTags } from '../../../../base/browser/markdownRenderer.js';
 import { Schemas } from '../../../../base/common/network.js';
@@ -101,14 +105,21 @@ function rewriteImageSrcs(html: string, baseDir: URI): string {
 }
 
 function sanitize(html: string): string {
+	const katexConfig = MarkedKatexSupport.getSanitizerOptions({
+		allowedTags: allowedMarkdownHtmlTags,
+		allowedAttributes: allowedMarkdownHtmlAttributes
+	});
 	return sanitizeHtml(html, {
 		allowedLinkProtocols: { override: [Schemas.http, Schemas.https, Schemas.file] },
 		allowRelativeLinkPaths: true,
 		allowedMediaProtocols: { override: [Schemas.http, Schemas.https, Schemas.data, Schemas.file] },
 		allowRelativeMediaPaths: true,
-		allowedTags: { override: allowedMarkdownHtmlTags },
+		allowedTags: katexConfig.allowedTags,
 		allowedAttributes: {
-			override: [...allowedMarkdownHtmlAttributes, 'name', 'id', 'class', 'role', 'tabindex', 'placeholder']
+			override: [
+				...katexConfig.allowedAttributes!.override,
+				'name', 'id', 'role', 'tabindex', 'placeholder'
+			]
 		}
 	}).toString();
 }
@@ -121,6 +132,8 @@ function sanitize(html: string): string {
 function markedHighlight(options: {
 	async: boolean;
 	highlight: (code: string, lang: string) => Promise<string>;
+	/** Turns a diagram source into a placeholder token that is expanded after sanitizing. */
+	diagram?: (code: string) => string;
 }): marked.MarkedExtension {
 	return {
 		async: options.async,
@@ -133,6 +146,11 @@ function markedHighlight(options: {
 			if (typeof lang !== 'string') {
 				return;
 			}
+			if (options.diagram && lang.trim().toLowerCase() === 'mermaid') {
+				codeToken.text = options.diagram(codeToken.text);
+				codeToken.escaped = true;
+				return;
+			}
 			return options.highlight(codeToken.text, lang).then(html => {
 				codeToken.text = html;
 				codeToken.escaped = true;
@@ -140,20 +158,38 @@ function markedHighlight(options: {
 		},
 		renderer: {
 			code({ text, lang, escaped }: marked.Tokens.Code) {
-				const classAttr = lang ? ` class="language-${escapeAttr(lang)}"` : '';
 				text = text.replace(/\n$/, '');
+				// Diagram placeholders are expanded into SVG after sanitizing.
+				if (/^SIDEXDIAGRAM\d+TOKEN$/.test(text)) {
+					return text;
+				}
+				const classAttr = lang ? ` class="language-${escapeAttr(lang)}"` : '';
 				return `<pre><code${classAttr}>${escaped ? text : escapeHtml(text)}\n</code></pre>`;
 			}
 		}
 	};
 }
 
-function escapeHtml(value: string): string {
-	return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
-
 function escapeAttr(value: string): string {
 	return escapeHtml(value).replace(/"/g, '&quot;');
+}
+
+let katexExtensionPromise: Promise<marked.MarkedExtension | undefined> | undefined;
+
+/** Lazily loads KaTeX the first time a markdown preview is rendered. */
+function loadKatexExtension(): Promise<marked.MarkedExtension | undefined> {
+	if (!katexExtensionPromise) {
+		katexExtensionPromise = import('katex')
+			.then(module => {
+				const katex = ((module as unknown as { default?: typeof import('katex') }).default ?? module) as typeof import('katex');
+				return MarkedKatexExtension.extension(katex);
+			})
+			.catch(error => {
+				console.error('[Markdown Preview] failed to load katex', error);
+				return undefined;
+			});
+	}
+	return katexExtensionPromise;
 }
 
 export class MarkdownPreviewManager extends Disposable {
@@ -328,14 +364,15 @@ export class MarkdownPreviewManager extends Disposable {
 		const baseDir = URI.joinPath(resource, '..');
 		const text = fileModel.textEditorModel.getValue();
 		const generation = ++this._renderGeneration;
+		const isLight = this._themeService.getColorTheme().type === ColorScheme.LIGHT;
 
-		this._renderMarkdown(text)
+		this._renderMarkdown(text, isLight)
 			.then(htmlBody => {
 				if (generation !== this._renderGeneration || !this._webviewInput) {
 					return;
 				}
 				const withImages = rewriteImageSrcs(htmlBody, baseDir);
-				this._webviewInput.webview.setHtml(this._buildDocument(withImages));
+				this._webviewInput.webview.setHtml(this._buildDocument(withImages, MarkdownPreviewManager._hasMath(text)));
 				this._attachScrollSync(resource);
 			})
 			.catch(error => {
@@ -343,11 +380,12 @@ export class MarkdownPreviewManager extends Disposable {
 				if (generation !== this._renderGeneration || !this._webviewInput) {
 					return;
 				}
-				this._webviewInput.webview.setHtml(this._buildDocument(`<pre>${escapeHtml(text)}</pre>`));
+				this._webviewInput.webview.setHtml(this._buildDocument(`<pre>${escapeHtml(text)}</pre>`, false));
 			});
 	}
 
-	private async _renderMarkdown(text: string): Promise<string> {
+	private async _renderMarkdown(text: string, isLight: boolean): Promise<string> {
+		const diagrams = new Map<string, string>();
 		const instance = new marked.Marked(
 			markedHighlight({
 				async: true,
@@ -358,16 +396,36 @@ export class MarkdownPreviewManager extends Disposable {
 						this._languageService.getLanguageIdByLanguageName(languageName) ??
 						null;
 					return tokenizeToString(this._languageService, code, languageId);
+				},
+				diagram: source => {
+					const token = `SIDEXDIAGRAM${diagrams.size}TOKEN`;
+					diagrams.set(token, source);
+					return token;
 				}
 			}),
 			markedGfmHeadingIdPlugin()
 		);
 
+		const katexExtension = await loadKatexExtension();
+		if (katexExtension) {
+			instance.use(katexExtension);
+		}
+
 		const raw = await instance.parse(text, { async: true }) as string;
-		return sanitize(raw);
+		let html = sanitize(raw);
+		for (const [token, source] of diagrams) {
+			const svg = await renderMermaid(source, isLight);
+			html = html.replace(token, () => svg);
+		}
+		return html;
 	}
 
-	private _buildDocument(body: string): string {
+	/** Whether the document is likely to contain `$...$` math, so the katex CSS can be skipped. */
+	private static _hasMath(text: string): boolean {
+		return /\$(?!\s)[^$\n]+\$|\$\$/.test(text);
+	}
+
+	private _buildDocument(body: string, withKatex: boolean): string {
 		const theme = this._themeService.getColorTheme();
 		const isLight = theme.type === ColorScheme.LIGHT;
 		const background = theme.getColor('editor.background')?.toString() ?? (isLight ? '#ffffff' : '#1e1e1e');
@@ -380,6 +438,7 @@ export class MarkdownPreviewManager extends Disposable {
 			|| 'Consolas, "Courier New", monospace';
 		const fontSize = this._configurationService.getValue<number>('editor.fontSize') || 14;
 		const tokenStyles = this._collectTokenStyles();
+		const katexBlock = withKatex ? `<style>${katexStyles}</style>` : '';
 
 		return `<!DOCTYPE html>
 <html>
@@ -407,6 +466,7 @@ export class MarkdownPreviewManager extends Disposable {
 	<style>${DEFAULT_MARKDOWN_STYLES}</style>
 	<style>${PREVIEW_EXTRA_STYLES}</style>
 	<style>${tokenStyles}</style>
+	${katexBlock}
 </head>
 <body class="vscode-${isLight ? 'light' : 'dark'}">${body}
 <script>${PREVIEW_SCRIPT}</script>

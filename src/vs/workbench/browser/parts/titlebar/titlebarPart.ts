@@ -57,7 +57,6 @@ import { IInstantiationService, ServicesAccessor } from '../../../../platform/in
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { IStorageService, StorageScope } from '../../../../platform/storage/common/storage.js';
 import { IUpdateService } from '../../../../platform/update/common/update.js';
-import { URI } from '../../../../base/common/uri.js';
 import {
 	Parts,
 	IWorkbenchLayoutService,
@@ -90,7 +89,7 @@ import {
 } from '../globalCompositeBar.js';
 import { HoverPosition } from '../../../../base/browser/ui/hover/hoverWidget.js';
 import { IEditorGroupsContainer, IEditorGroupsService } from '../../../services/editor/common/editorGroupsService.js';
-import { ActionRunner, IAction, Separator, toAction } from '../../../../base/common/actions.js';
+import { ActionRunner, IAction } from '../../../../base/common/actions.js';
 import { IEditorService } from '../../../services/editor/common/editorService.js';
 import {
 	ActionsOrientation,
@@ -627,42 +626,6 @@ export class BrowserTitlebarPart extends Part implements ITitlebarPart {
 			this._register(addDisposableListener(centerBar, EventType.CLICK, () => {
 				this.commandService.executeCommand('workbench.action.quickOpen');
 			}));
-
-			// Unified settings and account drop-down pill button (Cursor/Windsurf style, rounded 6px)
-			const profileButton = append(this.rightContent, $('div.sidex-profile-button'));
-			
-			// Initials container
-			append(profileButton, $('div.sidex-profile-initials')).textContent = 'U';
-			
-			// Chevron down indicator
-			const chevronSpan = append(profileButton, $('span.codicon.codicon-chevron-down.sidex-profile-chevron'));
-			chevronSpan.setAttribute('aria-hidden', 'true');
-
-			this._register(addDisposableListener(profileButton, EventType.CLICK, (e) => {
-				e.stopPropagation();
-				const actions: IAction[] = [];
-
-				// Group 2: Editor Settings
-				actions.push(toAction({ id: 'sidex.manage.settings', label: 'Editor Settings', run: () => this.commandService.executeCommand('workbench.action.openSettings') }));
-				actions.push(toAction({ id: 'sidex.manage.commandPalette', label: 'Command Palette...', run: () => this.commandService.executeCommand('workbench.action.showCommands') }));
-				actions.push(toAction({ id: 'sidex.manage.keybindings', label: 'Open Keyboard Shortcuts [⌘K ⌘S]', run: () => this.commandService.executeCommand('workbench.action.openGlobalKeybindings') }));
-				actions.push(toAction({ id: 'sidex.manage.extensions', label: 'Extensions', run: () => this.commandService.executeCommand('workbench.view.extensions') }));
-				actions.push(toAction({ id: 'sidex.manage.snippets', label: 'Configure Snippets', run: () => this.commandService.executeCommand('workbench.action.openSnippets') }));
-				actions.push(toAction({ id: 'sidex.manage.themes', label: 'Themes', run: () => this.commandService.executeCommand('workbench.action.selectTheme') }));
-
-				actions.push(new Separator());
-
-				// Group 3: Help / Info
-				actions.push(toAction({ id: 'sidex.manage.updates', label: 'Check for Updates...', run: () => this.updateService.checkForUpdates(true) }));
-				// docs.sidex.dev does not resolve; the README is the actual docs entry point until a docs site exists.
-				actions.push(toAction({ id: 'sidex.manage.docs', label: 'Docs', run: () => this.commandService.executeCommand('vscode.open', URI.parse('https://github.com/Sidenai/sidex#readme')) }));
-				actions.push(toAction({ id: 'sidex.manage.community', label: 'Join the Community', run: () => this.commandService.executeCommand('vscode.open', URI.parse('https://discord.gg/8CUCnEAC4J')) }));
-
-				this.contextMenuService.showContextMenu({
-					getAnchor: () => profileButton,
-					getActions: () => actions,
-				});
-			}));
 		} catch {
 			// Sidex customizations failed — titlebar still works with default VSCode behavior
 		}
@@ -694,10 +657,9 @@ export class BrowserTitlebarPart extends Part implements ITitlebarPart {
 			);
 		}
 
-		// Create Toolbar Actions — hidden in Sidex (we use our own minimal buttons)
+		// Create Toolbar Actions — includes the layout controls (side bar, panel, secondary side bar)
 		if (hasCustomTitlebar(this.configurationService, this.titleBarStyle)) {
 			this.actionToolBarElement = append(this.rightContent, $('div.action-toolbar-container'));
-			this.actionToolBarElement.style.display = 'none';
 			this.createActionToolBar();
 			this.createActionToolBarMenus();
 		}

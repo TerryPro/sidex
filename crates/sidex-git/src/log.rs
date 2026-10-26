@@ -67,7 +67,18 @@ pub fn get_log(repo_root: &Path, count: usize) -> GitResult<Vec<Commit>> {
 
 /// Fetch the last `count` commits that touched a specific file.
 pub fn get_file_log(repo_root: &Path, path: &Path, count: usize) -> GitResult<Vec<Commit>> {
+    get_file_log_paged(repo_root, path, count, 0)
+}
+
+/// Fetch `count` commits that touched a specific file, skipping the first `skip` ones.
+pub fn get_file_log_paged(
+    repo_root: &Path,
+    path: &Path,
+    count: usize,
+    skip: usize,
+) -> GitResult<Vec<Commit>> {
     let limit = format!("-{count}");
+    let skip_arg = format!("--skip={skip}");
     let path_str = path.to_string_lossy();
     let output = run_git(
         repo_root,
@@ -75,6 +86,7 @@ pub fn get_file_log(repo_root: &Path, path: &Path, count: usize) -> GitResult<Ve
             "log",
             "--format=%H%n%h%n%an%n%aI%n%s",
             &limit,
+            &skip_arg,
             "--",
             &path_str,
         ],

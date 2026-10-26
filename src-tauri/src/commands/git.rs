@@ -137,6 +137,47 @@ pub async fn git_log(path: String, limit: Option<u32>) -> Result<Vec<GitLogEntry
     Ok(entries)
 }
 
+/// Commit history for a single file — backs the Timeline view.
+#[tauri::command]
+pub async fn git_file_log(
+    path: String,
+    file: String,
+    limit: Option<u32>,
+    skip: Option<u32>,
+) -> Result<Vec<GitLogEntry>, String> {
+    validate_path(&path)?;
+    let repo = Path::new(&path);
+    let requested = Path::new(&file);
+    let relative = if requested.is_absolute() {
+        requested
+            .strip_prefix(repo)
+            .map_or_else(|_| requested.to_path_buf(), Path::to_path_buf)
+    } else {
+        requested.to_path_buf()
+    };
+    // `git log -- <path>` expects forward slashes, also on Windows.
+    let path_str = relative.to_string_lossy().replace('\\', "/");
+    let count = limit.unwrap_or(50) as usize;
+
+    let commits = sidex_git::log::get_file_log_paged(repo, Path::new(&path_str), count, skip.unwrap_or(0) as usize)
+        .map_err(git_err)?;
+
+    Ok(commits
+        .into_iter()
+        .map(|c| GitLogEntry {
+            hash: c.hash,
+            message: c.message,
+            author: c.author,
+            date: c.date,
+            parent_hashes: None,
+            email: None,
+            files_changed: None,
+            insertions: None,
+            deletions: None,
+        })
+        .collect())
+}
+
 #[tauri::command]
 pub async fn git_add(path: String, files: Vec<String>) -> Result<(), String> {
     validate_path(&path)?;

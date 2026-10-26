@@ -402,6 +402,7 @@ fn parse_lsp_symbols(json: &str) -> Option<Vec<DocumentSymbol>> {
                     start: Position { line, character: 0 },
                     end: Position { line, character: 0 },
                 },
+                depth: 0,
             });
             search = &search[name_pos + 7..];
         } else {
