@@ -251,11 +251,9 @@ import './contrib/terminal/terminal.all.js';
 // External terminal
 import './contrib/externalTerminal/browser/externalTerminal.contribution.js';
 
-// Tasks
-import './contrib/tasks/browser/task.contribution.js';
-
 // Markdown
 import './contrib/markdown/browser/markdown.contribution.js';
+import './contrib/rustExtensions/browser/rustExtensions.contribution.js';
 
 // Keybindings Contributions
 import './contrib/keybindings/browser/keybindings.contribution.js';

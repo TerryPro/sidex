@@ -62,9 +62,21 @@ const sidexTranslations: Record<string, Translations> = {
 	}
 };
 
+const documentLanguageByLocale: Record<string, string> = {
+	'zh-cn': 'zh-Hans',
+	'zh-tw': 'zh-Hant'
+};
+
+function applyDocumentLanguage(locale: string | null): void {
+	const normalized = (locale || 'en').toLowerCase();
+	document.documentElement.lang = documentLanguageByLocale[normalized] ?? normalized;
+}
+
 export async function loadNlsMessages(): Promise<void> {
 	const locale = localStorage.getItem('vscode.nls.locale');
 	console.log('[SideX NLS] locale from localStorage:', locale);
+
+	applyDocumentLanguage(locale);
 
 	if (!locale || locale.toLowerCase().startsWith('en')) {
 		return;

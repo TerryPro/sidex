@@ -327,7 +327,14 @@ class FileAccessImpl {
 
 		if (uri.scheme === Schemas.file && (globalThis as any).__SIDEX_TAURI__) {
 			const encoded = encodeURIComponent(uri.fsPath);
-			return URI.parse(`sidex-asset://localhost/${encoded}`);
+			// Tauri serves custom protocols on Windows through `https://<scheme>.localhost`
+			// (the webview runs with `useHttpsScheme`), while other platforms use
+			// `<scheme>://localhost`.
+			return URI.parse(
+				platform.isWindows
+					? `https://sidex-asset.localhost/${encoded}`
+					: `sidex-asset://localhost/${encoded}`
+			);
 		}
 
 		// Convert to `vscode-file` resource..

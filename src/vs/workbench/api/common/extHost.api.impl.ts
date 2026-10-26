@@ -81,7 +81,6 @@ import { ExtHostBrowsers } from './extHostBrowsers.js';
 import { ExtHostStatusBar } from './extHostStatusBar.js';
 import { IExtHostStorage } from './extHostStorage.js';
 import { IExtensionStoragePaths } from './extHostStoragePaths.js';
-import { IExtHostTask } from './extHostTask.js';
 import { ExtHostTelemetryLogger, IExtHostTelemetry, isNewAppInstall } from './extHostTelemetry.js';
 import { IExtHostTerminalService } from './extHostTerminalService.js';
 import { IExtHostTerminalShellIntegration } from './extHostTerminalShellIntegration.js';
@@ -183,7 +182,6 @@ export function createApiFactoryAndRegisterActors(accessor: ServicesAccessor): I
 		accessor.get(IExtHostTerminalShellIntegration)
 	);
 	const extHostSearch = rpcProtocol.set(ExtHostContext.ExtHostSearch, accessor.get(IExtHostSearch));
-	const extHostTask = rpcProtocol.set(ExtHostContext.ExtHostTask, accessor.get(IExtHostTask));
 	const extHostOutputService = rpcProtocol.set(
 		ExtHostContext.ExtHostOutputService,
 		accessor.get(IExtHostOutputService)
@@ -1650,15 +1648,6 @@ export function createApiFactoryAndRegisterActors(accessor: ServicesAccessor): I
 			registerTextDocumentContentProvider(scheme: string, provider: vscode.TextDocumentContentProvider) {
 				return extHostDocumentContentProviders.registerTextDocumentContentProvider(scheme, provider);
 			},
-			registerTaskProvider: (type: string, provider: vscode.TaskProvider) => {
-				extHostApiDeprecation.report(
-					'window.registerTaskProvider',
-					extension,
-					`Use the corresponding function on the 'tasks' namespace instead`
-				);
-
-				return extHostTask.registerTaskProvider(extension, type, provider);
-			},
 			registerFileSystemProvider(scheme, provider, options) {
 				return combinedDisposable(
 					extHostFileSystem.registerFileSystemProvider(extension, scheme, provider, options),
@@ -1864,53 +1853,6 @@ export function createApiFactoryAndRegisterActors(accessor: ServicesAccessor): I
 			}
 		};
 
-		const tasks: typeof vscode.tasks & Record<string, any> = {
-			registerTaskProvider: (type: string, provider: vscode.TaskProvider) => {
-				return extHostTask.registerTaskProvider(extension, type, provider);
-			},
-			fetchTasks: (filter?: vscode.TaskFilter): Thenable<vscode.Task[]> => {
-				return extHostTask.fetchTasks(filter);
-			},
-			executeTask: (task: vscode.Task): Thenable<vscode.TaskExecution> => {
-				return extHostTask.executeTask(extension, task);
-			},
-			get taskExecutions(): vscode.TaskExecution[] {
-				return extHostTask.taskExecutions;
-			},
-			onDidStartTask: (listener: (e: vscode.TaskStartEvent) => any, thisArgs?: any, disposables?) => {
-				const wrappedListener = (event: vscode.TaskStartEvent) => {
-					if (!isProposedApiEnabled(extension, 'taskExecutionTerminal')) {
-						if ((event?.execution as any)?.terminal !== undefined) {
-							(event.execution as any).terminal = undefined;
-						}
-					}
-					const eventWithExecution = {
-						...event,
-						execution: event.execution
-					};
-					return listener.call(thisArgs, eventWithExecution);
-				};
-				return _asExtensionEvent(extHostTask.onDidStartTask)(wrappedListener, thisArgs, disposables);
-			},
-			onDidEndTask: (listeners, thisArgs?, disposables?) => {
-				return _asExtensionEvent(extHostTask.onDidEndTask)(listeners, thisArgs, disposables);
-			},
-			onDidStartTaskProcess: (listeners, thisArgs?, disposables?) => {
-				return _asExtensionEvent(extHostTask.onDidStartTaskProcess)(listeners, thisArgs, disposables);
-			},
-			onDidEndTaskProcess: (listeners, thisArgs?, disposables?) => {
-				return _asExtensionEvent(extHostTask.onDidEndTaskProcess)(listeners, thisArgs, disposables);
-			},
-			onDidStartTaskProblemMatchers: (listeners, thisArgs?, disposables?) => {
-				checkProposedApiEnabled(extension, 'taskProblemMatcherStatus');
-				return _asExtensionEvent(extHostTask.onDidStartTaskProblemMatchers)(listeners, thisArgs, disposables);
-			},
-			onDidEndTaskProblemMatchers: (listeners, thisArgs?, disposables?) => {
-				checkProposedApiEnabled(extension, 'taskProblemMatcherStatus');
-				return _asExtensionEvent(extHostTask.onDidEndTaskProblemMatchers)(listeners, thisArgs, disposables);
-			}
-		};
-
 		// namespace: l10n
 		const l10n: typeof vscode.l10n = {
 			t(
@@ -1958,7 +1900,6 @@ export function createApiFactoryAndRegisterActors(accessor: ServicesAccessor): I
 			l10n,
 			languages,
 			scm,
-			tasks,
 			window,
 			workspace,
 			// types
@@ -1989,7 +1930,6 @@ export function createApiFactoryAndRegisterActors(accessor: ServicesAccessor): I
 			CompletionList: extHostTypes.CompletionList,
 			CompletionTriggerKind: extHostTypes.CompletionTriggerKind,
 			ConfigurationTarget: extHostTypes.ConfigurationTarget,
-			CustomExecution: extHostTypes.CustomExecution,
 			DecorationRangeBehavior: extHostTypes.DecorationRangeBehavior,
 			Diagnostic: extHostTypes.Diagnostic,
 			DiagnosticRelatedInformation: extHostTypes.DiagnosticRelatedInformation,
@@ -2033,7 +1973,6 @@ export function createApiFactoryAndRegisterActors(accessor: ServicesAccessor): I
 			ParameterInformation: extHostTypes.ParameterInformation,
 			PortAutoForwardAction: extHostTypes.PortAutoForwardAction,
 			Position: extHostTypes.Position,
-			ProcessExecution: extHostTypes.ProcessExecution,
 			ProgressLocation: extHostTypes.ProgressLocation,
 			QuickInputButtonLocation: extHostTypes.QuickInputButtonLocation,
 			QuickInputButtons: extHostTypes.QuickInputButtons,
@@ -2046,8 +1985,6 @@ export function createApiFactoryAndRegisterActors(accessor: ServicesAccessor): I
 			SemanticTokensEdit: extHostTypes.SemanticTokensEdit,
 			SemanticTokensEdits: extHostTypes.SemanticTokensEdits,
 			SemanticTokensLegend: extHostTypes.SemanticTokensLegend,
-			ShellExecution: extHostTypes.ShellExecution,
-			ShellQuoting: extHostTypes.ShellQuoting,
 			SignatureHelp: extHostTypes.SignatureHelp,
 			SignatureHelpTriggerKind: extHostTypes.SignatureHelpTriggerKind,
 			SignatureInformation: extHostTypes.SignatureInformation,
@@ -2057,13 +1994,6 @@ export function createApiFactoryAndRegisterActors(accessor: ServicesAccessor): I
 			SymbolInformation: extHostTypes.SymbolInformation,
 			SymbolKind: extHostTypes.SymbolKind,
 			SymbolTag: extHostTypes.SymbolTag,
-			Task: extHostTypes.Task,
-			TaskEventKind: extHostTypes.TaskEventKind,
-			TaskGroup: extHostTypes.TaskGroup,
-			TaskPanelKind: extHostTypes.TaskPanelKind,
-			TaskRevealKind: extHostTypes.TaskRevealKind,
-			TaskRunOn: extHostTypes.TaskRunOn,
-			TaskScope: extHostTypes.TaskScope,
 			TerminalLink: extHostTypes.TerminalLink,
 			TerminalQuickFixTerminalCommand: extHostTypes.TerminalQuickFixCommand,
 			TerminalQuickFixOpener: extHostTypes.TerminalQuickFixOpener,

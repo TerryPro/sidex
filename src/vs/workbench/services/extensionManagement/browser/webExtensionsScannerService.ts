@@ -863,6 +863,7 @@ export class WebExtensionsScannerService extends Disposable implements IWebExten
 			if (existing && semver.gt(existing.manifest.version, webExtension.version)) {
 				continue;
 			}
+			await this.ensureSideXLocalExtensionLocation(webExtension);
 			const extension = await this.toScannedExtension(webExtension, false);
 			if (extension.isValid || !scanOptions?.skipInvalidExtensions) {
 				result.set(extension.identifier.id.toLowerCase(), extension);
@@ -871,6 +872,31 @@ export class WebExtensionsScannerService extends Disposable implements IWebExten
 			}
 		}
 		return [...result.values()];
+	}
+
+	/**
+	 * SideX: installed extensions are also extracted to disk by the Rust extension
+	 * manager. Point the web extension at that local folder so resources (theme
+	 * SVGs, icons) are loaded through the `sidex-asset` protocol with correct MIME
+	 * types instead of the gallery CDN.
+	 */
+	private async ensureSideXLocalExtensionLocation(webExtension: IWebExtension): Promise<void> {
+		if (!(globalThis as any).__SIDEX_TAURI__ || webExtension.location.scheme === 'file') {
+			return;
+		}
+		const id = webExtension.identifier.id;
+		const dotIndex = id.indexOf('.');
+		if (dotIndex <= 0 || dotIndex >= id.length - 1) {
+			return;
+		}
+		const localLocation = await this.extensionResourceLoaderService.getExtensionGalleryResourceURL({
+			publisher: id.substring(0, dotIndex),
+			name: id.substring(dotIndex + 1),
+			version: webExtension.version
+		});
+		if (localLocation?.scheme === 'file') {
+			webExtension.location = localLocation;
+		}
 	}
 
 	private async toWebExtensionFromGallery(

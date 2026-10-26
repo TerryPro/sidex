@@ -28,6 +28,41 @@ import { Disposable } from '../../../base/common/lifecycle.js';
 
 const WEB_EXTENSION_RESOURCE_END_POINT_SEGMENT = '/web-extension-resource/';
 
+interface ISideXInstalledExtension {
+	readonly id: string;
+	readonly path: string;
+}
+
+let sidexInstalledExtensionsCache: { at: number; map: Map<string, string> } | undefined;
+
+/**
+ * SideX: extensions are installed to disk by the Rust extension manager. Resolve
+ * gallery resource URLs to that local directory so resources (themes, icon SVGs)
+ * are served through the `sidex-asset` protocol with correct MIME types instead
+ * of the gallery CDN, which serves `.svg` as `application/octet-stream`.
+ */
+async function getSideXInstalledExtensionPath(publisher: string, name: string): Promise<string | undefined> {
+	if (!(globalThis as any).__SIDEX_TAURI__) {
+		return undefined;
+	}
+	const now = Date.now();
+	if (!sidexInstalledExtensionsCache || now - sidexInstalledExtensionsCache.at > 2000) {
+		const map = new Map<string, string>();
+		try {
+			const { invoke } = await import('@tauri-apps/api/core');
+			const installed = await invoke<ISideXInstalledExtension[]>('list_installed_extensions');
+			for (const extension of installed ?? []) {
+				map.set(extension.id.toLowerCase(), extension.path);
+			}
+		} catch {
+			// The command is only available inside the desktop shell.
+		}
+		sidexInstalledExtensionsCache = { at: now, map };
+	}
+	return sidexInstalledExtensionsCache.map.get(`${publisher}.${name}`.toLowerCase());
+}
+
+
 export const IExtensionResourceLoaderService = createDecorator<IExtensionResourceLoaderService>(
 	'extensionResourceLoaderService'
 );
@@ -137,6 +172,12 @@ export abstract class AbstractExtensionResourceLoaderService
 		_path?: string
 	): Promise<URI | undefined> {
 		await this._initPromise;
+		if ((globalThis as any).__SIDEX_TAURI__) {
+			const localPath = await getSideXInstalledExtensionPath(publisher, name);
+			if (localPath) {
+				return URI.file(localPath);
+			}
+		}
 		if (this._extensionGalleryResourceUrlTemplate) {
 			const uri = URI.parse(
 				format2(this._extensionGalleryResourceUrlTemplate, {

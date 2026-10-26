@@ -654,7 +654,11 @@ export class CustomMenubarControl extends MenubarControl {
 			enableMenuBarMnemonics = true;
 		}
 
-		return enableMenuBarMnemonics && (!isWeb || isFullscreen(mainWindow));
+		// SideX runs the web build inside a desktop shell (Tauri); treat it as desktop so
+		// menu access keys like "文件(F)" render the same way as in VS Code desktop.
+		const isDesktopShell = !!(globalThis as any).__SIDEX_TAURI__;
+
+		return enableMenuBarMnemonics && (!isWeb || isFullscreen(mainWindow) || isDesktopShell);
 	}
 
 	private get currentCompactMenuMode(): IMenuDirection | undefined {

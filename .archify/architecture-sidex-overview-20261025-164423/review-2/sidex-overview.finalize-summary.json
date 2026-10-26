@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "command": "finalize",
+  "status": "pass",
+  "type": "architecture",
+  "quality": "showcase",
+  "specification": {
+    "path": "F:\\TRAEWS\\sidex\\.archify\\architecture-sidex-overview-20261025-164423\\candidate.json",
+    "sha256": "9b832d555decc59edb7ed2bc5411ad626f78e89812d65eeff91dc45c9158abbc",
+    "bytes": 9158
+  },
+  "artifact": {
+    "path": "F:\\TRAEWS\\sidex\\.archify\\architecture-sidex-overview-20261025-164423\\sidex-overview.html",
+    "sha256": "ede2f9050d5499ccdb8f6033228c91ee4f6dc94fc18366c34c89b0bd93ce85d5",
+    "bytes": 843472
+  },
+  "gates": {
+    "validate": "pass",
+    "deliver": "pass",
+    "check": "pass",
+    "browser-check": "pass"
+  },
+  "diagnostics": [],
+  "diagnosticSummary": {
+    "total": 0,
+    "shown": 0,
+    "truncated": false
+  },
+  "evidence": {
+    "receipt": "F:\\TRAEWS\\sidex\\.archify\\architecture-sidex-overview-20261025-164423\\review-2\\sidex-overview.finalize.json",
+    "summaryReceipt": "F:\\TRAEWS\\sidex\\.archify\\architecture-sidex-overview-20261025-164423\\review-2\\sidex-overview.finalize-summary.json",
+    "browserCheckReceipt": "F:\\TRAEWS\\sidex\\.archify\\architecture-sidex-overview-20261025-164423\\review-2\\sidex-overview.browser-check.json"
+  },
+  "update": {
+    "status": "current",
+    "installedVersion": "3.1.0",
+    "availableVersion": "3.1.0",
+    "releaseNotes": null,
+    "checkedAt": "2026-10-16T13:58:49.492Z",
+    "source": "cache",
+    "noticeRequired": false,
+    "noticeText": null
+  },
+  "visualReview": "not-requested",
+  "durationMs": 4341
+}

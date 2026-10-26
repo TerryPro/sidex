@@ -723,6 +723,34 @@ pub fn build_init_data(
     }
 }
 
+/// Whether any discovered extension declares an executable entry (`main` or
+/// `browser`). Only those need the Node extension host; declarative extensions
+/// (grammars, themes, language configuration) are consumed by the workbench.
+pub fn has_node_extensions(manifests: &[ExtensionManifest]) -> bool {
+    manifests
+        .iter()
+        .any(|m| m.main.is_some() || m.browser.is_some())
+}
+
+/// The Node extension host is disabled by default — SideX is Rust-first.
+/// Declarative contributions (grammars, themes, snippets, language
+/// configuration) are still loaded; only executable extension code is skipped.
+/// Set `SIDEX_NODE_EXTENSIONS=on` (or `1`/`true`) to spawn the host when an
+/// extension declares `main`/`browser`.
+pub fn node_extensions_enabled() -> bool {
+    matches!(
+        std::env::var("SIDEX_NODE_EXTENSIONS")
+            .unwrap_or_default()
+            .to_ascii_lowercase()
+            .as_str(),
+        "on" | "1" | "true" | "enabled"
+    )
+}
+
+pub fn should_start_node_host(manifests: &[ExtensionManifest]) -> bool {
+    node_extensions_enabled() && has_node_extensions(manifests)
+}
+
 #[tauri::command]
 pub async fn list_available_extensions(app: AppHandle) -> Result<Vec<ExtensionManifest>, String> {
     let paths = extension_search_paths(&app);
@@ -740,6 +768,7 @@ pub async fn extension_platform_bootstrap(
 ) -> Result<serde_json::Value, String> {
     let paths = extension_search_paths(&app);
     let manifests = scan_extensions(&app, &paths);
+    let node_extensions = should_start_node_host(&manifests);
     let descriptions = build_extension_descriptions(&manifests);
     let init_data = build_init_data(&descriptions, &[]);
     let init_data_json = serde_json::to_string(&init_data).map_err(|e| e.to_string())?;
@@ -748,9 +777,26 @@ pub async fn extension_platform_bootstrap(
         .map(|p| p.to_string_lossy().to_string())
         .collect();
 
-    let port = supervisor.ensure_started(&app, &init_data_json, &search_paths)?;
+    let port = if node_extensions {
+        Some(supervisor.ensure_started(&app, &init_data_json, &search_paths)?)
+    } else {
+        if has_node_extensions(&manifests) {
+            log::info!(
+                "[platform] Node extension host disabled (set SIDEX_NODE_EXTENSIONS=on to enable)"
+            );
+        } else {
+            log::info!(
+                "[platform] no extensions with 'main'/'browser' found — skipping Node extension host"
+            );
+        }
+        None
+    };
 
-    let node = resolve_node_runtime(&app)?;
+    let node = if node_extensions {
+        resolve_node_runtime(&app).ok()
+    } else {
+        None
+    };
 
     let wasm_manifests: Vec<ExtensionManifest> = manifests
         .iter()
@@ -760,18 +806,24 @@ pub async fn extension_platform_bootstrap(
 
     if !wasm_manifests.is_empty() {
         let runtime = wasm_runtime.inner().clone();
+        // Remember every discovered manifest so language-triggered extensions can
+        // be instantiated later without rescanning the disk.
+        runtime.register_extensions(wasm_manifests.clone());
+
         let app_handle = app.clone();
         let count = wasm_manifests.len();
-        log::info!("[platform] loading {count} WASM extensions in background");
+        log::info!(
+            "[platform] registered {count} WASM extensions, activating startup ones in background"
+        );
         std::thread::spawn(move || {
             use tauri::Emitter;
-            for manifest in &wasm_manifests {
-                if let Err(e) = runtime.load_extension(manifest) {
-                    log::warn!("[platform] failed to load WASM ext {}: {e}", manifest.id);
-                }
-            }
-            log::info!("[platform] {count} WASM extensions loaded, emitting ready event");
-            let _ = app_handle.emit("sidex-wasm-extensions-ready", count);
+            let activated = runtime
+                .activate_for_events(&crate::commands::extension_wasm::startup_activation_events());
+            log::info!(
+                "[platform] {} of {count} WASM extensions activated at startup",
+                activated.len()
+            );
+            let _ = app_handle.emit("sidex-wasm-extensions-ready", activated.len());
         });
     }
 
@@ -794,8 +846,17 @@ pub async fn extension_platform_bootstrap(
         .collect();
 
     Ok(serde_json::json!({
-        "transport": { "kind": "websocket", "endpoint": format!("ws://127.0.0.1:{port}/") },
-        "runtime": { "path": node.path, "version": node.version, "source": "system", "bundled": false },
+        "transport": {
+            "kind": "websocket",
+            "endpoint": port.map(|p| format!("ws://127.0.0.1:{p}/")).unwrap_or_default()
+        },
+        "runtime": {
+            "path": node.as_ref().map(|n| n.path.clone()).unwrap_or_default(),
+            "version": node.as_ref().and_then(|n| n.version.clone()),
+            "source": if node.is_some() { "system" } else { "none" },
+            "bundled": false
+        },
+        "nodeHost": node_extensions,
         "paths": {
             "serverScript": dunce::simplified(&resolve_server_script(&app)).to_string_lossy(),
             "builtinExtensionsDir": dunce::simplified(&resolve_builtin_extensions_dir(&app)).to_string_lossy(),
@@ -842,7 +903,11 @@ pub async fn extension_platform_restart(
         .iter()
         .map(|p| p.to_string_lossy().to_string())
         .collect();
-    let _ = supervisor.restart(&app, &init_data_json, &search_paths)?;
+    if should_start_node_host(&manifests) {
+        let _ = supervisor.restart(&app, &init_data_json, &search_paths)?;
+    } else {
+        supervisor.stop()?;
+    }
     extension_platform_status(app, supervisor).await
 }
 

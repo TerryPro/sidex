@@ -1,0 +1,267 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "SideX 架构：WASM 扩展与语言能力",
+    "locale": "zh-CN",
+    "output": ".archify/architecture-sidex-wasm-20261026-130123/sidex-architecture.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/TerryPro/sidex",
+      "provider": "github",
+      "link_mode": "web",
+      "revision": "04fa552e215acb74d1a5209c2639d29e4a92ba4a"
+    }
+  },
+  "components": [
+    {
+      "id": "user",
+      "type": "external",
+      "label": "用户",
+      "sublabel": "桌面窗口",
+      "pos": [20, 216],
+      "size": [110, 60]
+    },
+    {
+      "id": "monaco",
+      "type": "frontend",
+      "label": "Monaco 编辑器",
+      "sublabel": "令牌化 · 补全 · 标记",
+      "pos": [160, 112],
+      "size": [190, 64],
+      "sources": [
+        { "path": "src/vs/editor/editor.main.ts", "line": 6, "end_line": 16 }
+      ]
+    },
+    {
+      "id": "workbench",
+      "type": "frontend",
+      "label": "Workbench 工作台",
+      "sublabel": "布局 · 面板 · 命令面板",
+      "pos": [160, 204],
+      "size": [190, 84],
+      "sources": [
+        { "path": "src/vs/workbench/workbench.web.main.ts", "line": 14, "end_line": 28, "label": "workbench 入口" },
+        { "path": "src/vs/workbench/browser/parts/editor/editorPart.ts", "label": "编辑器分区" }
+      ]
+    },
+    {
+      "id": "extBridge",
+      "type": "frontend",
+      "label": "WASM 扩展桥",
+      "sublabel": "provider · 诊断 · 命令",
+      "pos": [160, 316],
+      "size": [190, 64],
+      "sources": [
+        { "path": "src/vs/workbench/contrib/extensions/browser/tauriExtensionHost.contribution.ts", "line": 137, "label": "扩展主机贡献" },
+        { "path": "src/vs/workbench/contrib/extensions/browser/tauriExtensionHost.contribution.ts", "line": 362, "end_line": 380, "label": "注册语言 provider" }
+      ]
+    },
+    {
+      "id": "ipc",
+      "type": "backend",
+      "label": "Tauri IPC",
+      "sublabel": "invoke() / 事件",
+      "pos": [430, 150],
+      "size": [100, 560],
+      "sources": [
+        { "path": "src/vs/sidex-bridge.ts", "line": 11, "end_line": 23 },
+        { "path": "src-tauri/src/lib.rs", "line": 625, "label": "命令注册" }
+      ]
+    },
+    {
+      "id": "extPlatform",
+      "type": "backend",
+      "label": "扩展平台",
+      "sublabel": "清单 · 安装 · 引导",
+      "pos": [590, 300],
+      "size": [180, 62],
+      "sources": [
+        { "path": "src-tauri/src/commands/extension_platform.rs", "line": 733, "label": "bootstrap" },
+        { "path": "src-tauri/src/commands/extensions.rs", "line": 64, "label": "安装 VSIX" }
+      ]
+    },
+    {
+      "id": "wasmRuntime",
+      "type": "backend",
+      "label": "WASM 运行时",
+      "sublabel": "wasmtime · WIT 组件",
+      "pos": [845, 292],
+      "size": [180, 76],
+      "sources": [
+        { "path": "src-tauri/src/commands/extension_wasm.rs", "line": 2045, "label": "WasmExtensionRuntime" },
+        { "path": "src-tauri/src/commands/extension_wasm.rs", "line": 486, "label": "WIT 组件绑定" }
+      ]
+    },
+    {
+      "id": "wasmExts",
+      "type": "backend",
+      "label": "WASM 扩展 ×7",
+      "sublabel": "rust · ts · css · go · py",
+      "pos": [1100, 300],
+      "size": [180, 62],
+      "sources": [
+        { "path": "src-tauri/src/commands/extension_wasm.rs", "line": 2083, "label": "按需加载" },
+        { "path": "extensions-rust/rust-language-extension/src/lib.rs", "line": 6, "end_line": 33, "label": "扩展激活" }
+      ]
+    },
+    {
+      "id": "lspClient",
+      "type": "backend",
+      "label": "LSP 客户端",
+      "sublabel": "读取线程 · 诊断队列",
+      "pos": [1345, 300],
+      "size": [160, 62],
+      "sources": [
+        { "path": "src-tauri/src/commands/extension_wasm.rs", "line": 207, "label": "LspServerProcess" },
+        { "path": "src-tauri/src/commands/extension_wasm.rs", "line": 1778, "label": "execute_lsp_command" }
+      ]
+    },
+    {
+      "id": "nodeHost",
+      "type": "backend",
+      "label": "Node 扩展宿主",
+      "sublabel": "host.cjs / server.cjs",
+      "tag": "默认关闭",
+      "pos": [590, 430],
+      "size": [180, 56],
+      "sources": [
+        { "path": "src-tauri/src/commands/ext_host.rs", "line": 74, "end_line": 100, "label": "ensure_started" }
+      ]
+    },
+    {
+      "id": "sysServices",
+      "type": "backend",
+      "label": "系统服务",
+      "sublabel": "fs · git · sqlite · pty",
+      "pos": [845, 480],
+      "size": [180, 58],
+      "sources": [
+        { "path": "src-tauri/src/commands/fs.rs", "line": 72 },
+        { "path": "src-tauri/src/commands/git.rs", "line": 76, "end_line": 149 },
+        { "path": "src-tauri/src/commands/watch.rs", "line": 420 }
+      ]
+    },
+    {
+      "id": "remoteSvc",
+      "type": "backend",
+      "label": "远程连接",
+      "sublabel": "SSH · WSL · 容器",
+      "pos": [845, 560],
+      "size": [180, 58],
+      "sources": [
+        { "path": "src-tauri/src/commands/remote.rs", "line": 170, "end_line": 242 }
+      ]
+    },
+    {
+      "id": "syntax",
+      "type": "backend",
+      "label": "语法与主题",
+      "sublabel": "textmate · theme",
+      "pos": [845, 640],
+      "size": [180, 56],
+      "sources": [
+        { "path": "src-tauri/src/commands/textmate.rs", "line": 117, "end_line": 187 },
+        { "path": "src-tauri/src/commands/syntax.rs", "line": 187 }
+      ]
+    },
+    {
+      "id": "market",
+      "type": "external",
+      "label": "Open VSX",
+      "sublabel": "VSIX 下载",
+      "pos": [590, 160],
+      "size": [180, 56]
+    },
+    {
+      "id": "langServers",
+      "type": "external",
+      "label": "语言服务器",
+      "sublabel": "rust-analyzer 等",
+      "pos": [1585, 300],
+      "size": [140, 62]
+    },
+    {
+      "id": "remoteHosts",
+      "type": "external",
+      "label": "远程主机",
+      "sublabel": "SSH / WSL",
+      "pos": [1585, 560],
+      "size": [140, 58]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Tauri Webview · Workbench 前端",
+      "wraps": ["monaco", "workbench", "extBridge"]
+    },
+    {
+      "kind": "region",
+      "label": "Tauri Rust 后端 · 本机能力与扩展运行时",
+      "wraps": ["extPlatform", "wasmRuntime", "wasmExts", "lspClient", "nodeHost", "sysServices", "remoteSvc", "syntax"]
+    }
+  ],
+  "connections": [
+    { "id": "user-workbench", "from": "user", "to": "workbench", "label": "使用", "fromSide": "right", "toSide": "left", "variant": "emphasis" },
+    { "id": "workbench-monaco", "from": "workbench", "to": "monaco", "fromSide": "top", "toSide": "bottom" },
+    { "id": "bridge-workbench", "from": "extBridge", "to": "workbench", "label": "provider · 诊断", "fromSide": "top", "toSide": "bottom" },
+    { "id": "workbench-ipc", "from": "workbench", "to": "ipc", "label": "invoke()", "fromSide": "right", "toSide": "left" },
+    { "id": "bridge-ipc", "from": "extBridge", "to": "ipc", "label": "provider", "fromSide": "right", "toSide": "left" },
+    { "id": "ipc-extplatform", "from": "ipc", "to": "extPlatform", "label": "引导", "fromSide": "right", "toSide": "left" },
+    { "id": "extplatform-wasm", "from": "extPlatform", "to": "wasmRuntime", "label": "按需加载", "fromSide": "right", "toSide": "left" },
+    { "id": "wasm-exts", "from": "wasmRuntime", "to": "wasmExts", "label": "激活", "fromSide": "right", "toSide": "left" },
+    { "id": "exts-lsp", "from": "wasmExts", "to": "lspClient", "label": "LSP 请求", "fromSide": "right", "toSide": "left" },
+    { "id": "lsp-langservers", "from": "lspClient", "to": "langServers", "label": "JSON-RPC", "fromSide": "right", "toSide": "left", "variant": "emphasis" },
+    { "id": "langservers-lsp", "from": "langServers", "to": "lspClient", "label": "publishDiagnostics", "fromSide": "bottom", "toSide": "bottom", "variant": "dashed", "via": [[1655, 410], [1425, 410]] },
+    { "id": "lsp-wasm", "from": "lspClient", "to": "wasmRuntime", "label": "诊断缓存", "fromSide": "bottom", "toSide": "bottom", "variant": "dashed" },
+    { "id": "extplatform-market", "from": "extPlatform", "to": "market", "label": "下载 VSIX", "fromSide": "top", "toSide": "bottom" },
+    { "id": "extplatform-node", "from": "extPlatform", "to": "nodeHost", "label": "可选启动", "fromSide": "bottom", "toSide": "top" },
+    { "id": "ipc-sys", "from": "ipc", "to": "sysServices", "label": "文件 / Git / 存储", "fromSide": "right", "toSide": "left" },
+    { "id": "ipc-remote", "from": "ipc", "to": "remoteSvc", "label": "远程连接", "fromSide": "right", "toSide": "left" },
+    { "id": "ipc-syntax", "from": "ipc", "to": "syntax", "label": "分词高亮", "fromSide": "right", "toSide": "left" },
+    { "id": "remote-hosts", "from": "remoteSvc", "to": "remoteHosts", "label": "远程执行", "fromSide": "right", "toSide": "left", "variant": "emphasis" }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "前端 · Tauri Webview",
+      "items": [
+        "Workbench 直接移植 VSCode 的布局、命令与状态栏",
+        "WASM 扩展桥注册补全、悬停、引用、重命名等语言 provider",
+        "扩展推送的诊断在这里转成 Problems 标记与波浪线",
+        "Markdown 预览、Rust 扩展视图都是本地 contribution"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Rust 后端 · 语言能力",
+      "items": [
+        "WASM 运行时用 wasmtime 组件模型，接口由 WIT 定义",
+        "LSP 客户端按扩展拉起 rust-analyzer 等子进程",
+        "后台线程读 JSON-RPC，顺带收下 publishDiagnostics",
+        "诊断经 wasm_get_diagnostics 一次性交给前端"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "扩展体系",
+      "items": [
+        "62 个内置声明式扩展负责语法、主题与语言配置",
+        "7 个 WASM 扩展按 onLanguage 事件懒激活",
+        "Node 宿主默认关闭，设 SIDEX_NODE_EXTENSIONS=on 才启动",
+        "扩展清单与 VSIX 来自 Open VSX"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "已移除的子系统",
+      "items": [
+        "AI Agent：sidexChat 面板、sidex-agent / sidex-context",
+        "调试：DAP 客户端、断点与调试控制台",
+        "测试：Test Explorer 与测试扩展 API",
+        "任务系统：tasks 面板与 npm / cargo / make 发现"
+      ]
+    }
+  ]
+}

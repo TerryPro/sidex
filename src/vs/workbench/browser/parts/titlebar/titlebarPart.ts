@@ -114,9 +114,6 @@ import { CommandsRegistry, ICommandService } from '../../../../platform/commands
 import { safeIntl } from '../../../../base/common/date.js';
 import { IsCompactTitleBarContext, TitleBarVisibleContext } from '../../../common/contextkeys.js';
 import { ServiceCollection } from '../../../../platform/instantiation/common/serviceCollection.js';
-import { ISCMViewService } from '../../../contrib/scm/common/scm.js';
-import { autorun, derived } from '../../../../base/common/observable.js';
-import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js';
 import { ILabelService } from '../../../../platform/label/common/label.js';
 
 export interface ITitleVariable {
@@ -390,8 +387,6 @@ export class BrowserTitlebarPart extends Part implements ITitlebarPart {
 
 	protected readonly instantiationService: IInstantiationService;
 
-	private projectNameElement: HTMLElement | undefined;
-	private branchElement: HTMLElement | undefined;
 	private breadcrumbsElement: HTMLElement | undefined;
 
 	constructor(
@@ -410,8 +405,6 @@ export class BrowserTitlebarPart extends Part implements ITitlebarPart {
 		@IEditorService private readonly editorService: IEditorService,
 		@IMenuService private readonly menuService: IMenuService,
 		@IKeybindingService private readonly keybindingService: IKeybindingService,
-		@ISCMViewService private readonly scmViewService: ISCMViewService,
-		@IWorkspaceContextService private readonly workspaceContextService: IWorkspaceContextService,
 		@ILabelService private readonly labelService: ILabelService,
 		@ICommandService private readonly commandService: ICommandService,
 		@IUpdateService private readonly updateService: IUpdateService
@@ -621,78 +614,6 @@ export class BrowserTitlebarPart extends Part implements ITitlebarPart {
 
 		// --- Sidex Titlebar Customizations ---
 		try {
-			this.projectNameElement = append(this.leftContent, $('div.sidex-project-name'));
-			const branchContainer = append(this.leftContent, $('div.sidex-branch-container'));
-			const branchIcon = append(branchContainer, $('span.sidex-branch-icon.codicon.codicon-source-control'));
-			branchIcon.setAttribute('aria-hidden', 'true');
-			this.branchElement = append(branchContainer, $('span.sidex-branch-name'));
-			const branchChevron = append(branchContainer, $('span.sidex-branch-chevron.codicon.codicon-chevron-down'));
-			branchChevron.setAttribute('aria-hidden', 'true');
-
-			this._register(addDisposableListener(branchContainer, EventType.CLICK, () => {
-				this.openGitPopup(branchContainer);
-			}));
-
-			this.updateProjectName();
-			this.setupBranchTracking();
-
-			this._register(addDisposableListener(this.projectNameElement, EventType.CLICK, () => {
-				const backdrop = document.createElement('div');
-				backdrop.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;z-index:9998;';
-				document.body.appendChild(backdrop);
-
-				const popup = document.createElement('div');
-				popup.className = 'sidex-rich-popup';
-				const rect = this.projectNameElement!.getBoundingClientRect();
-				const pcs = getComputedStyle(this.element!);
-				const pBg = pcs.getPropertyValue('--vscode-menu-background').trim() || pcs.getPropertyValue('--vscode-quickInput-background').trim() || '#202122';
-				const pBorder = pcs.getPropertyValue('--vscode-menu-border').trim() || '#2a2b2c';
-				const pFg = pcs.getPropertyValue('--vscode-menu-foreground').trim() || '#bfbfbf';
-				popup.style.cssText = `position:fixed;top:${rect.bottom + 4}px;left:${rect.left}px;z-index:9999;min-width:240px;max-width:320px;background:${pBg};border-color:${pBorder};color:${pFg};`;
-				document.body.appendChild(popup);
-
-				const items = [
-					{ icon: 'codicon-folder-opened', label: 'Open Folder...', cmd: 'workbench.action.files.openFolder' },
-					{ icon: 'codicon-source-control', label: 'Clone Repository...', cmd: 'git.clone' },
-					{ separator: true },
-					{ icon: 'codicon-window', label: 'Recent Projects...', cmd: 'workbench.action.openRecent' },
-					{ separator: true },
-					{ icon: 'codicon-empty-window', label: 'New Window', cmd: 'workbench.action.newWindow' },
-					{ icon: 'codicon-close', label: 'Close Folder', cmd: 'workbench.action.closeFolder' },
-				];
-
-				const cleanup = () => { popup.remove(); backdrop.remove(); };
-
-				for (const item of items) {
-					if ((item as any).separator) {
-						const sep = document.createElement('div');
-						sep.className = 'sidex-popup-separator';
-						popup.appendChild(sep);
-					} else if ((item as any).header) {
-						const hdr = document.createElement('div');
-						hdr.className = 'sidex-popup-header';
-						hdr.textContent = (item as any).header;
-						popup.appendChild(hdr);
-					} else {
-						const row = document.createElement('div');
-						row.className = 'sidex-popup-item';
-						row.innerHTML = `<span class="codicon ${(item as any).icon} sidex-popup-icon"></span><span class="sidex-popup-label">${(item as any).label}</span>`;
-						row.addEventListener('click', () => {
-							cleanup();
-							this.commandService.executeCommand((item as any).cmd).catch((err: any) => {
-								console.error('[sidex] Command failed:', (item as any).cmd, err?.message || err);
-							});
-						});
-						popup.appendChild(row);
-					}
-				}
-
-				backdrop.addEventListener('click', cleanup);
-				backdrop.addEventListener('contextmenu', (e) => { e.preventDefault(); cleanup(); });
-			}));
-
-			this._register(this.workspaceContextService.onDidChangeWorkspaceName(() => this.updateProjectName()));
-			this._register(this.workspaceContextService.onDidChangeWorkspaceFolders(() => this.updateProjectName()));
 			this._register(this.editorService.onDidActiveEditorChange(() => this.updateBreadcrumbs()));
 
 			const centerBar = append(this.centerContent, $('div.sidex-center-bar'));
@@ -727,7 +648,6 @@ export class BrowserTitlebarPart extends Part implements ITitlebarPart {
 				actions.push(toAction({ id: 'sidex.manage.keybindings', label: 'Open Keyboard Shortcuts [⌘K ⌘S]', run: () => this.commandService.executeCommand('workbench.action.openGlobalKeybindings') }));
 				actions.push(toAction({ id: 'sidex.manage.extensions', label: 'Extensions', run: () => this.commandService.executeCommand('workbench.view.extensions') }));
 				actions.push(toAction({ id: 'sidex.manage.snippets', label: 'Configure Snippets', run: () => this.commandService.executeCommand('workbench.action.openSnippets') }));
-				actions.push(toAction({ id: 'sidex.manage.tasks', label: 'Tasks', run: () => this.commandService.executeCommand('workbench.action.tasks.runTask') }));
 				actions.push(toAction({ id: 'sidex.manage.themes', label: 'Themes', run: () => this.commandService.executeCommand('workbench.action.selectTheme') }));
 
 				actions.push(new Separator());
@@ -898,57 +818,6 @@ export class BrowserTitlebarPart extends Part implements ITitlebarPart {
 		return this.element;
 	}
 
-	private updateProjectName(): void {
-		try {
-			if (!this.projectNameElement) { return; }
-			const workspace = this.workspaceContextService.getWorkspace();
-			const name = this.labelService.getWorkspaceLabel(workspace);
-			this.projectNameElement.textContent = name || 'SideX';
-		} catch { /* ignore during workspace transitions */ }
-	}
-
-	private setupBranchTracking(): void {
-		try {
-			if (!this.scmViewService || this.isAuxiliary) {
-				return;
-			}
-			const branchName = derived(reader => {
-				try {
-					const activeRepo = this.scmViewService?.activeRepository?.read(reader);
-					const historyProvider = activeRepo?.repository?.provider?.historyProvider?.read(reader);
-					const historyItemRef = historyProvider?.historyItemRef?.read(reader);
-					return historyItemRef?.name;
-				} catch {
-					return undefined;
-				}
-			});
-
-			this._register(autorun(reader => {
-				try {
-					const name = branchName.read(reader);
-					this.updateBranchDisplay(name);
-				} catch { /* ignore */ }
-			}));
-		} catch { /* SCM service may not be available */ }
-	}
-
-	private updateBranchDisplay(branchName: string | undefined): void {
-		if (!this.branchElement) {
-			return;
-		}
-		const container = this.branchElement.parentElement;
-		if (!container) {
-			return;
-		}
-		if (branchName) {
-			container.style.display = '';
-			this.branchElement.textContent = branchName;
-		} else {
-			container.style.display = 'none';
-			this.branchElement.textContent = '';
-		}
-	}
-
 	private updateBreadcrumbs(): void {
 		try {
 		if (!this.breadcrumbsElement) {
@@ -999,384 +868,6 @@ export class BrowserTitlebarPart extends Part implements ITitlebarPart {
 
 		reset(this.breadcrumbsElement, fragment);
 		} catch { /* ignore during workspace transitions */ }
-	}
-
-	private openGitPopup(anchor: HTMLElement): void {
-		const backdrop = document.createElement('div');
-		backdrop.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;z-index:9998;';
-		document.body.appendChild(backdrop);
-
-		const popup = document.createElement('div');
-		popup.className = 'sidex-rich-popup sidex-git-popup';
-		const rect = anchor.getBoundingClientRect();
-		const cs = getComputedStyle(this.element!);
-		const bgColor = cs.getPropertyValue('--vscode-menu-background').trim() || cs.getPropertyValue('--vscode-quickInput-background').trim() || '#202122';
-		const borderColor = cs.getPropertyValue('--vscode-menu-border').trim() || cs.getPropertyValue('--vscode-widget-border').trim() || '#2a2b2c';
-		const fgColor = cs.getPropertyValue('--vscode-menu-foreground').trim() || '#bfbfbf';
-		const inputBg = cs.getPropertyValue('--vscode-input-background').trim() || '#191a1b';
-		const inputBorder = cs.getPropertyValue('--vscode-input-border').trim() || cs.getPropertyValue('--vscode-widget-border').trim() || '#333536';
-		const inputFg = cs.getPropertyValue('--vscode-input-foreground').trim() || fgColor;
-		const focusBorder = cs.getPropertyValue('--vscode-focusBorder').trim() || '#007acc';
-		const descFg = cs.getPropertyValue('--vscode-descriptionForeground').trim() || '#8b8b8b';
-		const selBg = cs.getPropertyValue('--vscode-menu-selectionBackground').trim() || 'rgba(255,255,255,0.07)';
-		popup.style.cssText = `position:fixed;top:${rect.bottom + 4}px;left:${rect.left}px;z-index:9999;min-width:340px;max-width:440px;background:${bgColor};border-color:${borderColor};color:${fgColor};--popup-bg:${bgColor};--popup-fg:${fgColor};--popup-border:${borderColor};--popup-input-bg:${inputBg};--popup-input-border:${inputBorder};--popup-input-fg:${inputFg};--popup-focus-border:${focusBorder};--popup-desc-fg:${descFg};--popup-sel-bg:${selBg};`;
-		document.body.appendChild(popup);
-
-		const cleanup = () => { popup.remove(); backdrop.remove(); };
-		backdrop.addEventListener('click', cleanup);
-		backdrop.addEventListener('contextmenu', (e) => { e.preventDefault(); cleanup(); });
-
-		const searchRow = document.createElement('div');
-		searchRow.className = 'sidex-popup-search-row';
-		const searchInput = document.createElement('input');
-		searchInput.type = 'text';
-		searchInput.className = 'sidex-popup-search';
-		searchInput.placeholder = 'Filter branches, stashes, tags...';
-		searchRow.appendChild(searchInput);
-		popup.appendChild(searchRow);
-
-		const contentArea = document.createElement('div');
-		contentArea.className = 'sidex-popup-content';
-		popup.appendChild(contentArea);
-
-		const actionsArea = document.createElement('div');
-		actionsArea.className = 'sidex-popup-actions';
-		popup.appendChild(actionsArea);
-
-		searchInput.addEventListener('keydown', (e) => {
-			if (e.key === 'Escape') { cleanup(); }
-			if (e.key === 'Enter') {
-				const focused = contentArea.querySelector('.sidex-popup-item.focused') as HTMLElement;
-				const target = focused || contentArea.querySelector('.sidex-popup-item:not([style*="display: none"])') as HTMLElement;
-				if (target) { target.click(); }
-			}
-			if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-				e.preventDefault();
-				const visible = Array.from(contentArea.querySelectorAll('.sidex-popup-item:not([style*="display: none"])')) as HTMLElement[];
-				const current = contentArea.querySelector('.sidex-popup-item.focused') as HTMLElement;
-				let idx = current ? visible.indexOf(current) : -1;
-				if (current) { current.classList.remove('focused'); }
-				if (e.key === 'ArrowDown') { idx = Math.min(idx + 1, visible.length - 1); }
-				else { idx = Math.max(idx - 1, 0); }
-				if (visible[idx]) { visible[idx].classList.add('focused'); visible[idx].scrollIntoView({ block: 'nearest' }); }
-			}
-		});
-
-		const getRepo = () => {
-			try {
-				const observable = this.scmViewService?.activeRepository;
-				if (!observable) { return null; }
-				const activeRepo = observable.get?.() || (observable as any);
-				if (!activeRepo) { return null; }
-				return activeRepo.repository || activeRepo;
-			} catch { return null; }
-		};
-
-		const renderContent = async () => {
-			contentArea.innerHTML = '<div class="sidex-popup-loading">Loading...</div>';
-
-			try {
-				const repo = getRepo();
-				const provider = repo?.provider;
-				const currentBranch = this.branchElement?.textContent || '';
-				const rootPath = this.workspaceContextService.getWorkspace().folders[0]?.uri.fsPath || '';
-
-				let localBranches: { name: string; id: string; description?: string; current: boolean }[] = [];
-				const remoteBranches: { name: string; id: string; description?: string }[] = [];
-				const tags: { name: string; id: string; description?: string }[] = [];
-				let stashes: { id: string; name: string; description?: string }[] = [];
-
-				// Try artifact provider first (returns all branches with commit details)
-				if (provider) {
-					const artifactProvider = provider.artifactProvider?.get?.() ?? provider.artifactProvider;
-					if (artifactProvider && artifactProvider.provideArtifacts) {
-						try {
-							const branchArtifacts = await artifactProvider.provideArtifacts('branches');
-							if (branchArtifacts && branchArtifacts.length > 0) {
-								for (const b of branchArtifacts) {
-									localBranches.push({
-										name: b.name,
-										id: b.id,
-										description: b.description,
-										current: b.name === currentBranch
-									});
-								}
-							}
-						} catch { /* artifact provider not ready */ }
-
-						try {
-							const tagArtifacts = await artifactProvider.provideArtifacts('tags');
-							if (tagArtifacts && tagArtifacts.length > 0) {
-								for (const t of tagArtifacts) {
-									tags.push({ name: t.name, id: t.id, description: t.description });
-								}
-							}
-						} catch { /* no tags */ }
-
-						try {
-							const stashArtifacts = await artifactProvider.provideArtifacts('stashes');
-							if (stashArtifacts && stashArtifacts.length > 0) {
-								stashes = stashArtifacts.map((s: any) => ({
-									id: s.id, name: s.name, description: s.description
-								}));
-							}
-						} catch { /* no stashes */ }
-					}
-				}
-
-				// Fallback: run git directly via Tauri invoke if branches not found
-				if (localBranches.length <= 1 && (globalThis as any).__SIDEX_TAURI__ && rootPath) {
-					try {
-						const { invoke } = await import('@tauri-apps/api/core');
-						const output: string = await invoke('git_run', {
-							path: rootPath,
-							args: ['branch', '--sort=-committerdate', '--format=%(refname:short)\t%(objectname:short)\t%(subject)\t%(committerdate:relative)\t%(HEAD)']
-						});
-						if (output) {
-							localBranches = [];
-							const lines = output.trim().split('\n').filter((l: string) => l.trim());
-							for (const line of lines) {
-								const [name, hash, subject, date, head] = line.split('\t');
-								if (!name) { continue; }
-								const isCurrent = head === '*' || name.trim() === currentBranch;
-								const desc = hash && subject ? `${hash} \u2022 ${subject}` : '';
-								localBranches.push({
-									name: name.trim(),
-									id: `refs/heads/${name.trim()}`,
-									description: desc ? `${date} \u2022 ${desc}` : date,
-									current: isCurrent
-								});
-							}
-						}
-
-						// Get remote branches
-						const remoteOutput: string = await invoke('git_run', {
-							path: rootPath,
-							args: ['branch', '-r', '--sort=-committerdate', '--format=%(refname:short)\t%(objectname:short)\t%(subject)\t%(committerdate:relative)']
-						});
-						if (remoteOutput) {
-							const lines = remoteOutput.trim().split('\n').filter((l: string) => l.trim());
-							for (const line of lines) {
-								const [name, hash, subject, date] = line.split('\t');
-								if (!name || name.includes('HEAD')) { continue; }
-								const desc = hash && subject ? `${hash} \u2022 ${subject}` : '';
-								remoteBranches.push({
-									name: name.trim(),
-									id: `refs/remotes/${name.trim()}`,
-									description: desc ? `${date} \u2022 ${desc}` : date
-								});
-							}
-						}
-					} catch (e) {
-						console.warn('[sidex] git_run invoke failed:', e);
-					}
-
-					// Also try to get stashes via git if we don't have them
-					if (stashes.length === 0) {
-						try {
-							const { invoke } = await import('@tauri-apps/api/core');
-							const output: string = await invoke('git_run', {
-								path: rootPath,
-								args: ['stash', 'list', '--format=%gd\t%s']
-							});
-							if (output) {
-								const lines = output.trim().split('\n').filter((l: string) => l.trim());
-								for (const line of lines) {
-									const [id, ...rest] = line.split('\t');
-									stashes.push({ id: id || '', name: rest.join('\t') || id || 'stash' });
-								}
-							}
-						} catch { /* no stash list */ }
-					}
-				}
-
-				// Final fallback
-				if (localBranches.length === 0) {
-					localBranches.push({ name: currentBranch || 'main', id: 'refs/heads/' + (currentBranch || 'main'), current: true });
-				}
-
-				contentArea.innerHTML = '';
-
-				const createBranchRow = (branch: { name: string; id: string; description?: string; current?: boolean }, icon: string, clickAction: () => void) => {
-					const row = document.createElement('div');
-					row.className = 'sidex-popup-item' + (branch.current ? ' sidex-popup-item-active' : '');
-					const selectedTag = branch.current ? '<span class="sidex-popup-selected-tag">selected</span>' : '';
-					const desc = branch.description ? `<span class="sidex-popup-desc">${branch.description}</span>` : '';
-					row.innerHTML = `${selectedTag}<span class="codicon codicon-git-branch sidex-popup-icon"></span><span class="sidex-popup-label">${branch.name}</span>${desc}`;
-					(row as any)._searchText = (branch.name + ' ' + (branch.description || '')).toLowerCase();
-					row.addEventListener('click', clickAction);
-					return row;
-				};
-
-				const checkoutBranch = (branchName: string) => {
-					cleanup();
-					setTimeout(() => {
-						if (rootPath) {
-							this.commandService.executeCommand('_git.checkout', rootPath, branchName).catch(() => {
-								this.commandService.executeCommand('git.checkout');
-							});
-						} else {
-							this.commandService.executeCommand('git.checkout');
-						}
-					}, 50);
-				};
-
-				// Local branches
-				if (localBranches.length > 0) {
-					const header = document.createElement('div');
-					header.className = 'sidex-popup-header';
-					header.textContent = `Local Branches`;
-					contentArea.appendChild(header);
-
-					for (const branch of localBranches) {
-						const row = createBranchRow(branch, 'codicon-git-branch', () => {
-							if (!branch.current) { checkoutBranch(branch.name); }
-						});
-						contentArea.appendChild(row);
-					}
-				}
-
-				// Remote branches
-				if (remoteBranches.length > 0) {
-					const header = document.createElement('div');
-					header.className = 'sidex-popup-header';
-					header.textContent = `Remote Branches`;
-					contentArea.appendChild(header);
-
-					for (const branch of remoteBranches) {
-						const row = createBranchRow(branch, 'codicon-cloud', () => {
-							checkoutBranch(branch.name);
-						});
-						contentArea.appendChild(row);
-					}
-				}
-
-				// Tags
-				if (tags.length > 0) {
-					const header = document.createElement('div');
-					header.className = 'sidex-popup-header';
-					header.textContent = 'Tags';
-					contentArea.appendChild(header);
-
-					for (const tag of tags) {
-						const row = document.createElement('div');
-						row.className = 'sidex-popup-item';
-						row.innerHTML = `<span class="codicon codicon-tag sidex-popup-icon"></span><span class="sidex-popup-label">${tag.name}</span>`;
-						(row as any)._searchText = tag.name.toLowerCase();
-						row.addEventListener('click', () => {
-							cleanup();
-							if (rootPath) {
-								this.commandService.executeCommand('_git.checkout', rootPath, tag.name, true).catch(() => {
-									this.commandService.executeCommand('git.checkout');
-								});
-							} else {
-								this.commandService.executeCommand('git.checkout');
-							}
-						});
-						contentArea.appendChild(row);
-					}
-				}
-
-				// Stashes
-				if (stashes.length > 0) {
-					const header = document.createElement('div');
-					header.className = 'sidex-popup-header';
-					header.textContent = 'Stashes';
-					contentArea.appendChild(header);
-
-					for (const stash of stashes) {
-						const row = document.createElement('div');
-						row.className = 'sidex-popup-item';
-						const desc = stash.description ? `<span class="sidex-popup-desc">${stash.description}</span>` : '';
-						row.innerHTML = `<span class="codicon codicon-archive sidex-popup-icon"></span><span class="sidex-popup-label">${stash.name}</span>${desc}`;
-						(row as any)._searchText = (stash.name + ' ' + (stash.description || '')).toLowerCase();
-						row.addEventListener('click', () => {
-							cleanup();
-							this.commandService.executeCommand('git.stashApply');
-						});
-						contentArea.appendChild(row);
-					}
-				}
-
-				// Search filtering
-				searchInput.addEventListener('input', () => {
-					const q = searchInput.value.toLowerCase().trim();
-					const allItems = contentArea.querySelectorAll('.sidex-popup-item');
-					const headers = contentArea.querySelectorAll('.sidex-popup-header');
-
-					allItems.forEach((el: any) => {
-						const match = !q || (el._searchText && el._searchText.includes(q));
-						el.style.display = match ? '' : 'none';
-					});
-
-					headers.forEach((h: Element) => {
-						let sibling = h.nextElementSibling;
-						let hasVisible = false;
-						while (sibling && !sibling.classList.contains('sidex-popup-header')) {
-							if (sibling.classList.contains('sidex-popup-item') && (sibling as HTMLElement).style.display !== 'none') {
-								hasVisible = true;
-								break;
-							}
-							sibling = sibling.nextElementSibling;
-						}
-						(h as HTMLElement).style.display = hasVisible ? '' : 'none';
-					});
-				});
-
-			} catch (err) {
-				contentArea.innerHTML = `<div class="sidex-popup-empty">Error loading data</div>`;
-				console.error('[sidex] git popup error:', err);
-			}
-		};
-
-		// Actions footer
-		const execCmd = (cmd: string, ...args: any[]) => {
-			cleanup();
-			setTimeout(() => {
-				this.commandService.executeCommand(cmd, ...args).catch((err: any) => {
-					console.error(`[sidex] Command "${cmd}" failed:`, err?.message || err);
-				});
-			}, 50);
-		};
-
-		const actions = [
-			{ icon: 'codicon-add', label: 'New Branch...', action: () => execCmd('git.branch') },
-			{ icon: 'codicon-git-branch', label: 'Rename Branch...', action: () => execCmd('git.renameBranch') },
-			{ icon: 'codicon-trash', label: 'Delete Branch...', action: () => execCmd('git.deleteBranch') },
-			{ separator: true },
-			{ icon: 'codicon-cloud-download', label: 'Fetch All Remotes', action: () => execCmd('git.fetchAll') },
-			{ icon: 'codicon-arrow-down', label: 'Pull', action: () => execCmd('git.pull') },
-			{ icon: 'codicon-arrow-up', label: 'Push', action: () => execCmd('git.push') },
-			{ separator: true },
-			{ icon: 'codicon-git-commit', label: 'Commit...', action: () => { cleanup(); setTimeout(() => { this.commandService.executeCommand('workbench.view.scm').then(() => { setTimeout(() => this.commandService.executeCommand('git.commit'), 150); }); }, 50); } },
-			{ icon: 'codicon-merge', label: 'Merge Branch...', action: () => execCmd('git.merge') },
-			{ icon: 'codicon-git-pull-request', label: 'Rebase...', action: () => execCmd('git.rebase') },
-			{ separator: true },
-			{ icon: 'codicon-archive', label: 'Stash Changes...', action: () => execCmd('git.stash') },
-			{ icon: 'codicon-archive', label: 'Pop Stash...', action: () => execCmd('git.stashPop') },
-			{ icon: 'codicon-archive', label: 'Apply Stash...', action: () => execCmd('git.stashApply') },
-		];
-
-		const sep = document.createElement('div');
-		sep.className = 'sidex-popup-separator';
-		actionsArea.appendChild(sep);
-
-		for (const item of actions) {
-			if ((item as any).separator) {
-				const divider = document.createElement('div');
-				divider.className = 'sidex-popup-separator';
-				actionsArea.appendChild(divider);
-			} else {
-				const row = document.createElement('div');
-				row.className = 'sidex-popup-item sidex-popup-action-item';
-				row.innerHTML = `<span class="codicon ${(item as any).icon} sidex-popup-icon"></span><span class="sidex-popup-label">${(item as any).label}</span>`;
-				row.addEventListener('click', (item as any).action);
-				actionsArea.appendChild(row);
-			}
-		}
-
-		searchInput.focus();
-		renderContent();
 	}
 
 	private createTitle(): void {
@@ -1764,8 +1255,6 @@ export class MainBrowserTitlebarPart extends BrowserTitlebarPart {
 		@IEditorService editorService: IEditorService,
 		@IMenuService menuService: IMenuService,
 		@IKeybindingService keybindingService: IKeybindingService,
-		@ISCMViewService scmViewService: ISCMViewService,
-		@IWorkspaceContextService workspaceContextService: IWorkspaceContextService,
 		@ILabelService labelService: ILabelService,
 		@ICommandService commandService: ICommandService,
 		@IUpdateService updateService: IUpdateService
@@ -1786,8 +1275,6 @@ export class MainBrowserTitlebarPart extends BrowserTitlebarPart {
 			editorService,
 			menuService,
 			keybindingService,
-			scmViewService,
-			workspaceContextService,
 			labelService,
 			commandService,
 			updateService
@@ -1826,8 +1313,6 @@ export class AuxiliaryBrowserTitlebarPart extends BrowserTitlebarPart implements
 		@IEditorService editorService: IEditorService,
 		@IMenuService menuService: IMenuService,
 		@IKeybindingService keybindingService: IKeybindingService,
-		@ISCMViewService scmViewService: ISCMViewService,
-		@IWorkspaceContextService workspaceContextService: IWorkspaceContextService,
 		@ILabelService labelService: ILabelService,
 		@ICommandService commandService: ICommandService,
 		@IUpdateService updateService: IUpdateService
@@ -1849,8 +1334,6 @@ export class AuxiliaryBrowserTitlebarPart extends BrowserTitlebarPart implements
 			editorService,
 			menuService,
 			keybindingService,
-			scmViewService,
-			workspaceContextService,
 			labelService,
 			commandService,
 			updateService

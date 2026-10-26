@@ -141,7 +141,6 @@ import { AISearchKeyword, TextSearchCompleteMessage } from '../../services/searc
 import { ISaveProfileResult } from '../../services/userDataProfile/common/userDataProfile.js';
 import { IExtHostDocumentSaveDelegate } from './extHostDocumentData.js';
 import { TerminalShellExecutionCommandLineConfidence } from './extHostTypes.js';
-import * as tasks from './shared/tasks.js';
 import { CDPEvent, CDPRequest, CDPResponse } from '../../../platform/browserView/common/cdp/types.js';
 
 export type IconPathDto = UriComponents | { light: UriComponents; dark: UriComponents } | ThemeIcon;
@@ -1842,19 +1841,6 @@ export interface MainThreadShareShape extends IDisposable {
 	$unregisterShareProvider(handle: number): void;
 }
 
-export interface MainThreadTaskShape extends IDisposable {
-	$createTaskId(task: tasks.ITaskDTO): Promise<string>;
-	$registerTaskProvider(handle: number, type: string): Promise<void>;
-	$unregisterTaskProvider(handle: number): Promise<void>;
-	$fetchTasks(filter?: tasks.ITaskFilterDTO): Promise<tasks.ITaskDTO[]>;
-	$getTaskExecution(value: tasks.ITaskHandleDTO | tasks.ITaskDTO): Promise<tasks.ITaskExecutionDTO>;
-	$executeTask(task: tasks.ITaskHandleDTO | tasks.ITaskDTO): Promise<tasks.ITaskExecutionDTO>;
-	$terminateTask(id: string): Promise<void>;
-	$registerTaskSystem(scheme: string, info: tasks.ITaskSystemInfoDTO): void;
-	$customExecutionComplete(id: string, result?: number): Promise<void>;
-	$registerSupportedExecutions(custom?: boolean, shell?: boolean, process?: boolean): Promise<void>;
-}
-
 export interface MainThreadExtensionServiceShape extends IDisposable {
 	$getExtension(extensionId: string): Promise<Dto<IExtensionDescription> | undefined>;
 	$activateExtension(extensionId: ExtensionIdentifier, reason: ExtensionActivationReason): Promise<void>;
@@ -3279,28 +3265,6 @@ export interface ExtHostShareShape {
 	): Promise<UriComponents | string | undefined>;
 }
 
-export interface ExtHostTaskShape {
-	$provideTasks(handle: number, validTypes: { [key: string]: boolean }): Promise<tasks.ITaskSetDTO>;
-	$resolveTask(handle: number, taskDTO: tasks.ITaskDTO): Promise<tasks.ITaskDTO | undefined>;
-	$onDidStartTask(
-		execution: tasks.ITaskExecutionDTO,
-		terminalId: number,
-		resolvedDefinition: tasks.ITaskDefinitionDTO
-	): void;
-	$onDidStartTaskProcess(value: tasks.ITaskProcessStartedDTO): void;
-	$onDidEndTaskProcess(value: tasks.ITaskProcessEndedDTO): void;
-	$OnDidEndTask(execution: tasks.ITaskExecutionDTO): void;
-	$onDidStartTaskProblemMatchers(status: tasks.ITaskProblemMatcherStartedDto): void;
-	$onDidEndTaskProblemMatchers(status: tasks.ITaskProblemMatcherEndedDto): void;
-	$resolveVariables(
-		workspaceFolder: UriComponents,
-		toResolve: { process?: { name: string; cwd?: string }; variables: string[] }
-	): Promise<{ process?: string; variables: { [key: string]: string } }>;
-	$jsonTasksSupported(): Promise<boolean>;
-	$findExecutable(command: string, cwd?: string, paths?: string[]): Promise<string | undefined>;
-}
-
-
 export interface DecorationRequest {
 	readonly id: number;
 	readonly uri: UriComponents;
@@ -3740,7 +3704,6 @@ export const MainContext = {
 	MainThreadSCM: createProxyIdentifier<MainThreadSCMShape>('MainThreadSCM'),
 	MainThreadSearch: createProxyIdentifier<MainThreadSearchShape>('MainThreadSearch'),
 	MainThreadShare: createProxyIdentifier<MainThreadShareShape>('MainThreadShare'),
-	MainThreadTask: createProxyIdentifier<MainThreadTaskShape>('MainThreadTask'),
 	MainThreadWindow: createProxyIdentifier<MainThreadWindowShape>('MainThreadWindow'),
 	MainThreadPower: createProxyIdentifier<MainThreadPowerShape>('MainThreadPower'),
 	MainThreadLabelService: createProxyIdentifier<MainThreadLabelServiceShape>('MainThreadLabelService'),
@@ -3795,7 +3758,6 @@ export const ExtHostContext = {
 	),
 	ExtHostSCM: createProxyIdentifier<ExtHostSCMShape>('ExtHostSCM'),
 	ExtHostSearch: createProxyIdentifier<ExtHostSearchShape>('ExtHostSearch'),
-	ExtHostTask: createProxyIdentifier<ExtHostTaskShape>('ExtHostTask'),
 	ExtHostWorkspace: createProxyIdentifier<ExtHostWorkspaceShape>('ExtHostWorkspace'),
 	ExtHostWindow: createProxyIdentifier<ExtHostWindowShape>('ExtHostWindow'),
 	ExtHostPower: createProxyIdentifier<ExtHostPowerShape>('ExtHostPower'),

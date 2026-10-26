@@ -207,7 +207,12 @@ impl Drop for TsServerProcess {
 struct LspServerProcess {
     child: Child,
     stdin: ChildStdin,
-    reader: std::io::BufReader<std::process::ChildStdout>,
+    /// Messages are read by a background thread so server-initiated
+    /// notifications (e.g. `textDocument/publishDiagnostics`) keep flowing
+    /// even when no request is in flight.
+    rx: std::sync::mpsc::Receiver<String>,
+    pending_notifications: Vec<String>,
+    versions: HashMap<String, i32>,
     req_id: u64,
     server_name: String,
     initialized: bool,
@@ -232,12 +237,47 @@ impl LspServerProcess {
 
         let stdin = child.stdin.take()?;
         let stdout = child.stdout.take()?;
-        let reader = std::io::BufReader::with_capacity(256 * 1024, stdout);
+        let (tx, rx) = std::sync::mpsc::channel::<String>();
+        let thread_name = name.to_string();
+        std::thread::spawn(move || {
+            let mut reader = std::io::BufReader::with_capacity(256 * 1024, stdout);
+            loop {
+                let mut content_length: usize = 0;
+                loop {
+                    let mut header = String::new();
+                    match reader.read_line(&mut header) {
+                        Ok(1..) => {}
+                        _ => return,
+                    }
+                    let line = header.trim();
+                    if line.is_empty() {
+                        break;
+                    }
+                    if let Some(rest) = line.strip_prefix("Content-Length: ") {
+                        content_length = rest.trim().parse().unwrap_or(0);
+                    }
+                }
+                if content_length == 0 {
+                    continue;
+                }
+                let mut body = vec![0u8; content_length];
+                if reader.read_exact(&mut body).is_err() {
+                    return;
+                }
+                let body_str = String::from_utf8_lossy(&body).to_string();
+                if tx.send(body_str).is_err() {
+                    log::debug!("[lsp:{thread_name}] receiver dropped, reader exiting");
+                    return;
+                }
+            }
+        });
 
         let mut proc = Self {
             child,
             stdin,
-            reader,
+            rx,
+            pending_notifications: Vec::new(),
+            versions: HashMap::new(),
             req_id: 0,
             server_name: name.to_string(),
             initialized: false,
@@ -277,59 +317,95 @@ impl LspServerProcess {
         let name = &self.server_name;
 
         loop {
-            if std::time::Instant::now() > deadline {
+            let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+            if remaining.is_zero() {
                 log::warn!("[lsp:{name}] timeout {method} id={id}");
                 return None;
             }
 
-            let mut content_length: usize = 0;
-            loop {
-                let mut header = String::new();
-                match self.reader.read_line(&mut header) {
-                    Ok(1..) => {}
-                    Ok(_) | Err(_) => return None,
+            let body_str = match self.rx.recv_timeout(remaining) {
+                Ok(body) => body,
+                Err(_) => {
+                    log::warn!("[lsp:{name}] timeout {method} id={id}");
+                    return None;
                 }
-                let line = header.trim();
-                if line.is_empty() {
-                    break;
-                }
-                if let Some(rest) = line.strip_prefix("Content-Length: ") {
-                    content_length = rest.trim().parse().unwrap_or(0);
-                }
-            }
-            if content_length == 0 {
-                continue;
-            }
-
-            let mut body = vec![0u8; content_length];
-            if self.reader.read_exact(&mut body).is_err() {
-                return None;
-            }
-            let body_str = String::from_utf8_lossy(&body).to_string();
+            };
 
             if body_str.contains(&format!(r#""id":{id}"#))
                 || body_str.contains(&format!(r#""id": {id}"#))
             {
                 return Some(body_str);
             }
+
+            // Server-initiated notifications (diagnostics, progress, logs) are
+            // kept for `drain_notifications` instead of being thrown away.
+            self.pending_notifications.push(body_str);
         }
     }
 
+    /// Returns every notification received since the last drain without blocking.
+    fn drain_notifications(&mut self) -> Vec<String> {
+        let mut out = std::mem::take(&mut self.pending_notifications);
+        while let Ok(body) = self.rx.try_recv() {
+            out.push(body);
+        }
+        out
+    }
+
+    fn send_did_change(&mut self, uri: &str, text: &str) {
+        let version = {
+            let next = self.versions.entry(uri.to_string()).or_insert(1);
+            *next += 1;
+            *next
+        };
+        let params = format!(
+            r#"{{"textDocument":{{"uri":"{}","version":{version}}},"contentChanges":[{{"text":"{}"}}]}}"#,
+            uri.replace('"', "\\\""),
+            escape_json_string(text),
+        );
+        self.send_notification("textDocument/didChange", &params);
+    }
+
     fn open_file(&mut self, uri: &str, language_id: &str, text: &str) {
-        let escaped = text
-            .replace('\\', "\\\\")
-            .replace('"', "\\\"")
-            .replace('\n', "\\n")
-            .replace('\r', "\\r")
-            .replace('\t', "\\t");
         let params = format!(
             r#"{{"textDocument":{{"uri":"{}","languageId":"{}","version":1,"text":"{}"}}}}"#,
             uri.replace('"', "\\\""),
             language_id,
-            escaped,
+            escape_json_string(text),
         );
+        self.versions.insert(uri.to_string(), 1);
         self.send_notification("textDocument/didOpen", &params);
     }
+}
+
+fn escape_json_string(text: &str) -> String {
+    text.replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
+        .replace('\r', "\\r")
+        .replace('\t', "\\t")
+}
+
+/// Decodes `%XX` escapes so editor and language-server URIs can be compared.
+fn decode_uri(uri: &str) -> String {
+    let bytes = uri.as_bytes();
+    let mut out = String::with_capacity(uri.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%'
+            && bytes.get(i + 1).is_some_and(u8::is_ascii_hexdigit)
+            && bytes.get(i + 2).is_some_and(u8::is_ascii_hexdigit)
+        {
+            if let Ok(value) = u8::from_str_radix(&uri[i + 1..i + 3], 16) {
+                out.push(value as char);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i] as char);
+        i += 1;
+    }
+    out
 }
 
 impl Drop for LspServerProcess {
@@ -426,25 +502,39 @@ fn download_lsp_binary(server_name: &str, url_template: &str) -> Option<String> 
 
     log::info!("[lsp:{server_name}] downloading from {url}");
 
-    let response = match reqwest::blocking::get(&url) {
-        Ok(r) if r.status().is_success() => r,
-        Ok(r) => {
-            log::error!("[lsp:{server_name}] download failed: HTTP {}", r.status());
-            return None;
-        }
-        Err(e) => {
-            log::error!("[lsp:{server_name}] download failed: {e}");
-            return None;
-        }
-    };
+    // `reqwest::blocking` builds — and drops — its own runtime. Doing that on a
+    // Tauri async worker thread panics ("Cannot drop a runtime in a context
+    // where blocking is not allowed") and poisons the WASM runtime lock, so the
+    // HTTP work runs on a plain thread instead.
+    let thread_url = url.clone();
+    let thread_server = server_name.to_string();
+    let compressed = std::thread::spawn(move || -> Option<Vec<u8>> {
+        let response = match reqwest::blocking::get(&thread_url) {
+            Ok(r) if r.status().is_success() => r,
+            Ok(r) => {
+                log::error!(
+                    "[lsp:{}] download failed: HTTP {}",
+                    thread_server,
+                    r.status()
+                );
+                return None;
+            }
+            Err(e) => {
+                log::error!("[lsp:{}] download failed: {e}", thread_server);
+                return None;
+            }
+        };
 
-    let compressed = match response.bytes() {
-        Ok(b) => b,
-        Err(e) => {
-            log::error!("[lsp:{server_name}] failed to read response: {e}");
-            return None;
+        match response.bytes() {
+            Ok(b) => Some(b.to_vec()),
+            Err(e) => {
+                log::error!("[lsp:{}] failed to read response: {e}", thread_server);
+                None
+            }
         }
-    };
+    })
+    .join()
+    .ok()??;
 
     log::info!(
         "[lsp:{server_name}] downloaded {} bytes, decompressing",
@@ -523,6 +613,7 @@ struct WasmHostState {
     workspace_state: HashMap<String, String>,
     secrets: HashMap<String, String>,
     decoration_types: HashMap<u64, wit_types::DecorationRenderOptions>,
+    decorations: HashMap<u64, HashMap<String, Vec<wit_types::DecorationInstance>>>,
     next_decoration_handle: u64,
     scm_handles: HashMap<u64, ScmSourceControl>,
     next_scm_handle: u64,
@@ -641,6 +732,7 @@ impl WasmHostState {
             workspace_state: HashMap::new(),
             secrets: HashMap::new(),
             decoration_types: HashMap::new(),
+            decorations: HashMap::new(),
             next_decoration_handle: 1,
             scm_handles: HashMap::new(),
             next_scm_handle: 1,
@@ -1255,14 +1347,22 @@ impl wit_bindings::sidex::extension::host_api::Host for WasmHostState {
     }
     fn set_decorations(
         &mut self,
-        _editor_uri: String,
-        _type_id: u64,
-        _decorations: Vec<wit_types::DecorationInstance>,
+        editor_uri: String,
+        type_id: u64,
+        decorations: Vec<wit_types::DecorationInstance>,
     ) -> Result<(), String> {
+        if !self.decoration_types.contains_key(&type_id) {
+            return Err(format!("unknown decoration type: {type_id}"));
+        }
+        self.decorations
+            .entry(type_id)
+            .or_default()
+            .insert(editor_uri, decorations);
         Ok(())
     }
     fn delete_decoration_type(&mut self, type_id: u64) {
         self.decoration_types.remove(&type_id);
+        self.decorations.remove(&type_id);
     }
 
     // ── Languages ────────────────────────────────────────────────────────────
@@ -1712,6 +1812,147 @@ impl wit_bindings::sidex::extension::common_types::Host for WasmHostState {}
 // ---------------------------------------------------------------------------
 
 impl WasmHostState {
+    /// Forward a document snapshot to every language server this extension has
+    /// already started, then pick up the diagnostics they push back.
+    fn sync_lsp_documents(&mut self, uri: &str, language_id: &str, text: &str) {
+        let server_names: Vec<String> = self.lsp_servers.keys().cloned().collect();
+        for name in server_names {
+            let already_open = self
+                .lsp_open_files
+                .get(&name)
+                .is_some_and(|files| files.contains(uri));
+            if let Some(server) = self.lsp_servers.get_mut(&name) {
+                if already_open {
+                    server.send_did_change(uri, text);
+                } else {
+                    server.open_file(uri, language_id, text);
+                }
+            }
+            if !already_open {
+                self.lsp_open_files
+                    .entry(name)
+                    .or_default()
+                    .insert(uri.to_string());
+            }
+        }
+        self.collect_lsp_diagnostics();
+    }
+
+    /// Move any `textDocument/publishDiagnostics` notifications the servers have
+    /// queued into the diagnostics map that the workbench reads.
+    fn collect_lsp_diagnostics(&mut self) {
+        let mut bodies = Vec::new();
+        for server in self.lsp_servers.values_mut() {
+            bodies.extend(server.drain_notifications());
+        }
+        if !bodies.is_empty() {
+            log::info!("[lsp] collected {} notification(s)", bodies.len());
+        }
+        for body in bodies {
+            self.ingest_publish_diagnostics(&body);
+        }
+    }
+
+    fn ingest_publish_diagnostics(&mut self, body: &str) {
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(body) else {
+            return;
+        };
+        if value.get("method").and_then(serde_json::Value::as_str)
+            != Some("textDocument/publishDiagnostics")
+        {
+            return;
+        }
+        let Some(params) = value.get("params") else {
+            return;
+        };
+        let Some(uri) = params.get("uri").and_then(serde_json::Value::as_str) else {
+            return;
+        };
+        let Some(items) = params
+            .get("diagnostics")
+            .and_then(serde_json::Value::as_array)
+        else {
+            return;
+        };
+
+        let mut parsed = Vec::new();
+        for item in items {
+            let Some(range) = item.get("range") else {
+                continue;
+            };
+            let Some(message) = item.get("message").and_then(serde_json::Value::as_str) else {
+                continue;
+            };
+            let read_pos = |pos: Option<&serde_json::Value>| -> Option<wit_types::Position> {
+                Some(wit_types::Position {
+                    line: pos?.get("line")?.as_u64()? as u32,
+                    character: pos?.get("character")?.as_u64()? as u32,
+                })
+            };
+            let (Some(start), Some(end)) = (read_pos(range.get("start")), read_pos(range.get("end")))
+            else {
+                continue;
+            };
+            let severity = match item.get("severity").and_then(serde_json::Value::as_u64) {
+                Some(1) => wit_types::DiagnosticSeverity::Error,
+                Some(2) => wit_types::DiagnosticSeverity::Warning,
+                Some(3) => wit_types::DiagnosticSeverity::Information,
+                _ => wit_types::DiagnosticSeverity::Hint,
+            };
+            let source = item
+                .get("source")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_string);
+            let code = item.get("code").and_then(|code| {
+                code.as_str()
+                    .map(str::to_string)
+                    .or_else(|| code.as_u64().map(|n| n.to_string()))
+            });
+            parsed.push(wit_types::Diagnostic {
+                range: wit_types::Range { start, end },
+                message: message.to_string(),
+                severity,
+                source,
+                code,
+            });
+        }
+
+        if parsed.is_empty() {
+            log::info!("[lsp] cleared diagnostics for {uri}");
+            self.diagnostics.remove(uri);
+        } else {
+            log::info!("[lsp] {} diagnostic(s) for {uri}", parsed.len());
+            self.diagnostics.insert(uri.to_string(), parsed);
+        }
+    }
+
+    /// Serialize the decorations this extension set on a document so the
+    /// workbench can apply them through the editor's decoration API.
+    fn decorations_json(&self, uri: &str) -> Vec<serde_json::Value> {
+        let mut out = Vec::new();
+        for (type_id, by_uri) in &self.decorations {
+            let Some(instances) = by_uri.get(uri) else {
+                continue;
+            };
+            if instances.is_empty() {
+                continue;
+            }
+            out.push(serde_json::json!({
+                "typeId": type_id,
+                "options": self.decoration_types.get(type_id).map(serialize_decoration_options),
+                "instances": instances
+                    .iter()
+                    .map(|d| serde_json::json!({
+                        "range": serialize_range(&d.range),
+                        "hoverMessage": d.hover_message,
+                        "renderOptions": d.render_options.as_ref().map(serialize_decoration_options),
+                    }))
+                    .collect::<Vec<_>>(),
+            }));
+        }
+        out
+    }
+
     fn tsserver_mut(&mut self) -> Option<&mut TsServerProcess> {
         if self.tsserver.is_none() {
             self.tsserver = TsServerProcess::spawn(&self.workspace_folders);
@@ -1795,10 +2036,18 @@ impl WasmHostState {
             let cmd = extract_json_string(payload, "cmd").unwrap_or_else(|| server_name.clone());
             let extra_args = extract_json_string_array(payload, "args");
             let download_url = extract_json_string(payload, "downloadUrl");
-            let root = self
-                .workspace_folders
-                .first()
-                .map_or_else(|| "file:///tmp".to_string(), |f| format!("file://{f}"));
+            // Workspace folders are native paths; Windows backslashes inside a
+            // JSON string are invalid escapes and make LSP servers reject (and
+            // sometimes abort on) the initialize payload.
+            let root = self.workspace_folders.first().map_or_else(
+                || "file:///tmp".to_string(),
+                |f| {
+                    format!(
+                        "file://{}",
+                        crate::commands::extension_platform::path_to_uri_path(f)
+                    )
+                },
+            );
             let binary = download_url
                 .as_deref()
                 .and_then(|url| download_lsp_binary(&cmd, url))
@@ -1906,6 +2155,10 @@ impl WasmHostState {
         let response = server
             .request_sync(&method, &params)
             .ok_or_else(|| format!("lsp: no response for {method}"))?;
+
+        // Requests are the moments when the server pipe gets pumped; capture any
+        // diagnostics it pushed while answering.
+        self.collect_lsp_diagnostics();
 
         Ok(response)
     }
@@ -2050,8 +2303,26 @@ struct WasmRuntimeState {
     engine: Engine,
     linker: Linker<WasmHostState>,
     extensions: HashMap<String, LoadedWasmExtension>,
+    /// Every discovered WASM extension, whether instantiated yet or not.
+    manifests: HashMap<String, ExtensionManifest>,
     shared_documents: HashMap<String, DocumentData>,
     shared_workspace_folders: Vec<String>,
+}
+
+/// Activation events that should fire as soon as the workbench is up.
+pub fn startup_activation_events() -> Vec<String> {
+    vec!["onStartupFinished".to_string(), "*".to_string()]
+}
+
+fn manifest_matches_events(manifest: &ExtensionManifest, events: &[String]) -> bool {
+    // VS Code treats an extension without activation events as always active.
+    if manifest.activation_events.is_empty() {
+        return true;
+    }
+    manifest
+        .activation_events
+        .iter()
+        .any(|declared| events.iter().any(|event| event == declared))
 }
 
 impl WasmExtensionRuntime {
@@ -2074,10 +2345,49 @@ impl WasmExtensionRuntime {
                 engine,
                 linker,
                 extensions: HashMap::new(),
+                manifests: HashMap::new(),
                 shared_documents: HashMap::new(),
                 shared_workspace_folders: Vec::new(),
             }),
         })
+    }
+
+    /// Record discovered manifests without instantiating them.
+    pub fn register_extensions(&self, manifests: Vec<ExtensionManifest>) {
+        if let Ok(mut guard) = self.inner.lock() {
+            for manifest in manifests {
+                guard.manifests.insert(manifest.id.clone(), manifest);
+            }
+        }
+    }
+
+    /// Instantiate and activate every registered extension that matches one of
+    /// `events` (`onStartupFinished`, `onLanguage:rust`, `*`, ...).
+    pub fn activate_for_events(&self, events: &[String]) -> Vec<String> {
+        let pending: Vec<ExtensionManifest> = match self.inner.lock() {
+            Ok(guard) => {
+                let loaded = &guard.extensions;
+                guard
+                    .manifests
+                    .values()
+                    .filter(|m| !loaded.contains_key(&m.id) && manifest_matches_events(m, events))
+                    .cloned()
+                    .collect()
+            }
+            Err(_) => Vec::new(),
+        };
+
+        let mut activated = Vec::new();
+        for manifest in pending {
+            match self.load_extension(&manifest) {
+                Ok(()) => activated.push(manifest.id.clone()),
+                Err(e) => log::warn!(
+                    "[platform] failed to activate WASM ext {}: {e}",
+                    manifest.id
+                ),
+            }
+        }
+        activated
     }
 
     pub fn load_extension(&self, manifest: &ExtensionManifest) -> Result<(), String> {
@@ -2087,13 +2397,20 @@ impl WasmExtensionRuntime {
             .ok_or("manifest has no wasm_binary")?;
         let wasm_path = Path::new(&manifest.path).join(wasm_file);
 
+        let mut guard = self.inner.lock().map_err(|e| e.to_string())?;
+
+        // Bootstrapping runs again whenever the workbench reloads; re-instantiating
+        // an already loaded extension wastes seconds per reload and contends with
+        // in-flight provider calls.
+        if guard.extensions.contains_key(&manifest.id) {
+            return Ok(());
+        }
+
         log::info!(
             "loading WASM extension: {} from {}",
             manifest.id,
             wasm_path.display()
         );
-
-        let mut guard = self.inner.lock().map_err(|e| e.to_string())?;
 
         let component = Component::from_file(&guard.engine, &wasm_path)
             .map_err(|e| format!("failed to load wasm component {}: {e}", wasm_path.display()))?;
@@ -2136,6 +2453,29 @@ impl WasmExtensionRuntime {
             },
         );
 
+        // Documents can already be open when a language extension activates on
+        // demand; replay them so language servers start analysing right away.
+        let documents: Vec<(String, String)> = guard
+            .shared_documents
+            .iter()
+            .map(|(uri, doc)| (uri.clone(), doc.language_id.clone()))
+            .collect();
+        let languages: std::collections::HashSet<String> = manifest
+            .activation_events
+            .iter()
+            .filter_map(|event| event.strip_prefix("onLanguage:").map(str::to_string))
+            .collect();
+        if let Some(ext) = guard.extensions.get_mut(&manifest.id) {
+            let api = ext.bindings.sidex_extension_extension_api();
+            for (uri, language_id) in documents {
+                if languages.is_empty() || languages.contains(&language_id) {
+                    let ctx = make_doc_ctx(&uri, &language_id, 1);
+                    let _ = api.call_on_document_opened(&mut ext.store, &ctx);
+                }
+            }
+            ext.store.data_mut().collect_lsp_diagnostics();
+        }
+
         Ok(())
     }
 
@@ -2159,28 +2499,175 @@ impl WasmExtensionRuntime {
         guard.extensions.keys().cloned().collect()
     }
 
+    /// Registered vs. instantiated WASM extensions, for the workbench view.
+    pub fn extension_details(&self) -> Vec<serde_json::Value> {
+        let guard = self
+            .inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut out: Vec<serde_json::Value> = guard
+            .manifests
+            .values()
+            .map(|manifest| {
+                let wasm_binary = manifest.wasm_binary.clone().unwrap_or_default();
+                let wasm_path = std::path::Path::new(&manifest.path).join(&wasm_binary);
+                let size_bytes = std::fs::metadata(&wasm_path).map(|m| m.len()).unwrap_or(0);
+                serde_json::json!({
+                    "id": manifest.id,
+                    "name": manifest.display_name,
+                    "version": manifest.version,
+                    "path": manifest.path,
+                    "wasmBinary": wasm_binary,
+                    "activationEvents": manifest.activation_events,
+                    "loaded": guard.extensions.contains_key(&manifest.id),
+                    "sizeBytes": size_bytes,
+                })
+            })
+            .collect();
+        out.sort_by(|a, b| {
+            a.get("id")
+                .and_then(|v| v.as_str())
+                .cmp(&b.get("id").and_then(|v| v.as_str()))
+        });
+        out
+    }
+
+    /// Diagnostics published by every loaded extension for `uri`.
+    pub fn diagnostics_for(&self, uri: &str) -> Vec<serde_json::Value> {
+        let guard = self
+            .inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let normalized = decode_uri(uri).to_ascii_lowercase();
+        let mut out = Vec::new();
+        for (extension_id, ext) in &guard.extensions {
+            // LSP servers may percent-encode URIs differently than the editor
+            // (e.g. `file:///c%3A/...` vs `file:///c:/...`), so fall back to a
+            // normalised comparison before giving up.
+            let diagnostics = ext
+                .store
+                .data()
+                .diagnostics
+                .get(uri)
+                .or_else(|| {
+                    ext.store
+                        .data()
+                        .diagnostics
+                        .iter()
+                        .find(|(key, _)| decode_uri(key).to_ascii_lowercase() == normalized)
+                        .map(|(_, value)| value)
+                });
+            let Some(diagnostics) = diagnostics else {
+                continue;
+            };
+            for d in diagnostics {
+                let severity = match d.severity {
+                    wit_types::DiagnosticSeverity::Error => "error",
+                    wit_types::DiagnosticSeverity::Warning => "warning",
+                    wit_types::DiagnosticSeverity::Information => "information",
+                    wit_types::DiagnosticSeverity::Hint => "hint",
+                };
+                out.push(serde_json::json!({
+                    "extensionId": extension_id,
+                    "range": serialize_range(&d.range),
+                    "message": d.message,
+                    "severity": severity,
+                    "source": d.source,
+                    "code": d.code,
+                }));
+            }
+        }
+        out
+    }
+
+    /// Commands declared by every loaded extension.
+    pub fn list_commands(&self) -> Vec<serde_json::Value> {
+        let mut guard = self
+            .inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut out = Vec::new();
+        for (extension_id, ext) in &mut guard.extensions {
+            let api = ext.bindings.sidex_extension_extension_api();
+            if let Ok(commands) = api.call_get_commands(&mut ext.store) {
+                for command in commands {
+                    out.push(serde_json::json!({
+                        "extensionId": extension_id,
+                        "id": command.id,
+                        "title": command.title,
+                    }));
+                }
+            }
+        }
+        out
+    }
+
+    /// Collect every decoration group any loaded extension set on `uri`.
+    pub fn decorations_for(&self, uri: &str) -> Vec<serde_json::Value> {
+        let guard = self
+            .inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut out = Vec::new();
+        for (extension_id, ext) in &guard.extensions {
+            for mut group in ext.store.data().decorations_json(uri) {
+                if let Some(obj) = group.as_object_mut() {
+                    obj.insert(
+                        "extensionId".to_string(),
+                        serde_json::Value::String(extension_id.clone()),
+                    );
+                }
+                out.push(group);
+            }
+        }
+        out
+    }
+
     pub fn sync_document(&self, uri: &str, language_id: &str, text: &str) {
         if let Ok(mut guard) = self.inner.lock() {
-            guard.shared_documents.insert(
-                uri.to_string(),
-                DocumentData {
-                    text: text.to_string(),
-                    language_id: language_id.to_string(),
-                },
-            );
+            let is_new_document = guard
+                .shared_documents
+                .insert(
+                    uri.to_string(),
+                    DocumentData {
+                        text: text.to_string(),
+                        language_id: language_id.to_string(),
+                    },
+                )
+                .is_none();
             let file = uri.strip_prefix("file://").unwrap_or(uri);
-            for ext in guard.extensions.values_mut() {
-                let state = ext.store.data_mut();
-                state.documents.insert(
+            let ctx = make_doc_ctx(uri, language_id, 1);
+            let on_language_event = format!("onLanguage:{language_id}");
+            let lsp_ready: std::collections::HashSet<String> = guard
+                .manifests
+                .iter()
+                .filter(|(_, manifest)| {
+                    manifest.activation_events.iter().any(|event| {
+                        event == "*" || event == "onStartupFinished" || event == &on_language_event
+                    })
+                })
+                .map(|(id, _)| id.clone())
+                .collect();
+            for (id, ext) in guard.extensions.iter_mut() {
+                let api = ext.bindings.sidex_extension_extension_api();
+                let was_known = ext.store.data().documents.contains_key(uri);
+                ext.store.data_mut().documents.insert(
                     uri.to_string(),
                     DocumentData {
                         text: text.to_string(),
                         language_id: language_id.to_string(),
                     },
                 );
-                if state.tsserver_open_files.remove(file) {
-                    state.ensure_file_open(file);
+                if ext.store.data_mut().tsserver_open_files.remove(file) {
+                    ext.store.data_mut().ensure_file_open(file);
                 }
+                if lsp_ready.contains(id) && !ext.store.data().lsp_servers.is_empty() {
+                    ext.store.data_mut().sync_lsp_documents(uri, language_id, text);
+                }
+                if is_new_document || !was_known {
+                    let _ = api.call_on_document_opened(&mut ext.store, &ctx);
+                }
+                let _ = api.call_on_document_changed(&mut ext.store, &ctx, &[]);
             }
         }
     }
@@ -2190,6 +2677,15 @@ impl WasmExtensionRuntime {
             guard.shared_documents.remove(uri);
             for ext in guard.extensions.values_mut() {
                 ext.store.data_mut().documents.remove(uri);
+            }
+        }
+    }
+
+    /// Drain queued LSP notifications into the diagnostics maps.
+    pub fn collect_lsp_diagnostics(&self) {
+        if let Ok(mut guard) = self.inner.lock() {
+            for ext in guard.extensions.values_mut() {
+                ext.store.data_mut().collect_lsp_diagnostics();
             }
         }
     }
@@ -2249,6 +2745,62 @@ fn serialize_location(l: &wit_types::Location) -> serde_json::Value {
     serde_json::json!({
         "uri": l.uri,
         "range": serialize_range(&l.range),
+    })
+}
+
+fn serialize_workspace_edit(edit: &wit_types::WorkspaceEdit) -> serde_json::Value {
+    serde_json::json!({
+        "edits": edit
+            .edits
+            .iter()
+            .map(|resource| serde_json::json!({
+                "uri": resource.uri,
+                "edits": resource
+                    .edits
+                    .iter()
+                    .map(|text_edit| serde_json::json!({
+                        "range": serialize_range(&text_edit.range),
+                        "newText": text_edit.new_text,
+                    }))
+                    .collect::<Vec<_>>(),
+            }))
+            .collect::<Vec<_>>(),
+    })
+}
+
+fn serialize_decoration_attachment(a: &wit_types::DecorationAttachment) -> serde_json::Value {
+    serde_json::json!({
+        "contentText": a.content_text,
+        "color": a.color,
+        "backgroundColor": a.background_color,
+        "margin": a.margin,
+        "width": a.width,
+        "height": a.height,
+    })
+}
+
+fn serialize_decoration_options(o: &wit_types::DecorationRenderOptions) -> serde_json::Value {
+    serde_json::json!({
+        "backgroundColor": o.background_color,
+        "outlineColor": o.outline_color,
+        "outlineStyle": o.outline_style,
+        "outlineWidth": o.outline_width,
+        "borderColor": o.border_color,
+        "borderRadius": o.border_radius,
+        "borderSpacing": o.border_spacing,
+        "borderStyle": o.border_style,
+        "borderWidth": o.border_width,
+        "fontStyle": o.font_style,
+        "fontWeight": o.font_weight,
+        "textDecoration": o.text_decoration,
+        "cursor": o.cursor,
+        "color": o.color,
+        "letterSpacing": o.letter_spacing,
+        "gutterIconPath": o.gutter_icon_path,
+        "gutterIconSize": o.gutter_icon_size,
+        "overviewRulerColor": o.overview_ruler_color,
+        "before": o.before.as_ref().map(serialize_decoration_attachment),
+        "after": o.after.as_ref().map(serialize_decoration_attachment),
     })
 }
 
@@ -2492,6 +3044,52 @@ pub async fn wasm_list_extensions(
     state: State<'_, Arc<WasmExtensionRuntime>>,
 ) -> Result<Vec<String>, String> {
     Ok(state.loaded_extension_ids())
+}
+
+#[tauri::command]
+pub fn wasm_get_decorations(
+    uri: String,
+    state: State<'_, Arc<WasmExtensionRuntime>>,
+) -> Result<Vec<serde_json::Value>, String> {
+    Ok(state.decorations_for(&uri))
+}
+
+/// Activate extensions that declared `onLanguage:<language_id>`.
+#[tauri::command]
+pub async fn wasm_activate_language(
+    language_id: String,
+    state: State<'_, Arc<WasmExtensionRuntime>>,
+) -> Result<Vec<String>, String> {
+    let events = vec![format!("onLanguage:{language_id}")];
+    Ok(state.activate_for_events(&events))
+}
+
+/// Commands declared by the currently loaded WASM extensions.
+#[tauri::command]
+pub async fn wasm_list_commands(
+    state: State<'_, Arc<WasmExtensionRuntime>>,
+) -> Result<Vec<serde_json::Value>, String> {
+    Ok(state.list_commands())
+}
+
+/// Registered and activated state for every discovered WASM extension.
+#[tauri::command]
+pub async fn wasm_extension_details(
+    state: State<'_, Arc<WasmExtensionRuntime>>,
+) -> Result<Vec<serde_json::Value>, String> {
+    Ok(state.extension_details())
+}
+
+/// Diagnostics published by loaded WASM extensions for a document.
+#[tauri::command]
+pub fn wasm_get_diagnostics(
+    uri: String,
+    state: State<'_, Arc<WasmExtensionRuntime>>,
+) -> Result<Vec<serde_json::Value>, String> {
+    // Language servers push diagnostics asynchronously, so drain their queues
+    // right before answering instead of waiting for the next interaction.
+    state.collect_lsp_diagnostics();
+    Ok(state.diagnostics_for(&uri))
 }
 
 #[tauri::command]
@@ -2852,6 +3450,36 @@ pub async fn wasm_on_active_editor_changed(
 // ---------------------------------------------------------------------------
 
 #[tauri::command]
+pub async fn wasm_provide_references_all(
+    uri: String,
+    language_id: String,
+    version: u32,
+    line: u32,
+    character: u32,
+    state: State<'_, Arc<WasmExtensionRuntime>>,
+) -> Result<Vec<serde_json::Value>, String> {
+    let mut guard = state.inner.lock().map_err(|e| e.to_string())?;
+    let ctx = make_doc_ctx(&uri, &language_id, version);
+    let pos = make_position(line, character);
+    let mut all = Vec::new();
+    let ids: Vec<String> = guard.extensions.keys().cloned().collect();
+    for id in &ids {
+        if let Some(ext) = guard.extensions.get_mut(id) {
+            if let Ok(locs) = ext
+                .bindings
+                .sidex_extension_extension_api()
+                .call_provide_references(&mut ext.store, &ctx, pos)
+            {
+                for l in &locs {
+                    all.push(serialize_location(l));
+                }
+            }
+        }
+    }
+    Ok(all)
+}
+
+#[tauri::command]
 pub async fn wasm_provide_type_definition_all(
     uri: String,
     language_id: String,
@@ -2973,6 +3601,7 @@ pub async fn wasm_provide_code_actions_all(
                         "title": a.title,
                         "kind": a.kind,
                         "isPreferred": a.is_preferred,
+                        "edit": a.edit.as_ref().map(serialize_workspace_edit),
                     }));
                 }
             }

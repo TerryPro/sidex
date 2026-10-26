@@ -43,6 +43,7 @@ import type {
 	SemanticTokensLegend,
 } from '../../../../editor/common/languages.js';
 import {
+	CompletionItemInsertTextRule,
 	CompletionItemKind,
 	DocumentHighlightKind,
 	SymbolKind,
@@ -52,6 +53,11 @@ import { URI } from '../../../../base/common/uri.js';
 import { Range } from '../../../../editor/common/core/range.js';
 import {
 	bootstrapExtensionPlatform,
+	activateWasmExtensionsForLanguage,
+	executeWasmCommandAll,
+	listWasmCommands,
+	type IWasmCommandInfo,
+	type IWasmCommandResult,
 	wasmSyncDocument,
 	wasmCloseDocument,
 	wasmSyncWorkspaceFolders,
@@ -60,9 +66,24 @@ import {
 	wasmProvideDefinitionAll,
 	wasmProvideDocumentSymbolsAll,
 	wasmProvideFormattingAll,
+	wasmProvideReferencesAll,
+	wasmProvideTypeDefinitionAll,
+	wasmProvideImplementationAll,
+	wasmProvideDeclarationAll,
+	wasmProvideCodeActionsAll,
+	wasmProvideSignatureHelpAll,
+	wasmProvideDocumentHighlightsAll,
+	wasmProvideRenameAll,
+	wasmProvideFoldingRangesAll,
+	wasmProvideInlayHintsAll,
+	wasmProvideRangeFormattingAll,
+	getWasmDiagnostics,
+	type IWasmDiagnostic,
 	type IExtensionPlatformBootstrap,
 	type IExtensionManifestSummary,
 } from './extensionPlatformClient.js';
+import { clearWasmDecorations, refreshWasmDecorations } from './wasmDecorations.js';
+import { onDidChangeRustExtensions } from '../../rustExtensions/browser/rustExtensionsService.js';
 import { listen } from '@tauri-apps/api/event';
 import { ITerminalService, ITerminalGroupService } from '../../terminal/browser/terminal.js';
 import { INotificationService, Severity as _Severity } from '../../../../platform/notification/common/notification.js';
@@ -80,6 +101,7 @@ import { SyncDescriptor } from '../../../../platform/instantiation/common/descri
 import { IWorkbenchExtensionManagementService } from '../../../services/extensionManagement/common/extensionManagement.js';
 import type { DidUninstallExtensionEvent, InstallExtensionResult, IGalleryExtension } from '../../../../platform/extensionManagement/common/extensionManagement.js';
 import { CommandsRegistry } from '../../../../platform/commands/common/commands.js';
+import { MenuId, MenuRegistry } from '../../../../platform/actions/common/actions.js';
 import { ICommandService } from '../../../../platform/commands/common/commands.js';
 import { IWebviewViewService } from '../../webviewView/browser/webviewViewService.js';
 import { ExtensionIdentifier } from '../../../../platform/extensions/common/extensions.js';
@@ -220,7 +242,11 @@ class TauriExtensionHostContribution extends Disposable implements IWorkbenchCon
 		try {
 			const bootstrap = await bootstrapExtensionPlatform();
 			this._applyBootstrap(bootstrap);
-			this._connect(bootstrap.transport.endpoint);
+			if (bootstrap.transport.endpoint) {
+				this._connect(bootstrap.transport.endpoint);
+			} else {
+				this.logService.info('[ExtHost] no Node extensions installed — Node extension host not started');
+			}
 		} catch (error) {
 			this.logService.warn(`[ExtHost] platform bootstrap failed ${(error as Error)?.message ?? String(error)}`);
 		}
@@ -285,8 +311,14 @@ class TauriExtensionHostContribution extends Disposable implements IWorkbenchCon
 			listen<number>('sidex-wasm-extensions-ready', () => {
 				this.logService.info('[ExtHost] WASM extensions ready');
 				this._syncDocumentsToWasm();
+				void this._registerWasmCommands();
+				onDidChangeRustExtensions.fire();
 				setTimeout(() => this._registerWasmProviders(), 200);
 			}).catch(() => {});
+			// The ready event fires once per app launch, so a webview reload would
+			// miss it and leave the language features unregistered. Register them
+			// directly as a fallback; `_registerWasmProviders` is idempotent.
+			setTimeout(() => this._registerWasmProviders(), 800);
 		}
 
 		const workspaceFolders = this.workspaceContextService
@@ -304,10 +336,169 @@ class TauriExtensionHostContribution extends Disposable implements IWorkbenchCon
 
 	private _wasmDocSyncInitialized = false;
 
+	/**
+	 * Push the document to the WASM runtime and then pull back any decorations
+	 * the extensions recomputed in response to the change.
+	 */
+	private _syncModelToWasm(model: ITextModel): void {
+		this._ensureLanguageActivated(model.getLanguageId())
+			.then(() => wasmSyncDocument(model.uri.toString(), model.getLanguageId(), sanitizeForExtHost(model.getValue())))
+			.then(() => refreshWasmDecorations(model))
+			.then(() => this._refreshWasmDiagnostics(model))
+			.then(() => this._scheduleDiagnosticRefresh(model))
+			.catch(() => {});
+	}
+
+	private readonly _diagnosticTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+	/**
+	 * Language servers compute diagnostics asynchronously, so poll once more
+	 * shortly after a sync to pick up whatever they pushed in the meantime.
+	 */
+	private _scheduleDiagnosticRefresh(model: ITextModel, delay = 1500): void {
+		const key = model.uri.toString();
+		const existing = this._diagnosticTimers.get(key);
+		if (existing !== undefined) {
+			clearTimeout(existing);
+		}
+		const timer = setTimeout(() => {
+			this._diagnosticTimers.delete(key);
+			void this._refreshWasmDiagnostics(model);
+		}, delay);
+		this._diagnosticTimers.set(key, timer);
+	}
+
+	private _severityToMarker(severity: IWasmDiagnostic['severity']): MarkerSeverity {
+		switch (severity) {
+			case 'error': return MarkerSeverity.Error;
+			case 'warning': return MarkerSeverity.Warning;
+			case 'information': return MarkerSeverity.Info;
+			default: return MarkerSeverity.Hint;
+		}
+	}
+
+	/**
+	 * Diagnostics are owned by the WASM extensions; mirror them into the marker
+	 * service so they surface in the Problems panel, the editor and the minimap.
+	 */
+	private async _refreshWasmDiagnostics(model: ITextModel): Promise<void> {
+		try {
+			const diagnostics = await getWasmDiagnostics(model.uri.toString());
+			const markers: IMarkerData[] = (diagnostics ?? []).map(d => ({
+				severity: this._severityToMarker(d.severity),
+				message: d.message,
+				source: d.source || d.extensionId || 'sidex-wasm',
+				code: d.code,
+				startLineNumber: d.range.start.line + 1,
+				startColumn: d.range.start.character + 1,
+				endLineNumber: d.range.end.line + 1,
+				endColumn: d.range.end.character + 1,
+			}));
+			this.markerService.changeOne('sidex-wasm-extensions', model.uri, markers);
+		} catch {
+			// Diagnostics are best effort; never break document sync because of them.
+		}
+	}
+
+	private readonly _activatedLanguages = new Set<string>();
+
+	private readonly _wasmCommands = new Map<string, IDisposable>();
+
+	/**
+	 * Register commands declared by loaded WASM extensions and expose them in the
+	 * command palette. Called at startup and again whenever a language activates
+	 * more extensions.
+	 */
+	private async _registerWasmCommands(): Promise<void> {
+		let commands: IWasmCommandInfo[] = [];
+		try {
+			commands = await listWasmCommands();
+		} catch {
+			return;
+		}
+		for (const command of commands ?? []) {
+			if (this._wasmCommands.has(command.id) || CommandsRegistry.getCommand(command.id)) {
+				continue;
+			}
+			const disposable = CommandsRegistry.registerCommand(command.id, () => this._executeWasmCommand(command.id));
+			this._wasmCommands.set(command.id, disposable);
+			MenuRegistry.appendMenuItem(MenuId.CommandPalette, {
+				command: { id: command.id, title: command.title }
+			});
+		}
+	}
+
+	/**
+	 * WASM extensions cannot mutate editors directly, so they return a JSON
+	 * description of the edit and the workbench applies it here.
+	 */
+	private async _executeWasmCommand(commandId: string): Promise<void> {
+		const editor = this.codeEditorService.getActiveCodeEditor();
+		const model = editor?.getModel();
+		if (!model) {
+			return;
+		}
+		const position = editor.getPosition();
+		const args = JSON.stringify({
+			uri: model.uri.toString(),
+			line: (position?.lineNumber ?? 1) - 1,
+			character: (position?.column ?? 1) - 1
+		});
+
+		let results: IWasmCommandResult[] = [];
+		try {
+			results = await executeWasmCommandAll(commandId, args);
+		} catch (error) {
+			this.logService.warn(`[ExtHost] WASM command ${commandId} failed: ${(error as Error)?.message ?? String(error)}`);
+			return;
+		}
+
+		for (const result of results) {
+			let payload: { edits?: { uri: string; range: { start: { line: number; character: number }; end: { line: number; character: number } }; newText?: string }[] };
+			try {
+				payload = JSON.parse(result.result);
+			} catch {
+				continue;
+			}
+			for (const edit of payload?.edits ?? []) {
+				const target = this.modelService.getModel(URI.parse(edit.uri));
+				if (!target) {
+					continue;
+				}
+				const range = new Range(
+					edit.range.start.line + 1,
+					edit.range.start.character + 1,
+					edit.range.end.line + 1,
+					edit.range.end.character + 1
+				);
+				target.pushEditOperations([], [{ range, text: edit.newText ?? '' }], () => null);
+			}
+		}
+	}
+
+	/** WASM extensions declared with `onLanguage:*` are instantiated on demand. */
+	private async _ensureLanguageActivated(languageId: string): Promise<void> {
+		if (!languageId || this._activatedLanguages.has(languageId)) {
+			return;
+		}
+		this._activatedLanguages.add(languageId);
+		try {
+			const activated = await activateWasmExtensionsForLanguage(languageId);
+			if (activated?.length) {
+				this.logService.info(`[ExtHost] activated WASM extensions for ${languageId}: ${activated.join(', ')}`);
+				void this._registerWasmCommands();
+				onDidChangeRustExtensions.fire();
+			}
+		} catch (error) {
+			this._activatedLanguages.delete(languageId);
+			this.logService.warn(`[ExtHost] failed to activate WASM extensions for ${languageId}: ${(error as Error)?.message ?? String(error)}`);
+		}
+	}
+
 	private _syncDocumentsToWasm(): void {
 		for (const model of this.modelService.getModels()) {
 			if (isSyncedModelScheme(model.uri.scheme)) {
-				wasmSyncDocument(model.uri.toString(), model.getLanguageId(), sanitizeForExtHost(model.getValue())).catch(() => {});
+				this._syncModelToWasm(model);
 			}
 		}
 
@@ -318,11 +509,21 @@ class TauriExtensionHostContribution extends Disposable implements IWorkbenchCon
 
 		this._register(this.modelService.onModelAdded(model => {
 			if (isSyncedModelScheme(model.uri.scheme)) {
-				wasmSyncDocument(model.uri.toString(), model.getLanguageId(), sanitizeForExtHost(model.getValue())).catch(() => {});
+				this._syncModelToWasm(model);
+			}
+		}));
+
+		// Language detection can settle after the model is created (e.g. when a
+		// language contribution is registered later), so re-run activation and
+		// document sync whenever the language id changes.
+		this._register(this.modelService.onModelLanguageChanged(e => {
+			if (isSyncedModelScheme(e.model.uri.scheme)) {
+				this._syncModelToWasm(e.model);
 			}
 		}));
 		this._register(this.modelService.onModelRemoved(model => {
 			if (isSyncedModelScheme(model.uri.scheme)) {
+				clearWasmDecorations(model);
 				wasmCloseDocument(model.uri.toString()).catch(() => {});
 			}
 		}));
@@ -342,7 +543,7 @@ class TauriExtensionHostContribution extends Disposable implements IWorkbenchCon
 				}
 				debounceTimer = setTimeout(() => {
 					debounceTimer = undefined;
-					wasmSyncDocument(model.uri.toString(), model.getLanguageId(), sanitizeForExtHost(model.getValue())).catch(() => {});
+					this._syncModelToWasm(model);
 				}, 300);
 			});
 			this._modelContentListeners.set(key, disposable);
@@ -533,6 +734,212 @@ class TauriExtensionHostContribution extends Disposable implements IWorkbenchCon
 			})
 		);
 
+		this._wasmProviderRegistrations.push(
+			this.languageFeatures.referenceProvider.register(wasmLanguages, {
+				provideReferences: async (model, position, _context, _token) => {
+					try {
+						const result = await wasmProvideReferencesAll(model.uri.toString(), model.getLanguageId(), model.getVersionId(), position.lineNumber - 1, position.column - 1);
+						return Array.isArray(result) && result.length ? result.map((l: any) => this._convertLocation(l)) : null;
+					} catch {
+						return null;
+					}
+				}
+			})
+		);
+
+		this._wasmProviderRegistrations.push(
+			this.languageFeatures.typeDefinitionProvider.register(wasmLanguages, {
+				provideTypeDefinition: async (model, position, _token) => {
+					try {
+						const result = await wasmProvideTypeDefinitionAll(model.uri.toString(), model.getLanguageId(), model.getVersionId(), position.lineNumber - 1, position.column - 1);
+						return Array.isArray(result) && result.length ? result.map((l: any) => this._convertLocation(l)) : null;
+					} catch {
+						return null;
+					}
+				}
+			})
+		);
+
+		this._wasmProviderRegistrations.push(
+			this.languageFeatures.implementationProvider.register(wasmLanguages, {
+				provideImplementation: async (model, position, _token) => {
+					try {
+						const result = await wasmProvideImplementationAll(model.uri.toString(), model.getLanguageId(), model.getVersionId(), position.lineNumber - 1, position.column - 1);
+						return Array.isArray(result) && result.length ? result.map((l: any) => this._convertLocation(l)) : null;
+					} catch {
+						return null;
+					}
+				}
+			})
+		);
+
+		this._wasmProviderRegistrations.push(
+			this.languageFeatures.declarationProvider.register(wasmLanguages, {
+				provideDeclaration: async (model, position, _token) => {
+					try {
+						const result = await wasmProvideDeclarationAll(model.uri.toString(), model.getLanguageId(), model.getVersionId(), position.lineNumber - 1, position.column - 1);
+						return Array.isArray(result) && result.length ? result.map((l: any) => this._convertLocation(l)) : null;
+					} catch {
+						return null;
+					}
+				}
+			})
+		);
+
+		this._wasmProviderRegistrations.push(
+			this.languageFeatures.signatureHelpProvider.register(wasmLanguages, {
+				provideSignatureHelp: async (model, position, _token, _context) => {
+					try {
+						const result = await wasmProvideSignatureHelpAll(model.uri.toString(), model.getLanguageId(), model.getVersionId(), position.lineNumber - 1, position.column - 1);
+						if (!result?.signatures?.length) {
+							return null;
+						}
+						return {
+							value: {
+								signatures: result.signatures.map((s: any) => ({
+									label: s.label,
+									documentation: s.documentation ? { value: s.documentation } : undefined,
+									parameters: (s.parameters ?? []).map((p: any) => ({ label: p.label })),
+									activeParameter: s.activeParameter
+								})),
+								activeSignature: result.activeSignature ?? 0,
+								activeParameter: result.activeParameter ?? 0
+							},
+							dispose: () => { }
+						};
+					} catch {
+						return null;
+					}
+				}
+			})
+		);
+
+		this._wasmProviderRegistrations.push(
+			this.languageFeatures.documentHighlightProvider.register(wasmLanguages, {
+				provideDocumentHighlights: async (model, position, _token) => {
+					try {
+						const result = await wasmProvideDocumentHighlightsAll(model.uri.toString(), model.getLanguageId(), model.getVersionId(), position.lineNumber - 1, position.column - 1);
+						if (!Array.isArray(result) || !result.length) {
+							return null;
+						}
+						return result.map((h: any) => ({ range: toVscRange(h.range), kind: h.kind ?? 0 }));
+					} catch {
+						return null;
+					}
+				}
+			})
+		);
+
+		this._wasmProviderRegistrations.push(
+			this.languageFeatures.renameProvider.register(wasmLanguages, {
+				provideRenameEdits: async (model, position, newName, _token) => {
+					try {
+						const result = await wasmProvideRenameAll(model.uri.toString(), model.getLanguageId(), model.getVersionId(), position.lineNumber - 1, position.column - 1, newName);
+						if (!result?.edits?.length) {
+							return null;
+						}
+						return this._convertWorkspaceEdit(result);
+					} catch {
+						return null;
+					}
+				}
+			})
+		);
+
+		this._wasmProviderRegistrations.push(
+			this.languageFeatures.codeActionProvider.register(wasmLanguages, {
+				provideCodeActions: async (model, range, _context, _token) => {
+					try {
+						const result = await wasmProvideCodeActionsAll(
+							model.uri.toString(), model.getLanguageId(), model.getVersionId(),
+							range.startLineNumber - 1, range.startColumn - 1,
+							range.endLineNumber - 1, range.endColumn - 1
+						);
+						if (!Array.isArray(result) || !result.length) {
+							return null;
+						}
+						return {
+							actions: result.map((a: any) => ({
+								title: a.title,
+								kind: a.kind,
+								isPreferred: Boolean(a.isPreferred),
+								diagnostics: [],
+								edit: a.edit ? this._convertWorkspaceEdit(a.edit) : undefined
+							})),
+							dispose: () => { }
+						} satisfies CodeActionList;
+					} catch {
+						return null;
+					}
+				}
+			})
+		);
+
+		this._wasmProviderRegistrations.push(
+			this.languageFeatures.foldingRangeProvider.register(wasmLanguages, {
+				provideFoldingRanges: async (model, _context, _token) => {
+					try {
+						const result = await wasmProvideFoldingRangesAll(model.uri.toString(), model.getLanguageId(), model.getVersionId());
+						if (!Array.isArray(result) || !result.length) {
+							return null;
+						}
+						return result.map((f: any) => ({ start: f.startLine + 1, end: f.endLine + 1 }));
+					} catch {
+						return null;
+					}
+				}
+			})
+		);
+
+		this._wasmProviderRegistrations.push(
+			this.languageFeatures.inlayHintsProvider.register(wasmLanguages, {
+				provideInlayHints: async (model, range, _token) => {
+					try {
+						const result = await wasmProvideInlayHintsAll(
+							model.uri.toString(), model.getLanguageId(), model.getVersionId(),
+							range.startLineNumber - 1, range.startColumn - 1,
+							range.endLineNumber - 1, range.endColumn - 1
+						);
+						if (!Array.isArray(result) || !result.length) {
+							return null;
+						}
+						return {
+							hints: result.map((h: any) => ({
+								position: { lineNumber: h.position.line + 1, column: h.position.character + 1 },
+								label: h.label,
+								paddingLeft: Boolean(h.paddingLeft),
+								paddingRight: Boolean(h.paddingRight)
+							})),
+							dispose: () => { }
+						} satisfies InlayHintList;
+					} catch {
+						return null;
+					}
+				}
+			})
+		);
+
+		this._wasmProviderRegistrations.push(
+			this.languageFeatures.documentRangeFormattingEditProvider.register(wasmLanguages, {
+				provideDocumentRangeFormattingEdits: async (model, range, options, _token) => {
+					try {
+						const result = await wasmProvideRangeFormattingAll(
+							model.uri.toString(), model.getLanguageId(), model.getVersionId(),
+							range.startLineNumber - 1, range.startColumn - 1,
+							range.endLineNumber - 1, range.endColumn - 1,
+							options.tabSize, options.insertSpaces
+						);
+						if (!Array.isArray(result) || !result.length) {
+							return null;
+						}
+						return result.map((e: any) => ({ range: toVscRange(e.range), text: e.newText }));
+					} catch {
+						return null;
+					}
+				}
+			})
+		);
+
 		this.logService.info(`[ExtHost] WASM providers registered for: ${(wasmLanguages as string[]).join(', ')}`);
 	}
 
@@ -608,6 +1015,8 @@ class TauriExtensionHostContribution extends Disposable implements IWorkbenchCon
 		this._connected = false;
 		this._handshakeSeen = false;
 		this._rejectPending('disposed');
+		this._wasmCommands.forEach(d => d.dispose());
+		this._wasmCommands.clear();
 		this._providerRegistrations.forEach(d => d.dispose());
 		this._wasmProviderRegistrations.forEach(d => d.dispose());
 		this._langConfigDisposables.forEach(d => d.dispose());
@@ -625,6 +1034,8 @@ class TauriExtensionHostContribution extends Disposable implements IWorkbenchCon
 		this._treeViews.clear();
 		this._modelContentListeners.forEach(d => d.dispose());
 		this._modelContentListeners.clear();
+		this._diagnosticTimers.forEach(t => clearTimeout(t));
+		this._diagnosticTimers.clear();
 		this._trackedEditors.forEach(entry => entry.listeners.forEach(l => l.dispose()));
 		this._trackedEditors.clear();
 		this._activeTrackedEditorId = null;
@@ -863,9 +1274,6 @@ class TauriExtensionHostContribution extends Disposable implements IWorkbenchCon
 				break;
 			case 'registerCustomEditorProvider':
 				this.logService.info(`[ExtHost] registerCustomEditorProvider: ${msg.viewType}`);
-				break;
-			case 'registerTaskProvider':
-				this.logService.info(`[ExtHost] registerTaskProvider: ${msg.taskType}`);
 				break;
 			case 'scmSourceControlCreated':
 				this.logService.info(`[ExtHost] scmSourceControlCreated: ${msg.id}`);
@@ -2990,12 +3398,18 @@ class TauriExtensionHostContribution extends Disposable implements IWorkbenchCon
 				? item.documentation
 				: (typeof item.documentation?.value === 'string' ? item.documentation.value : String(item.documentation)));
 
+		const insertText = typeof item.insertText === 'string' && item.insertText.length > 0 ? item.insertText : label;
+		const hasSnippetSyntax = /\$\{\d+(?::[^}]*)?\}|\$\d+/.test(insertText);
+
 		return {
 			label,
 			kind: typeof item.kind === 'number' ? item.kind : CompletionItemKind.Text,
 			detail: typeof item.detail === 'string' ? item.detail : undefined,
 			documentation: documentationValue ? { value: documentationValue } : undefined,
-			insertText: typeof item.insertText === 'string' && item.insertText.length > 0 ? item.insertText : label,
+			insertText,
+			insertTextRules: hasSnippetSyntax
+				? CompletionItemInsertTextRule.InsertAsSnippet
+				: (typeof item.insertTextRules === 'number' ? item.insertTextRules : undefined),
 			range,
 			sortText: typeof item.sortText === 'string' ? item.sortText : undefined,
 			filterText: typeof item.filterText === 'string' ? item.filterText : undefined,
@@ -3029,14 +3443,32 @@ class TauriExtensionHostContribution extends Disposable implements IWorkbenchCon
 	}
 
 	private _convertWorkspaceEdit(edit: any): WorkspaceEdit & Rejection {
-		const edits: IWorkspaceTextEdit[] = (edit.edits || []).map((e: any) => ({
-			resource: URI.parse(e.uri),
-			versionId: undefined,
-			textEdit: {
-				range: toVscRange(e.range),
-				text: e.newText,
-			},
-		}));
+		const edits: IWorkspaceTextEdit[] = [];
+		for (const entry of edit?.edits || []) {
+			// Rust serializes `{ uri, edits: [{ range, newText }] }`; older payloads
+			// are already flat (`{ uri, range, newText }`), so support both shapes.
+			if (Array.isArray(entry?.edits)) {
+				for (const textEdit of entry.edits) {
+					edits.push({
+						resource: URI.parse(entry.uri),
+						versionId: undefined,
+						textEdit: {
+							range: toVscRange(textEdit.range),
+							text: textEdit.newText,
+						},
+					});
+				}
+			} else if (entry?.range) {
+				edits.push({
+					resource: URI.parse(entry.uri),
+					versionId: undefined,
+					textEdit: {
+						range: toVscRange(entry.range),
+						text: entry.newText,
+					},
+				});
+			}
+		}
 		return { edits } as WorkspaceEdit & Rejection;
 	}
 }

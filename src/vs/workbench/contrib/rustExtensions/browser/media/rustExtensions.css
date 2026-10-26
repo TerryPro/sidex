@@ -1,0 +1,69 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+.rust-ext-summary {
+	padding: 6px 12px;
+	font-size: 11px;
+	opacity: 0.8;
+}
+
+.rust-ext-list {
+	display: flex;
+	flex-direction: column;
+}
+
+.rust-ext-row {
+	display: flex;
+	align-items: flex-start;
+	gap: 8px;
+	padding: 6px 12px;
+}
+
+.rust-ext-row:hover {
+	background-color: var(--vscode-list-hoverBackground);
+}
+
+.rust-ext-icon {
+	margin-top: 2px;
+	opacity: 0.9;
+}
+
+.rust-ext-info {
+	flex: 1;
+	min-width: 0;
+}
+
+.rust-ext-title {
+	font-size: 12px;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.rust-ext-meta {
+	font-size: 11px;
+	opacity: 0.7;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.rust-ext-badge {
+	font-size: 10px;
+	padding: 1px 6px;
+	border-radius: 8px;
+	white-space: nowrap;
+	margin-top: 2px;
+}
+
+.rust-ext-badge.loaded {
+	background-color: rgba(56, 142, 60, 0.25);
+	color: var(--vscode-testing-iconPassed, #89d185);
+}
+
+.rust-ext-badge.idle {
+	background-color: rgba(128, 128, 128, 0.2);
+	opacity: 0.8;
+}

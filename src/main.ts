@@ -370,8 +370,6 @@ function setupMenuActions() {
 		// Terminal
 		new_terminal: 'workbench.action.terminal.new',
 		split_terminal: 'workbench.action.terminal.split',
-		run_task: 'workbench.action.tasks.runTask',
-		run_build_task: 'workbench.action.tasks.build',
 		// Help
 		keyboard_shortcuts: 'workbench.action.keybindingsEditor'
 	};

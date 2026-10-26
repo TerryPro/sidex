@@ -18,6 +18,12 @@ import {
 	registerWorkbenchContribution2
 } from '../../../common/contributions.js';
 import { MarkdownPreviewManager } from './markdownPreview.js';
+import { MenuId, MenuRegistry } from '../../../../platform/actions/common/actions.js';
+import { ContextKeyExpr } from '../../../../platform/contextkey/common/contextkey.js';
+import { KeybindingWeight, KeybindingsRegistry } from '../../../../platform/keybinding/common/keybindingsRegistry.js';
+import { KeyChord, KeyCode, KeyMod } from '../../../../base/common/keyCodes.js';
+import { Codicon } from '../../../../base/common/codicons.js';
+import { localize } from '../../../../nls.js';
 
 let _previewManager: MarkdownPreviewManager | undefined;
 
@@ -93,8 +99,9 @@ CommandsRegistry.registerCommand('markdown.showPreviewToSide', accessor => {
 	manager.showPreview(true);
 });
 
-CommandsRegistry.registerCommand('markdown.showSource', _accessor => {
-	// TODO: implement show source
+CommandsRegistry.registerCommand('markdown.showSource', accessor => {
+	const manager = getOrCreateManager(accessor);
+	manager.showSource();
 });
 
 CommandsRegistry.registerCommand('markdown.togglePreview', accessor => {
@@ -102,26 +109,74 @@ CommandsRegistry.registerCommand('markdown.togglePreview', accessor => {
 	manager.toggle();
 });
 
-CommandsRegistry.registerCommand('markdown.preview.refresh', _accessor => {
-	// TODO: implement refresh
+CommandsRegistry.registerCommand('markdown.preview.refresh', accessor => {
+	const manager = getOrCreateManager(accessor);
+	manager.refresh();
 });
 
-CommandsRegistry.registerCommand('markdown.preview.toggleLock', _accessor => {
-	// TODO: implement toggle lock
+CommandsRegistry.registerCommand('markdown.reopenAsPreview', accessor => {
+	const manager = getOrCreateManager(accessor);
+	manager.showPreview();
 });
 
-CommandsRegistry.registerCommand('markdown.showPreviewSecuritySelector', _accessor => {
-	// TODO: implement security selector
+CommandsRegistry.registerCommand('markdown.reopenAsSource', accessor => {
+	const manager = getOrCreateManager(accessor);
+	manager.showSource();
 });
 
-CommandsRegistry.registerCommand('markdown.findAllFileReferences', _accessor => {
-	// TODO: implement find references
+const markdownWhen = ContextKeyExpr.or(
+	ContextKeyExpr.equals('resourceLangId', 'markdown'),
+	ContextKeyExpr.equals('editorLangId', 'markdown')
+);
+
+MenuRegistry.appendMenuItem(MenuId.EditorTitle, {
+	command: {
+		id: 'markdown.showPreviewToSide',
+		title: localize('markdown.previewSide.title', 'Open Preview to the Side'),
+		icon: { id: Codicon.openPreview.id }
+	},
+	alt: {
+		id: 'markdown.showPreview',
+		title: localize('markdown.preview.title', 'Open Preview')
+	},
+	when: markdownWhen,
+	group: 'navigation',
+	order: 1
 });
 
-CommandsRegistry.registerCommand('markdown.reopenAsPreview', _accessor => {
-	// TODO: implement reopen as preview
+MenuRegistry.appendMenuItem(MenuId.CommandPalette, {
+	command: {
+		id: 'markdown.showPreview',
+		title: localize('markdown.showPreview', 'Markdown: Open Preview')
+	},
+	when: markdownWhen
 });
 
-CommandsRegistry.registerCommand('markdown.reopenAsSource', _accessor => {
-	// TODO: implement reopen as source
+MenuRegistry.appendMenuItem(MenuId.CommandPalette, {
+	command: {
+		id: 'markdown.showPreviewToSide',
+		title: localize('markdown.showPreviewToSide', 'Markdown: Open Preview to the Side')
+	}
+});
+
+MenuRegistry.appendMenuItem(MenuId.CommandPalette, {
+	command: {
+		id: 'markdown.togglePreview',
+		title: localize('markdown.togglePreview', 'Markdown: Toggle Preview')
+	},
+	when: markdownWhen
+});
+
+KeybindingsRegistry.registerKeybindingRule({
+	id: 'markdown.showPreviewToSide',
+	weight: KeybindingWeight.WorkbenchContrib,
+	primary: KeyChord(KeyMod.CtrlCmd | KeyCode.KeyK, KeyCode.KeyV),
+	when: markdownWhen
+});
+
+KeybindingsRegistry.registerKeybindingRule({
+	id: 'markdown.togglePreview',
+	weight: KeybindingWeight.WorkbenchContrib,
+	primary: KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.KeyV,
+	when: markdownWhen
 });

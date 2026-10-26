@@ -136,9 +136,6 @@ import './contrib/extensions/browser/extensions.web.contribution.js';
 import './contrib/terminal/browser/terminal.web.contribution.js';
 import './contrib/terminal/browser/terminalInstanceService.js';
 
-// Tasks
-import './contrib/tasks/browser/taskService.js';
-
 // SideX: removed — tags
 // import './contrib/tags/browser/workspaceTagsService.js';
 

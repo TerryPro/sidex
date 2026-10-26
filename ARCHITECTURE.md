@@ -4,6 +4,8 @@ A technical reference for how SideX maps to VSCode's architecture.
 
 The VSCode source (MIT License) is the architectural reference. No proprietary code is used.
 
+可视化版本：[SideX 架构：WASM 扩展与语言能力](.archify/architecture-sidex-wasm-20261026-130123/sidex-architecture.html)
+
 ## Process Model
 
 ```
@@ -21,7 +23,7 @@ Renderer Process             →       Tauri Webview (frontend TS)
   └─ Extension Host API      →       Extension Host API (ported)
 
 Shared Process               →       Rust service layer
-Extension Host               →       Sidecar process (in progress)
+Extension Host               →       WASM runtime in-process (Node sidecar optional, off by default)
 ```
 
 ## VSCode Layering (Preserved)
@@ -148,12 +150,29 @@ current list.
 | **git** | `git_status`, `git_diff`, `git_log`, `git_log_graph`, `git_add`, `git_commit`, `git_checkout`, `git_branches`, `git_create_branch`, `git_delete_branch`, `git_push`, `git_pull`, `git_fetch`, `git_stash`, `git_reset`, `git_show`, `git_init`, `git_is_repo`, `git_clone`, `git_remote_list`, `git_run` |
 | **extension_platform** | `extension_platform_bootstrap`, `extension_platform_status`, `extension_platform_restart`, `extension_platform_stop`, `extension_platform_init_data` |
 | **network** | `proxy_request`, `proxy_request_full` |
-| **tasks** | `task_spawn`, `task_kill`, `task_list` |
 
 ## Extension Host
 
-Extensions run in a Node sidecar process supervised from
-`src-tauri/src/commands/ext_host.rs`; the workbench talks to it over a local
-WebSocket and Rust resolves extension manifests from disk. WASM extensions
-are loaded in-process by `commands/extension_wasm.rs`.
+The extension host is WASM-first. `src-tauri/src/commands/extension_wasm.rs`
+loads `.wasm` components through the wasmtime component model against the WIT
+contract in `src-tauri/wit/world.wit`. Seven Rust extensions ship in
+`extensions-rust/` and activate lazily on `onLanguage:<id>` events, so opening a
+TypeScript or Rust file instantiates only the extensions that declare it.
+
+The workbench side lives in
+`src/vs/workbench/contrib/extensions/browser/tauriExtensionHost.contribution.ts`.
+It registers the WASM provider results as ordinary language features
+(completion, hover, references, rename, code actions, folding, inlay hints and
+more) and mirrors diagnostics into the marker service, which is what feeds the
+Problems panel.
+
+Language servers run per extension, not through `commands/lsp.rs`: an extension
+calls `__sidex.lsp`, the host spawns `rust-analyzer` or `tsserver`, and a
+background reader thread keeps the JSON-RPC stream open. Server-pushed
+`textDocument/publishDiagnostics` notifications are queued and handed back to
+the workbench through `wasm_get_diagnostics`.
+
+The Node sidecar in `commands/ext_host.rs` still exists, but it only starts when
+`SIDEX_NODE_EXTENSIONS=on`. With it off, the bundled `extensions/` tree holds
+declarative extensions only — grammars, themes and language configuration.
 

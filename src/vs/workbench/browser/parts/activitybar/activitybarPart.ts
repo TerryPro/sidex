@@ -73,7 +73,7 @@ export class ActivitybarPart extends Part {
 	static readonly ACTIVITYBAR_WIDTH = 40;
 	static readonly COMPACT_ACTIVITYBAR_WIDTH = 32;
 
-	static readonly ICON_SIZE = 18;
+	static readonly ICON_SIZE = 22;
 	static readonly COMPACT_ICON_SIZE = 14;
 
 	static readonly pinnedViewContainersKey = 'workbench.activity.pinnedViewlets2';

@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-/* Sidex: Explorer viewlet — 22px rows, Inter font, tighter spacing, muted chrome */
+/* Sidex: Explorer viewlet — 22px rows, tighter spacing, muted chrome */
 
 .explorer-folders-view,
 .explorer-folders-view {
@@ -11,8 +11,7 @@
 }
 
 .explorer-folders-view .monaco-list .monaco-list-row {
-	font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-	font-size: 12.5px;
+	font-size: 13px;
 	font-weight: 400;
 	letter-spacing: 0.01em;
 }

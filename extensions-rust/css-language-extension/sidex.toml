@@ -6,4 +6,4 @@ description = "SideX native css-language extension"
 wasm = "../target/wasm32-wasip2/release/css_language_extension.wasm"
 
 [activation]
-events = ["onStartupFinished"]
+events = ["onLanguage:css", "onLanguage:scss", "onLanguage:less"]

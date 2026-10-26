@@ -3050,9 +3050,6 @@ function createVscodeShim() {
       host._textContentProviders.set(scheme, provider);
       return { dispose() { host._textContentProviders?.delete(scheme); } };
     },
-    registerTaskProvider: (type, provider) => {
-      return tasks.registerTaskProvider(type, provider);
-    },
     registerFileSystemProvider: (scheme, provider, options) => {
       if (!host._fsProviders) host._fsProviders = new Map();
       host._fsProviders.set(scheme, provider);
@@ -3915,62 +3912,6 @@ function createVscodeShim() {
     };
   })();
 
-  const tasks = (() => {
-    const _taskProviders = new Map();
-    const _executions = [];
-    const startEmitter = new VscEventEmitter();
-    const endEmitter = new VscEventEmitter();
-    const processStartEmitter = new VscEventEmitter();
-    const processEndEmitter = new VscEventEmitter();
-    return {
-      registerTaskProvider: (type, provider) => {
-        _taskProviders.set(type, provider);
-        host.emit('event', { type: 'registerTaskProvider', taskType: type });
-        return { dispose() { _taskProviders.delete(type); } };
-      },
-      fetchTasks: (filter) => {
-        const promises = [];
-        for (const [type, provider] of _taskProviders) {
-          if (!filter || !filter.type || filter.type === type) {
-            try {
-              const result = provider.provideTasks(
-                { isCancellationRequested: false, onCancellationRequested: noopEvent }
-              );
-              if (result && typeof result.then === 'function') {
-                promises.push(result.then((t) => t || []));
-              } else {
-                promises.push(Promise.resolve(result || []));
-              }
-            } catch {
-              promises.push(Promise.resolve([]));
-            }
-          }
-        }
-        return Promise.all(promises).then((arrays) => arrays.flat());
-      },
-      executeTask: (task) => {
-        const execId = `sidex-taskexec-${++host._reqId}`;
-        host.emit('event', {
-          type: 'executeTask',
-          id: execId,
-          name: task.name,
-          source: task.source,
-          definition: task.definition,
-        });
-        const execution = { task, terminate() { host.emit('event', { type: 'terminateTask', id: execId }); } };
-        _executions.push(execution);
-        startEmitter.fire({ execution });
-        return Promise.resolve(execution);
-      },
-      get taskExecutions() { return [..._executions]; },
-      onDidStartTask: startEmitter.event,
-      onDidEndTask: endEmitter.event,
-      onDidStartTaskProcess: processStartEmitter.event,
-      onDidEndTaskProcess: processEndEmitter.event,
-    };
-  })();
-
-
   const notebooks = {
     createNotebookController: (id, notebookType, label, handler) => {
       const selectedEmitter = new VscEventEmitter();
@@ -4268,43 +4209,6 @@ function createVscodeShim() {
         this.pattern = pattern;
       }
     },
-    ShellExecution: class {
-      constructor(commandLine, args, options) {
-        this.commandLine = commandLine;
-        this.args = args;
-        this.options = options;
-      }
-    },
-    ProcessExecution: class {
-      constructor(process, args, options) {
-        this.process = process;
-        this.args = args;
-        this.options = options;
-      }
-    },
-    CustomExecution: class {
-      constructor(callback) {
-        this.callback = callback;
-      }
-    },
-    Task: class {
-      constructor(definition, scope, name, source, execution, problemMatchers) {
-        this.definition = definition;
-        this.scope = scope;
-        this.name = name;
-        this.source = source;
-        this.execution = execution;
-        this.problemMatchers = problemMatchers || [];
-        this.isBackground = false;
-        this.presentationOptions = {};
-        this.runOptions = {};
-        this.group = undefined;
-      }
-    },
-    TaskScope: { Global: 1, Workspace: 2 },
-    TaskGroup: { Build: { id: 'build' }, Test: { id: 'test' }, Clean: { id: 'clean' }, Rebuild: { id: 'rebuild' } },
-    TaskPanelKind: { Shared: 1, Dedicated: 2, New: 3 },
-    TaskRevealKind: { Always: 1, Silent: 2, Never: 3 },
     TerminalLocation: { Panel: 1, Editor: 2 },
     TerminalExitReason: { Unknown: 0, Shutdown: 1, Process: 2, User: 3, Extension: 4 },
     TerminalShellExecutionCommandLineConfidence: { Low: 0, Medium: 1, High: 2 },
@@ -4620,7 +4524,6 @@ function createVscodeShim() {
     window,
     extensions,
     env,
-    tasks,
     notebooks,
     scm,
     comments,

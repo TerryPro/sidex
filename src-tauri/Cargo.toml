@@ -109,7 +109,6 @@ sidex-workspace = { path = "../crates/sidex-workspace" }
 # Internal crates
 sidex-text = { path = "../crates/sidex-text" }
 sidex-syntax = { path = "../crates/sidex-syntax" }
-sidex-tasks = { path = "../crates/sidex-tasks" }
 sidex-extensions = { path = "../crates/sidex-extensions" }
 sidex-extension-api = { path = "../crates/sidex-extension-api" }
 sidex-keymap = { path = "../crates/sidex-keymap" }

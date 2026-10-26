@@ -64,4 +64,9 @@ fn main() {
     }
 
     tauri_build::build();
+
+    // Icons are embedded into the binary via tauri's context generation, but
+    // cargo does not track `include_bytes!` inputs. Watch them explicitly so
+    // editing bundle icons actually rebuilds the window/taskbar icon.
+    println!("cargo:rerun-if-changed=icons");
 }

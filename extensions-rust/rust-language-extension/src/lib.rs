@@ -195,7 +195,14 @@ impl SidexExtension for RustLanguageExtension {
     fn provide_type_hierarchy_subtypes(_: DocumentContext, _: Position) -> Vec<DocumentSymbol> { vec![] }
     fn provide_type_hierarchy_supertypes(_: DocumentContext, _: Position) -> Vec<DocumentSymbol> { vec![] }
     fn provide_linked_editing_ranges(_: DocumentContext, _: Position) -> Vec<Range> { vec![] }
-    fn on_document_opened(_: DocumentContext) {}
+    fn on_document_opened(ctx: DocumentContext) {
+        if ctx.language_id != "rust" {
+            return;
+        }
+        // Touching the server on open makes it register the document, which is
+        // what triggers rust-analyzer to push diagnostics for it.
+        let _ = lsp_request("textDocument/diagnostic", &ctx, None, "");
+    }
     fn on_document_closed(_: DocumentContext) {}
     fn on_document_changed(_: DocumentContext, _: Vec<TextEdit>) {}
     fn on_document_saved(_: DocumentContext, _: u32) {}

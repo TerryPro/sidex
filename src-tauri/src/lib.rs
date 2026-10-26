@@ -9,7 +9,6 @@ use commands::lsp::LspState;
 use commands::remote::RemoteManagerStore;
 use commands::settings::SettingsStore;
 use commands::storage::StorageDb;
-use commands::tasks::TaskProcessStore;
 use commands::terminal::TerminalStore;
 use commands::updater::UpdateManagerState;
 use commands::watch::WatchStore;
@@ -266,13 +265,6 @@ fn build_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
                 .build(app)?,
         )
         .item(&MenuItemBuilder::with_id("split_terminal", "Split Terminal").build(app)?)
-        .separator()
-        .item(&MenuItemBuilder::with_id("run_task", "Run Task...").build(app)?)
-        .item(
-            &MenuItemBuilder::with_id("run_build_task", "Run Build Task...")
-                .accelerator("CmdOrCtrl+Shift+B")
-                .build(app)?,
-        )
         .build()?;
 
     let window_menu = SubmenuBuilder::with_id(app, "window_menu", "Window")
@@ -409,7 +401,6 @@ pub fn run() {
         .manage(Arc::new(commands::extensions::MarketplaceClientState::new()))
         .manage(Arc::new(TerminalStore::new()))
         .manage(Arc::new(LspState::new()))
-        .manage(Arc::new(TaskProcessStore::new()))
         .manage(Arc::new(WatchStore::new()))
         .manage(ExtensionPlatformSupervisor::new())
         .manage(ExtensionDiagnosticsStore::new())
@@ -769,11 +760,6 @@ pub fn run() {
             commands::open_external_url,
             commands::env_shell,
             commands::env_app_host,
-            commands::task_spawn,
-            commands::task_kill,
-            commands::task_list,
-            commands::tasks_detect,
-            commands::tasks_parse_config,
             // File watching
             commands::watch_start,
             commands::watch_stop,
@@ -793,6 +779,11 @@ pub fn run() {
             commands::wasm_load_extension,
             commands::wasm_unload_extension,
             commands::wasm_list_extensions,
+            commands::wasm_get_decorations,
+            commands::wasm_activate_language,
+            commands::wasm_list_commands,
+            commands::wasm_extension_details,
+            commands::wasm_execute_command_all,
             commands::wasm_sync_document,
             commands::wasm_close_document,
             commands::wasm_sync_workspace_folders,
@@ -807,6 +798,19 @@ pub fn run() {
             commands::wasm_provide_definition_all,
             commands::wasm_provide_document_symbols_all,
             commands::wasm_provide_formatting_all,
+            commands::wasm_provide_references_all,
+            commands::wasm_provide_type_definition_all,
+            commands::wasm_provide_implementation_all,
+            commands::wasm_provide_declaration_all,
+            commands::wasm_provide_code_actions_all,
+            commands::wasm_provide_signature_help_all,
+            commands::wasm_provide_document_highlights_all,
+            commands::wasm_provide_rename_all,
+            commands::wasm_provide_folding_ranges_all,
+            commands::wasm_provide_inlay_hints_all,
+            commands::wasm_provide_range_formatting_all,
+            commands::wasm_provide_workspace_symbols_all,
+            commands::wasm_get_diagnostics,
             // Extension diagnostics
             commands::extension_report_activated,
             commands::extension_report_provider_call,
@@ -874,12 +878,9 @@ pub fn run() {
         .expect("error while running tauri application")
         .run(|app_handle, event| {
             // Kill every child process we spawned when the app exits —
-            // PTY shells, build tasks, and the extension
-            // host would otherwise outlive the editor as orphans.
+            // PTY shells and the extension host would otherwise outlive the
+            // editor as orphans.
             if let tauri::RunEvent::Exit = event {
-                if let Some(store) = app_handle.try_state::<Arc<TaskProcessStore>>() {
-                    store.kill_all();
-                }
                 if let Some(supervisor) = app_handle.try_state::<ExtensionPlatformSupervisor>() {
                     let _ = supervisor.stop();
                 }

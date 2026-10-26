@@ -6096,7 +6096,6 @@ dependencies = [
  "sidex-remote",
  "sidex-settings",
  "sidex-syntax",
- "sidex-tasks",
  "sidex-text",
  "sidex-textmate",
  "sidex-theme",
@@ -6292,19 +6291,6 @@ dependencies = [
  "thiserror 2.0.18",
  "tree-sitter",
  "tree-sitter-rust",
-]
-
-[[package]]
-name = "sidex-tasks"
-version = "0.2.0"
-dependencies = [
- "anyhow",
- "log",
- "regex",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
 ]
 
 [[package]]

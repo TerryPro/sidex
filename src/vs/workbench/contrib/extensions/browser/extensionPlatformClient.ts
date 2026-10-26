@@ -43,6 +43,8 @@ export interface IExtensionPlatformBootstrap {
   sessionKind: string;
   extensions: IExtensionManifestSummary[];
   initDataJson: string;
+  /** False when no extension declares `main`/`browser`, so no Node host was spawned. */
+  nodeHost?: boolean;
 }
 
 export interface IExtensionPlatformStatus {
@@ -223,6 +225,32 @@ export async function listWasmExtensions(): Promise<string[]> {
   return invoke<string[]>('wasm_list_extensions');
 }
 
+/** Activate every WASM extension that declared `onLanguage:<languageId>`. */
+export async function activateWasmExtensionsForLanguage(languageId: string): Promise<string[]> {
+  return invoke<string[]>('wasm_activate_language', { languageId });
+}
+
+export interface IWasmCommandInfo {
+  extensionId: string;
+  id: string;
+  title: string;
+}
+
+export interface IWasmCommandResult {
+  extensionId: string;
+  result: string;
+}
+
+/** Commands declared by the currently loaded WASM extensions. */
+export async function listWasmCommands(): Promise<IWasmCommandInfo[]> {
+  return invoke<IWasmCommandInfo[]>('wasm_list_commands');
+}
+
+/** Run a command in every loaded WASM extension; each returns a JSON string. */
+export async function executeWasmCommandAll(commandId: string, args: string): Promise<IWasmCommandResult[]> {
+  return invoke<IWasmCommandResult[]>('wasm_execute_command_all', { commandId, args });
+}
+
 // ---------------------------------------------------------------------------
 // WASM document sync — keep WASM host state in sync with open editors
 // ---------------------------------------------------------------------------
@@ -312,4 +340,93 @@ export async function wasmProvideFormattingAll(
   uri: string, languageId: string, version: number, tabSize: number, insertSpaces: boolean,
 ): Promise<any> {
   return invoke<any>('wasm_provide_formatting_all', { uri, languageId, version, tabSize, insertSpaces });
+}
+
+export async function wasmProvideReferencesAll(
+  uri: string, languageId: string, version: number, line: number, character: number,
+): Promise<any> {
+  return invoke<any>('wasm_provide_references_all', { uri, languageId, version, line, character });
+}
+
+export async function wasmProvideTypeDefinitionAll(
+  uri: string, languageId: string, version: number, line: number, character: number,
+): Promise<any> {
+  return invoke<any>('wasm_provide_type_definition_all', { uri, languageId, version, line, character });
+}
+
+export async function wasmProvideImplementationAll(
+  uri: string, languageId: string, version: number, line: number, character: number,
+): Promise<any> {
+  return invoke<any>('wasm_provide_implementation_all', { uri, languageId, version, line, character });
+}
+
+export async function wasmProvideDeclarationAll(
+  uri: string, languageId: string, version: number, line: number, character: number,
+): Promise<any> {
+  return invoke<any>('wasm_provide_declaration_all', { uri, languageId, version, line, character });
+}
+
+export async function wasmProvideCodeActionsAll(
+  uri: string, languageId: string, version: number,
+  startLine: number, startCharacter: number, endLine: number, endCharacter: number,
+): Promise<any> {
+  return invoke<any>('wasm_provide_code_actions_all', {
+    uri, languageId, version, startLine, startCharacter, endLine, endCharacter,
+  });
+}
+
+export async function wasmProvideSignatureHelpAll(
+  uri: string, languageId: string, version: number, line: number, character: number,
+): Promise<any> {
+  return invoke<any>('wasm_provide_signature_help_all', { uri, languageId, version, line, character });
+}
+
+export async function wasmProvideDocumentHighlightsAll(
+  uri: string, languageId: string, version: number, line: number, character: number,
+): Promise<any> {
+  return invoke<any>('wasm_provide_document_highlights_all', { uri, languageId, version, line, character });
+}
+
+export async function wasmProvideRenameAll(
+  uri: string, languageId: string, version: number, line: number, character: number, newName: string,
+): Promise<any> {
+  return invoke<any>('wasm_provide_rename_all', { uri, languageId, version, line, character, newName });
+}
+
+export async function wasmProvideFoldingRangesAll(
+  uri: string, languageId: string, version: number,
+): Promise<any> {
+  return invoke<any>('wasm_provide_folding_ranges_all', { uri, languageId, version });
+}
+
+export async function wasmProvideInlayHintsAll(
+  uri: string, languageId: string, version: number,
+  startLine: number, startCharacter: number, endLine: number, endCharacter: number,
+): Promise<any> {
+  return invoke<any>('wasm_provide_inlay_hints_all', {
+    uri, languageId, version, startLine, startCharacter, endLine, endCharacter,
+  });
+}
+
+export async function wasmProvideRangeFormattingAll(
+  uri: string, languageId: string, version: number,
+  startLine: number, startCharacter: number, endLine: number, endCharacter: number,
+  tabSize: number, insertSpaces: boolean,
+): Promise<any> {
+  return invoke<any>('wasm_provide_range_formatting_all', {
+    uri, languageId, version, startLine, startCharacter, endLine, endCharacter, tabSize, insertSpaces,
+  });
+}
+
+export interface IWasmDiagnostic {
+  extensionId: string;
+  range: { start: { line: number; character: number }; end: { line: number; character: number } };
+  message: string;
+  severity: 'error' | 'warning' | 'information' | 'hint';
+  source?: string;
+  code?: string;
+}
+
+export async function getWasmDiagnostics(uri: string): Promise<IWasmDiagnostic[]> {
+  return invoke<IWasmDiagnostic[]>('wasm_get_diagnostics', { uri });
 }

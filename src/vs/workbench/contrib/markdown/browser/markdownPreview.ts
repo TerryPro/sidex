@@ -3,9 +3,10 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { Disposable, DisposableStore } from '../../../../base/common/lifecycle.js';
+import { Disposable, DisposableStore, IDisposable } from '../../../../base/common/lifecycle.js';
 import { URI } from '../../../../base/common/uri.js';
 import { IEditorService, SIDE_GROUP } from '../../../services/editor/common/editorService.js';
+import { ICodeEditorService } from '../../../../editor/browser/services/codeEditorService.js';
 import { IWebviewWorkbenchService } from '../../webviewPanel/browser/webviewWorkbenchService.js';
 import { WebviewInput } from '../../webviewPanel/browser/webviewEditorInput.js';
 import { WebviewInitInfo } from '../../webview/browser/webview.js';
@@ -14,13 +15,69 @@ import { EditorInput } from '../../../common/editor/editorInput.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
 import { ITextFileService } from '../../../services/textfile/common/textfiles.js';
+import { IThemeService } from '../../../../platform/theme/common/themeService.js';
+import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
+import { ILanguageService } from '../../../../editor/common/languages/language.js';
+import { tokenizeToString } from '../../../../editor/common/languages/textToHtmlTokenizer.js';
 import { DEFAULT_MARKDOWN_STYLES } from './markdownDocumentRenderer.js';
+import { markedGfmHeadingIdPlugin } from './markedGfmHeadingIdPlugin.js';
+import { sanitizeHtml } from '../../../../base/browser/domSanitize.js';
+import { allowedMarkdownHtmlAttributes, allowedMarkdownHtmlTags } from '../../../../base/browser/markdownRenderer.js';
+import { Schemas } from '../../../../base/common/network.js';
+import { ColorScheme } from '../../../../platform/theme/common/theme.js';
 import * as marked from '../../../../base/common/marked/marked.js';
 
 const MARKDOWN_PREVIEW_VIEW_TYPE = 'sidex.markdown.preview';
 const PREVIEW_OPEN_FILES_KEY = 'markdown.preview.openFiles';
 
 const HAS_SCHEME = /^\w[\w\d+.-]*:/;
+
+const PREVIEW_EXTRA_STYLES = `
+pre {
+	padding: 12px 16px;
+	overflow: auto;
+	border-radius: 4px;
+}
+
+code {
+	font-family: var(--vscode-editor-font-family);
+}
+
+pre code {
+	font-size: var(--vscode-editor-font-size);
+	line-height: 1.4;
+}
+
+.monaco-tokenized-source {
+	display: block;
+	white-space: pre;
+}
+
+blockquote {
+	margin: 0;
+	padding: 0 1em;
+	border-left: 4px solid var(--vscode-textBlockQuote-border);
+	color: var(--vscode-textBlockQuote-foreground);
+}
+
+img {
+	max-width: 100%;
+}
+`;
+
+const PREVIEW_SCRIPT = `
+(function () {
+	window.addEventListener('message', function (event) {
+		var data = event.data;
+		if (!data || data.type !== 'sidex.md.scrollToFraction') {
+			return;
+		}
+		var value = Math.min(1, Math.max(0, Number(data.value) || 0));
+		var max = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+		window.scrollTo(0, max * value);
+	});
+})();
+`;
 
 function resolveMarkdownUri(baseDir: URI, href: string): URI {
 	if (HAS_SCHEME.test(href)) {
@@ -43,16 +100,78 @@ function rewriteImageSrcs(html: string, baseDir: URI): string {
 	);
 }
 
+function sanitize(html: string): string {
+	return sanitizeHtml(html, {
+		allowedLinkProtocols: { override: [Schemas.http, Schemas.https, Schemas.file] },
+		allowRelativeLinkPaths: true,
+		allowedMediaProtocols: { override: [Schemas.http, Schemas.https, Schemas.data, Schemas.file] },
+		allowRelativeMediaPaths: true,
+		allowedTags: { override: allowedMarkdownHtmlTags },
+		allowedAttributes: {
+			override: [...allowedMarkdownHtmlAttributes, 'name', 'id', 'class', 'role', 'tabindex', 'placeholder']
+		}
+	}).toString();
+}
+
+/**
+ * Local copy of the `marked-highlight` extension. `renderMarkdownDocument` uses
+ * the same helper, but it waits for the extension service to register, which
+ * never resolves when no Node extension host is running.
+ */
+function markedHighlight(options: {
+	async: boolean;
+	highlight: (code: string, lang: string) => Promise<string>;
+}): marked.MarkedExtension {
+	return {
+		async: options.async,
+		walkTokens(token: marked.Token): Promise<void> | void {
+			if (token.type !== 'code') {
+				return;
+			}
+			const codeToken = token as marked.Tokens.Code;
+			const lang = codeToken.lang;
+			if (typeof lang !== 'string') {
+				return;
+			}
+			return options.highlight(codeToken.text, lang).then(html => {
+				codeToken.text = html;
+				codeToken.escaped = true;
+			});
+		},
+		renderer: {
+			code({ text, lang, escaped }: marked.Tokens.Code) {
+				const classAttr = lang ? ` class="language-${escapeAttr(lang)}"` : '';
+				text = text.replace(/\n$/, '');
+				return `<pre><code${classAttr}>${escaped ? text : escapeHtml(text)}\n</code></pre>`;
+			}
+		}
+	};
+}
+
+function escapeHtml(value: string): string {
+	return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function escapeAttr(value: string): string {
+	return escapeHtml(value).replace(/"/g, '&quot;');
+}
+
 export class MarkdownPreviewManager extends Disposable {
 	private _webviewInput: WebviewInput | undefined;
 	private readonly _previewDisposables = this._register(new DisposableStore());
 	private _debounceTimer: ReturnType<typeof setTimeout> | undefined;
 	private _currentResource: URI | undefined;
+	private _scrollListener: IDisposable | undefined;
+	private _renderGeneration = 0;
 
 	constructor(
 		@IEditorService private readonly _editorService: IEditorService,
+		@ICodeEditorService private readonly _codeEditorService: ICodeEditorService,
 		@IWebviewWorkbenchService private readonly _webviewWorkbenchService: IWebviewWorkbenchService,
 		@ITextFileService private readonly _textFileService: ITextFileService,
+		@IThemeService private readonly _themeService: IThemeService,
+		@IConfigurationService private readonly _configurationService: IConfigurationService,
+		@ILanguageService private readonly _languageService: ILanguageService,
 		@ILogService private readonly _logService: ILogService,
 		@IStorageService private readonly _storageService: IStorageService
 	) {
@@ -90,6 +209,17 @@ export class MarkdownPreviewManager extends Disposable {
 		return this._webviewInput !== undefined && !this._webviewInput.isDisposed();
 	}
 
+	refresh(): void {
+		this._renderContent();
+	}
+
+	showSource(): void {
+		if (!this._currentResource) {
+			return;
+		}
+		this._editorService.openEditor({ resource: this._currentResource });
+	}
+
 	static wasPreviewOpen(storageService: IStorageService, resource: URI): boolean {
 		const openFiles: string[] = JSON.parse(storageService.get(PREVIEW_OPEN_FILES_KEY, StorageScope.WORKSPACE, '[]'));
 		return openFiles.includes(resource.toString());
@@ -107,7 +237,7 @@ export class MarkdownPreviewManager extends Disposable {
 					retainContextWhenHidden: true
 				},
 				contentOptions: {
-					allowScripts: false,
+					allowScripts: true,
 					localResourceRoots: [parentDir]
 				},
 				extension: undefined
@@ -124,6 +254,8 @@ export class MarkdownPreviewManager extends Disposable {
 			this._register(
 				this._webviewInput.onWillDispose(() => {
 					this._clearDebounceTimer();
+					this._scrollListener?.dispose();
+					this._scrollListener = undefined;
 					this._webviewInput = undefined;
 					this._previewDisposables.clear();
 					this._currentResource = undefined;
@@ -192,40 +324,146 @@ export class MarkdownPreviewManager extends Disposable {
 			return;
 		}
 
-		const baseDir = URI.joinPath(this._currentResource, '..');
-		const textModel = fileModel.textEditorModel;
-		const text = textModel.getValue();
-		const parsedHtml = new marked.Marked().parse(text) as string;
-		const htmlBody = rewriteImageSrcs(parsedHtml, baseDir);
+		const resource = this._currentResource;
+		const baseDir = URI.joinPath(resource, '..');
+		const text = fileModel.textEditorModel.getValue();
+		const generation = ++this._renderGeneration;
 
-		const html = `<!DOCTYPE html>
+		this._renderMarkdown(text)
+			.then(htmlBody => {
+				if (generation !== this._renderGeneration || !this._webviewInput) {
+					return;
+				}
+				const withImages = rewriteImageSrcs(htmlBody, baseDir);
+				this._webviewInput.webview.setHtml(this._buildDocument(withImages));
+				this._attachScrollSync(resource);
+			})
+			.catch(error => {
+				this._logService.warn('[Markdown Preview] render failed', error);
+				if (generation !== this._renderGeneration || !this._webviewInput) {
+					return;
+				}
+				this._webviewInput.webview.setHtml(this._buildDocument(`<pre>${escapeHtml(text)}</pre>`));
+			});
+	}
+
+	private async _renderMarkdown(text: string): Promise<string> {
+		const instance = new marked.Marked(
+			markedHighlight({
+				async: true,
+				highlight: async (code: string, lang: string) => {
+					const languageName = lang.split(/\s+|:|,|(?!^)\{|\?]/, 1)[0];
+					const languageId =
+						this._languageService.getLanguageIdByLanguageName(lang) ??
+						this._languageService.getLanguageIdByLanguageName(languageName) ??
+						null;
+					return tokenizeToString(this._languageService, code, languageId);
+				}
+			}),
+			markedGfmHeadingIdPlugin()
+		);
+
+		const raw = await instance.parse(text, { async: true }) as string;
+		return sanitize(raw);
+	}
+
+	private _buildDocument(body: string): string {
+		const theme = this._themeService.getColorTheme();
+		const isLight = theme.type === ColorScheme.LIGHT;
+		const background = theme.getColor('editor.background')?.toString() ?? (isLight ? '#ffffff' : '#1e1e1e');
+		const foreground = theme.getColor('editor.foreground')?.toString() ?? (isLight ? '#333333' : '#d4d4d4');
+		const link = theme.getColor('textLink.foreground')?.toString() ?? '#3794ff';
+		const blockQuoteBorder = theme.getColor('textBlockQuote.border')?.toString() ?? 'rgba(127,127,127,0.4)';
+		const blockQuoteForeground = theme.getColor('textBlockQuote.foreground')?.toString() ?? foreground;
+		const codeBackground = theme.getColor('textCodeBlock.background')?.toString() ?? 'rgba(127,127,127,0.1)';
+		const fontFamily = this._configurationService.getValue<string>('editor.fontFamily')
+			|| 'Consolas, "Courier New", monospace';
+		const fontSize = this._configurationService.getValue<number>('editor.fontSize') || 14;
+		const tokenStyles = this._collectTokenStyles();
+
+		return `<!DOCTYPE html>
 <html>
 <head>
 	<meta charset="UTF-8">
-	<meta name="viewport" content="width=device-width, initial-scale=1.0">
 	<style>
 		:root {
-			--vscode-editor-foreground: #d4d4d4;
-			--vscode-editor-font-family: "SF Mono", Monaco, Menlo, Consolas, "Ubuntu Mono", "Liberation Mono", "DejaVu Sans Mono", "Courier New", monospace;
-			--vscode-editor-font-weight: normal;
-			--vscode-editor-font-size: 14px;
-			--vscode-textCodeBlock-background: rgba(127, 127, 127, 0.1);
+			--vscode-editor-foreground: ${foreground};
+			--vscode-editor-font-family: ${fontFamily};
+			--vscode-editor-font-size: ${fontSize}px;
+			--vscode-textCodeBlock-background: ${codeBackground};
+			--vscode-textLink-foreground: ${link};
+			--vscode-textBlockQuote-border: ${blockQuoteBorder};
+			--vscode-textBlockQuote-foreground: ${blockQuoteForeground};
 			--text-link-decoration: none;
 		}
-		body {
-			background-color: #1e1e1e;
-			color: #d4d4d4;
+		html, body {
+			background-color: ${background};
+			color: ${foreground};
+			font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
 		}
-		pre {
-			background-color: var(--vscode-textCodeBlock-background);
-		}
+		a { color: ${link}; }
+		pre { background-color: ${codeBackground}; }
 	</style>
 	<style>${DEFAULT_MARKDOWN_STYLES}</style>
+	<style>${PREVIEW_EXTRA_STYLES}</style>
+	<style>${tokenStyles}</style>
 </head>
-<body>${htmlBody}</body>
+<body class="vscode-${isLight ? 'light' : 'dark'}">${body}
+<script>${PREVIEW_SCRIPT}</script>
+</body>
 </html>`;
+	}
 
-		this._webviewInput.webview.setHtml(html);
+	/**
+	 * Syntax highlighting inside code blocks reuses the workbench token classes
+	 * (`mtk1`, `mtk4`, ...). Those rules live in the main document's stylesheets,
+	 * so copy them into the preview document to follow the current theme.
+	 */
+	private _collectTokenStyles(): string {
+		const rules: string[] = [];
+		for (const sheet of Array.from(document.styleSheets)) {
+			let cssRules: CSSRuleList | undefined;
+			try {
+				cssRules = sheet.cssRules;
+			} catch {
+				continue;
+			}
+			if (!cssRules) {
+				continue;
+			}
+			for (const rule of Array.from(cssRules)) {
+				const selector = (rule as CSSStyleRule).selectorText;
+				if (selector && /^\.mtk\d+/.test(selector)) {
+					rules.push((rule as CSSStyleRule).cssText);
+				}
+			}
+		}
+		return rules.join('\n');
+	}
+
+	private _attachScrollSync(resource: URI): void {
+		if (!this._webviewInput) {
+			return;
+		}
+
+		this._scrollListener?.dispose();
+		this._scrollListener = undefined;
+
+		// The preview may live in another group, so the matching code editor is
+		// not necessarily the active one.
+		const editor = this._codeEditorService
+			.listCodeEditors()
+			.find(candidate => candidate.getModel()?.uri.toString() === resource.toString());
+		if (!editor) {
+			return;
+		}
+
+		this._scrollListener = editor.onDidScrollChange(() => {
+			const layout = editor.getLayoutInfo();
+			const max = Math.max(1, editor.getScrollHeight() - layout.height);
+			const fraction = Math.min(1, Math.max(0, editor.getScrollTop() / max));
+			this._webviewInput?.webview.postMessage({ type: 'sidex.md.scrollToFraction', value: fraction });
+		});
 	}
 
 	private _clearDebounceTimer(): void {
@@ -245,6 +483,8 @@ export class MarkdownPreviewManager extends Disposable {
 				this._storageService.store(PREVIEW_OPEN_FILES_KEY, filtered, StorageScope.WORKSPACE, StorageTarget.MACHINE);
 			}
 			this._clearDebounceTimer();
+			this._scrollListener?.dispose();
+			this._scrollListener = undefined;
 			this._webviewInput.dispose();
 			this._webviewInput = undefined;
 			this._previewDisposables.clear();
