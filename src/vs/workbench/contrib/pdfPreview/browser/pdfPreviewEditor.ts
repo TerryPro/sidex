@@ -24,13 +24,13 @@ import './pdfjsSetup.js';
 import * as pdfjsLib from 'pdfjs-dist';
 import { EventBus, FindState, PDFFindController, PDFLinkService, PDFViewer } from 'pdfjs-dist/web/pdf_viewer.mjs';
 import 'pdfjs-dist/web/pdf_viewer.css';
+import './media/pdfPreview.css';
 
 const ZOOM_FACTOR = 1.25;
 const MIN_SCALE = 0.25;
 const MAX_SCALE = 5;
 const TOOLBAR_HEIGHT = 30;
 const FINDBAR_HEIGHT = 30;
-const SIDEBAR_WIDTH = 190;
 const THUMBNAIL_WIDTH = 120;
 const PRINT_SCALE = 1.5;
 const FIND_DEBOUNCE = 250;
@@ -63,8 +63,9 @@ export class PdfPreviewEditor extends EditorPane {
 	private zoomLabel!: HTMLElement;
 	private previousButton!: HTMLButtonElement;
 	private nextButton!: HTMLButtonElement;
-	private thumbnailButton!: HTMLButtonElement;
-	private outlineButton!: HTMLButtonElement;
+	private sidebarToggleButton!: HTMLButtonElement;
+	private thumbnailTab!: HTMLButtonElement;
+	private outlineTab!: HTMLButtonElement;
 	private findBar!: HTMLElement;
 	private findInput!: HTMLInputElement;
 	private findCountLabel!: HTMLElement;
@@ -82,7 +83,8 @@ export class PdfPreviewEditor extends EditorPane {
 	private thumbnails: ThumbnailEntry[] = [];
 	private thumbnailObserver: IntersectionObserver | undefined;
 	private activeThumbnail: HTMLElement | undefined;
-	private sidebarMode: SidebarMode = undefined;
+	private sidebarMode: SidebarMode = 'thumbnails';
+	private sidebarVisible = false;
 
 	private findTimeout: number | undefined;
 	private findBarVisible = false;
@@ -127,7 +129,6 @@ export class PdfPreviewEditor extends EditorPane {
 		this.createMainColumn();
 
 		parent.appendChild(this.container);
-		this.installStyle();
 
 		this.createViewer();
 
@@ -203,20 +204,51 @@ export class PdfPreviewEditor extends EditorPane {
 
 	private createSidebar(): void {
 		this.sidebar = $('.pdf-preview-sidebar');
-		this.sidebar.style.cssText = [
-			`width:${SIDEBAR_WIDTH}px;flex:0 0 auto;display:none;flex-direction:column;overflow:hidden`,
-			'border-right:1px solid var(--vscode-editorGroup-border, transparent)'
-		].join(';');
+
+		// 顶部视图切换条（对应官方 viewer 的 sidebar toolbar）
+		const header = $('.pdf-preview-sidebar-header');
+		this.thumbnailTab = this.createIconButton(header, Codicon.files, localize('pdfPreview.thumbnails', '缩略图'), () => this.selectSidebarMode('thumbnails'));
+		this.outlineTab = this.createIconButton(header, Codicon.listTree, localize('pdfPreview.outline', '文档大纲'), () => this.selectSidebarMode('outline'));
+		this.sidebar.appendChild(header);
 
 		this.thumbnailsContainer = $('.pdf-preview-thumbnails');
-		this.thumbnailsContainer.style.cssText = 'flex:1 1 auto;overflow:auto;padding:8px;display:none;flex-direction:column;align-items:center;gap:8px';
-
 		this.outlineContainer = $('.pdf-preview-outline');
-		this.outlineContainer.style.cssText = 'flex:1 1 auto;overflow:auto;padding:4px 2px;display:none;flex-direction:column';
-
 		this.sidebar.appendChild(this.thumbnailsContainer);
 		this.sidebar.appendChild(this.outlineContainer);
+
+		const resizer = $('.pdf-preview-sidebar-resizer');
+		this.sidebar.appendChild(resizer);
+		this._register(addDisposableListener(resizer, 'pointerdown', (e: PointerEvent) => this.startSidebarResize(resizer, e)));
+
 		this.container.appendChild(this.sidebar);
+	}
+
+	private startSidebarResize(resizer: HTMLElement, e: PointerEvent): void {
+		e.preventDefault();
+		const startX = e.clientX;
+		const startWidth = this.sidebar.getBoundingClientRect().width;
+		resizer.classList.add('dragging');
+		resizer.setPointerCapture(e.pointerId);
+
+		const onMove = (event: PointerEvent) => {
+			const width = Math.min(480, Math.max(140, startWidth + (event.clientX - startX)));
+			this.sidebar.style.width = `${Math.round(width)}px`;
+			this.relayout();
+		};
+		const onEnd = (event: PointerEvent) => {
+			resizer.classList.remove('dragging');
+			resizer.removeEventListener('pointermove', onMove);
+			resizer.removeEventListener('pointerup', onEnd);
+			resizer.removeEventListener('pointercancel', onEnd);
+			if (resizer.hasPointerCapture?.(event.pointerId)) {
+				resizer.releasePointerCapture(event.pointerId);
+			}
+			this.relayout();
+		};
+
+		resizer.addEventListener('pointermove', onMove);
+		resizer.addEventListener('pointerup', onEnd);
+		resizer.addEventListener('pointercancel', onEnd);
 	}
 
 	private createMainColumn(): void {
@@ -250,8 +282,7 @@ export class PdfPreviewEditor extends EditorPane {
 			'border-bottom:1px solid var(--vscode-editorGroup-border, transparent)'
 		].join(';');
 
-		this.thumbnailButton = this.createIconButton(toolbar, Codicon.files, localize('pdfPreview.toggleThumbnails', '缩略图'), () => this.toggleSidebar('thumbnails'));
-		this.outlineButton = this.createIconButton(toolbar, Codicon.listTree, localize('pdfPreview.toggleOutline', '大纲'), () => this.toggleSidebar('outline'));
+		this.sidebarToggleButton = this.createIconButton(toolbar, Codicon.layoutSidebarLeft, localize('pdfPreview.toggleSidebar', '侧边栏'), () => this.toggleSidebar());
 		this.createVerticalSeparator(toolbar);
 
 		this.previousButton = this.createIconButton(toolbar, Codicon.chevronLeft, localize('pdfPreview.previousPage', '上一页'), () => this.goToPage(this.currentPage - 1));
@@ -345,10 +376,6 @@ export class PdfPreviewEditor extends EditorPane {
 		const button = document.createElement('button');
 		button.className = 'pdf-preview-button';
 		button.title = title;
-		button.style.cssText = [
-			'display:flex;align-items:center;justify-content:center;width:22px;height:22px;padding:0',
-			'border:none;border-radius:2px;background:transparent;color:inherit;cursor:pointer;flex:0 0 auto'
-		].join(';');
 
 		const iconElement = $('span');
 		iconElement.className = ThemeIcon.asClassName(icon);
@@ -361,11 +388,8 @@ export class PdfPreviewEditor extends EditorPane {
 
 	private createTextButton(parent: HTMLElement, label: string, onClick: () => void): HTMLButtonElement {
 		const button = document.createElement('button');
+		button.className = 'pdf-preview-text-button';
 		button.textContent = label;
-		button.style.cssText = [
-			'height:22px;padding:0 8px;font-size:12px;flex:0 0 auto',
-			'border:none;border-radius:2px;background:transparent;color:inherit;cursor:pointer'
-		].join(';');
 		this._register(addDisposableListener(button, EventType.CLICK, onClick));
 		parent.appendChild(button);
 		return button;
@@ -373,7 +397,7 @@ export class PdfPreviewEditor extends EditorPane {
 
 	private createVerticalSeparator(parent: HTMLElement): void {
 		const separator = $('span');
-		separator.style.cssText = 'width:1px;height:14px;margin:0 4px;background:var(--vscode-editorGroup-border, rgba(128,128,128,0.35));flex:0 0 auto';
+		separator.className = 'pdf-preview-separator';
 		parent.appendChild(separator);
 	}
 
@@ -535,33 +559,48 @@ export class PdfPreviewEditor extends EditorPane {
 
 	// --- 侧边栏：缩略图 / 大纲 ---
 
-	private toggleSidebar(mode: SidebarMode): void {
-		const nextMode: SidebarMode = this.sidebarMode === mode ? undefined : mode;
-		this.sidebarMode = nextMode;
-
-		const visible = nextMode !== undefined;
-		this.sidebar.style.display = visible ? 'flex' : 'none';
-		this.thumbnailsContainer.style.display = nextMode === 'thumbnails' ? 'flex' : 'none';
-		this.outlineContainer.style.display = nextMode === 'outline' ? 'flex' : 'none';
-		this.updateSidebarButtons();
-
-		if (nextMode === 'thumbnails') {
-			this.updateActiveThumbnail(true);
-		}
-		// 侧栏改变可视宽度后重新适配宽度
-		if (this.fitMode) {
-			requestAnimationFrame(() => {
-				if (this.pdfViewer && this.pdfViewer.pagesCount > 0) {
-					this.pdfViewer.currentScaleValue = 'page-width';
-				}
-			});
-		}
+	private toggleSidebar(): void {
+		this.setSidebarVisible(!this.sidebarVisible);
 	}
 
-	private updateSidebarButtons(): void {
-		const active = 'var(--vscode-inputOption-activeBackground, rgba(128,128,128,0.25))';
-		this.thumbnailButton.style.background = this.sidebarMode === 'thumbnails' ? active : 'transparent';
-		this.outlineButton.style.background = this.sidebarMode === 'outline' ? active : 'transparent';
+	private setSidebarVisible(visible: boolean): void {
+		this.sidebarVisible = visible;
+		this.sidebar.classList.toggle('visible', visible);
+		this.sidebarToggleButton.classList.toggle('active', visible);
+		this.updateSidebarModeClasses();
+
+		if (visible && this.sidebarMode === 'thumbnails') {
+			this.updateActiveThumbnail(true);
+		}
+		this.relayout();
+	}
+
+	private selectSidebarMode(mode: SidebarMode): void {
+		// 再次点击当前视图 = 收起侧栏（与官方 viewer 的侧栏切换一致）
+		if (this.sidebarVisible && this.sidebarMode === mode) {
+			this.setSidebarVisible(false);
+			return;
+		}
+
+		this.sidebarMode = mode;
+		if (!this.sidebarVisible) {
+			this.setSidebarVisible(true);
+			return;
+		}
+		this.updateSidebarModeClasses();
+		if (mode === 'thumbnails') {
+			this.updateActiveThumbnail(true);
+		}
+		this.relayout();
+	}
+
+	private updateSidebarModeClasses(): void {
+		const showThumbnails = this.sidebarVisible && this.sidebarMode === 'thumbnails';
+		const showOutline = this.sidebarVisible && this.sidebarMode === 'outline';
+		this.thumbnailTab.classList.toggle('active', showThumbnails);
+		this.outlineTab.classList.toggle('active', showOutline);
+		this.thumbnailsContainer.classList.toggle('visible', showThumbnails);
+		this.outlineContainer.classList.toggle('visible', showOutline);
 	}
 
 	private buildThumbnails(documentProxy: pdfjsLib.PDFDocumentProxy): void {
@@ -583,18 +622,13 @@ export class PdfPreviewEditor extends EditorPane {
 		for (let pageNumber = 1; pageNumber <= documentProxy.numPages; pageNumber++) {
 			const element = $('.pdf-preview-thumbnail');
 			element.dataset.pageNumber = String(pageNumber);
-			element.style.cssText = [
-				'display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer',
-				'padding:4px;border-radius:2px;border:1px solid transparent'
-			].join(';');
 
 			const canvas = document.createElement('canvas');
-			canvas.style.cssText = `width:${THUMBNAIL_WIDTH}px;height:auto;display:block;background:#fff`;
+			canvas.style.width = `${THUMBNAIL_WIDTH}px`;
 			element.appendChild(canvas);
 
-			const label = $('span');
+			const label = $('span.pdf-preview-thumbnail-label');
 			label.textContent = String(pageNumber);
-			label.style.cssText = 'font-size:11px;opacity:0.7';
 			element.appendChild(label);
 
 			this._register(addDisposableListener(element, EventType.CLICK, () => this.goToPage(pageNumber)));
@@ -638,16 +672,14 @@ export class PdfPreviewEditor extends EditorPane {
 
 	private updateActiveThumbnail(scrollIntoView = false): void {
 		const thumbnail = this.thumbnails[this.currentPage - 1];
-		if (!thumbnail || this.sidebarMode !== 'thumbnails') {
+		if (!thumbnail || !this.sidebarVisible || this.sidebarMode !== 'thumbnails') {
 			return;
 		}
 
 		if (this.activeThumbnail !== thumbnail.element) {
-			this.activeThumbnail?.style.setProperty('border-color', 'transparent');
-			this.activeThumbnail?.style.setProperty('background', 'transparent');
+			this.activeThumbnail?.classList.remove('active');
 			this.activeThumbnail = thumbnail.element;
-			this.activeThumbnail.style.borderColor = 'var(--vscode-focusBorder, #007fd4)';
-			this.activeThumbnail.style.background = 'var(--vscode-list-activeSelectionBackground, rgba(128,128,128,0.2))';
+			this.activeThumbnail.classList.add('active');
 		}
 
 		if (scrollIntoView) {
@@ -681,9 +713,8 @@ export class PdfPreviewEditor extends EditorPane {
 
 		this.outlineContainer.textContent = '';
 		if (!outline || outline.length === 0) {
-			const empty = $('div');
+			const empty = $('div.pdf-preview-outline-empty');
 			empty.textContent = localize('pdfPreview.noOutline', '此文档没有大纲');
-			empty.style.cssText = 'padding:8px;font-size:12px;opacity:0.7';
 			this.outlineContainer.appendChild(empty);
 			return;
 		}
@@ -698,37 +729,26 @@ export class PdfPreviewEditor extends EditorPane {
 			const hasChildren = Array.isArray(item.items) && item.items.length > 0;
 
 			const row = $('.pdf-preview-outline-item');
-			row.style.cssText = [
-				'display:flex;align-items:flex-start;gap:2px;padding:2px 4px',
-				`padding-left:${4 + depth * 12}px`,
-				'font-size:12px;line-height:16px;cursor:pointer;border-radius:2px;user-select:none'
-			].join(';');
 
-			const twisty = $('span');
-			twisty.style.cssText = 'width:14px;flex:0 0 auto;display:flex;align-items:center;justify-content:center;opacity:0.7';
+			const twisty = $('span.pdf-preview-outline-twisty');
 			if (hasChildren) {
-				twisty.className = ThemeIcon.asClassName(Codicon.chevronDown);
+				const icon = $('span');
+				icon.className = ThemeIcon.asClassName(Codicon.chevronDown);
+				twisty.appendChild(icon);
 			}
 			row.appendChild(twisty);
 
-			const label = $('span');
+			const label = $('span.pdf-preview-outline-label');
 			label.textContent = item.title ?? '';
-			label.style.cssText = 'flex:1 1 auto;overflow:hidden;white-space:nowrap;text-overflow:ellipsis';
 			row.appendChild(label);
 
-			this._register(addDisposableListener(row, EventType.MOUSE_ENTER, () => {
-				row.style.background = 'var(--vscode-list-hoverBackground, rgba(128,128,128,0.15))';
-			}));
-			this._register(addDisposableListener(row, EventType.MOUSE_LEAVE, () => {
-				row.style.background = 'transparent';
-			}));
 			this._register(addDisposableListener(row, EventType.CLICK, () => this.jumpToOutlineItem(item)));
 
 			fragment.appendChild(row);
 
 			if (hasChildren) {
-				const children = $('div');
-				children.style.cssText = depth === 0 ? 'display:block' : 'display:none';
+				const children = $('div.pdf-preview-outline-children');
+				children.style.display = depth === 0 ? 'block' : 'none';
 				children.appendChild(this.renderOutlineItems(item.items, depth + 1));
 				fragment.appendChild(children);
 
@@ -736,7 +756,10 @@ export class PdfPreviewEditor extends EditorPane {
 					e.stopPropagation();
 					const expanded = children.style.display !== 'none';
 					children.style.display = expanded ? 'none' : 'block';
-					twisty.className = ThemeIcon.asClassName(expanded ? Codicon.chevronRight : Codicon.chevronDown);
+					const icon = twisty.firstElementChild as HTMLElement | null;
+					if (icon) {
+						icon.className = ThemeIcon.asClassName(expanded ? Codicon.chevronRight : Codicon.chevronDown);
+					}
 				}));
 			}
 		}
@@ -810,35 +833,6 @@ export class PdfPreviewEditor extends EditorPane {
 	}
 
 	// --- 打印 ---
-
-	private installStyle(): void {
-		if (document.getElementById('pdf-preview-style')) {
-			return;
-		}
-		const style = document.createElement('style');
-		style.id = 'pdf-preview-style';
-		style.textContent = `
-/* 抓手下，屏蔽文本层/注释层对指针的拦截，并禁用文本选择 */
-.pdf-preview-editor.pdf-pan-mode .pdfViewer .textLayer,
-.pdf-preview-editor.pdf-pan-mode .pdfViewer .annotationLayer,
-.pdf-preview-editor.pdf-pan-mode .pdfViewer .annotationEditorLayer { pointer-events: none !important; }
-.pdf-preview-editor.pdf-pan-mode { cursor: grab; user-select: none; }
-.pdf-preview-editor.pdf-pan-mode.panning { cursor: grabbing; }
-
-.pdf-print-container { display: none; }
-@media print {
-	body > :not(.pdf-print-container) { display: none !important; }
-	.pdf-print-container { display: block !important; }
-	.pdf-print-page {
-		display: flex; align-items: center; justify-content: center;
-		width: 100%; height: 100vh; break-after: page; page-break-after: always;
-	}
-	.pdf-print-page:last-child { break-after: auto; page-break-after: auto; }
-	.pdf-print-page img { max-width: 100%; max-height: 100vh; object-fit: contain; }
-}
-`;
-		document.head.appendChild(style);
-	}
 
 	private async printDocument(): Promise<void> {
 		const documentProxy = this.pdfDocument;
@@ -926,9 +920,7 @@ export class PdfPreviewEditor extends EditorPane {
 	private setPanMode(enabled: boolean): void {
 		this.panMode = enabled;
 		this.container.classList.toggle('pdf-pan-mode', enabled);
-		this.panButton.style.background = enabled
-			? 'var(--vscode-inputOption-activeBackground, rgba(128,128,128,0.25))'
-			: 'transparent';
+		this.panButton.classList.toggle('active', enabled);
 
 		if (!enabled && this.panning) {
 			this.panning = false;
@@ -958,8 +950,6 @@ export class PdfPreviewEditor extends EditorPane {
 		const disabled = pagesCount === 0;
 		this.previousButton.disabled = disabled || this.currentPage <= 1;
 		this.nextButton.disabled = disabled || this.currentPage >= pagesCount;
-		this.previousButton.style.opacity = this.previousButton.disabled ? '0.4' : '1';
-		this.nextButton.style.opacity = this.nextButton.disabled ? '0.4' : '1';
 	}
 
 	// --- 提示信息 ---

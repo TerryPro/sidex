@@ -187,7 +187,7 @@ WASM 宿主跑在 Rust 进程里，现在前端是 **invoke 拉取** 模式，�
 
 | 风险 | 概率 | 影响 | 缓解 |
 | --- | --- | --- | --- |
-| WebView2 不出独立进程，隔离收益落空 | 中 | 高 | 先做实测，再决定投不投 E |
+| WebView2 不出独立进程，隔离收益落空 | **已确认** | 高 | 见第八节实测；要么改跨源方案，要么把目标改成"不阻塞主线程" |
 | 继承 `WebviewInput` 后序列化冲突 | 中 | 中 | 阶段 B 先用假 provider 跑通再扩展 |
 | WASM 事件通道洪泛 | 中 | 中 | 合并窗口 + 高频事件走批量 |
 | 与内置 PDF 抢同一批文件 | 低 | 中 | 优先级定为内建高于插件，用户显式选择才让位 |
@@ -206,10 +206,97 @@ WASM 宿主跑在 Rust 进程里，现在前端是 **invoke 拉取** 模式，�
 
 A 到 C 是地基，做完这三步就有可用的第三方自定义编辑器（Node 路线）。D 到 E 才轮到 WASM 扩展。
 
-## 七、建议的第一步
+## 七、实测结果
 
-在做 A 之前，先花很小代价验证一件事：**在你这套 webview 里加载 pdf.js，看它到底有没有独立进程**。
+2026-10-27 实测，结论是**当前配置下没有崩溃隔离**。
 
-这个结论决定整个方案的收益。如果 WebView2 给独立进程，那崩溃隔离成立，值得按 A 到 F 顺序推进；如果做不到，那"崩溃隔离"这个目标要重新定义为"渲染不阻塞主线程"，方案的重心就得往性能和模块化偏，而不是隔离。
+### 判定依据
 
-需要的话，我可以先把这步验证写成可运行的检查清单。
+| 依据 | 事实 |
+| --- | --- |
+| webview 入口地址 | Tauri 下 `webviewExternalEndpoint` 返回 `${window.location.origin}/webview-pre/`（[environmentService.ts](file:///f:/TRAEWS/sidex/src/vs/workbench/services/environment/browser/environmentService.ts#L277-L280)），**与工作台同源** |
+| 内容 frame | 内层 `active-frame` 的 `src` 是 `./fake.html`，再用 `document.write` 写入扩展内容（[index.html](file:///f:/TRAEWS/sidex/src/vs/workbench/contrib/webview/browser/pre/index.html#L1078-L1096)），**仍是同源** |
+| sandbox 属性 | 两层 iframe 都同时给了 `allow-scripts` 和 `allow-same-origin`（[webviewElement.ts](file:///f:/TRAEWS/sidex/src/vs/workbench/contrib/webview/browser/webviewElement.ts#L470)、[index.html](file:///f:/TRAEWS/sidex/src/vs/workbench/contrib/webview/browser/pre/index.html#L1055-L1063)） |
+| 运行时参数 | WebView2 155.0.4283.62，启动参数里没有 `--single-process`，也没有 `--disable-site-isolation-trials` |
+| 运行态 | SideX 整个工作台只有 **1 个 renderer 进程**（PID 21776，约 486MB） |
+
+Chromium 的站点隔离只对**跨站** frame 生效。同源 frame 永远和父页面共用同一个渲染进程和主线程，这个结论和 WebView2 的具体版本无关。
+
+### 对照实验
+
+用 Playwright + 本机 Chrome 156 做同源/跨源对照：一个 iframe 内跑 2 秒死循环，看父页面 10ms 定时器在这 2 秒里还能不能跑。
+
+| 场景 | 父页面定时器触发次数 | 阻塞期间实测耗时 | 含义 |
+| --- | --- | --- | --- |
+| 同源 iframe | **0**（期望约 200） | 2001ms | 父页面被完全冻结，共用主线程 |
+| 跨源 iframe | **189**（期望约 200） | 2001ms | 父页面照常运行，进程已隔离 |
+
+同源 0 次、跨源 189 次，差距足够干净。脚本在 `.probe/run.mjs`，可复跑。
+
+### 由此带来的三个结论
+
+1. **崩溃隔离在当前同源方案下不成立。** 自定义编辑器里一段死循环会冻结整个工作台；pdf.js 这类重渲染同理。
+2. **安全边界也偏弱。** 扩展的 HTML 与工作台同源，`sandbox` 里又放了 `allow-same-origin`，Chrome 对这个组合会直接给出「可以逃逸沙箱」的警告——实验日志里就出现了这条。
+3. **这不是"补几层代码"能解决的。** 阶段 A 到 E 补完只会让第三方扩展能接入，隔离仍然是零。
+
+## 八、跨源方案验证结果
+
+2026-10-27 在真实应用（WebView2 155）里实测，**跨源方案可行**。
+
+### 路由实测
+
+向四个地址发请求，看是否被 `sidex-asset` 协议处理器接住（接住会返回 404，没接住是网络错误）：
+
+| 请求地址 | 结果 | 含义 |
+| --- | --- | --- |
+| `https://sidex-asset.localhost/` | 404 | 对照组，正常 |
+| `https://sidex-asset.probe.localhost/` | **404** | **子域名在协议名之后，能被路由** |
+| `https://probe.sidex-asset.localhost/` | 网络错误 | 子域名在协议名之前，不匹配 |
+| `http://sidex-asset.localhost/` | 网络错误 | 必须用 https |
+
+### 为什么是这个形状
+
+wry 给 WebView2 注册的过滤器是 `https://<协议名>.*`（[webview2/mod.rs](file:///C:/Users/hexia/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wry-0.54.4/src/webview2/mod.rs#L935-L950)），匹配规则是前缀判断（[custom_protocol_workaround.rs](file:///C:/Users/hexia/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wry-0.54.4/src/custom_protocol_workaround.rs#L12-L19)）：
+
+- `https://sidex-asset.` 之后的任意内容都算匹配
+- 匹配后还原成 `sidex-asset://<剩余部分>` 交给处理器
+- Tauri 这层不再校验 host（[tauri-runtime-wry/lib.rs](file:///C:/Users/hexia/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-runtime-wry-2.10.1/src/lib.rs#L4983-L4992)）
+
+所以正确的写法是 `https://sidex-asset.<uuid>.localhost`，而不是 `<uuid>.sidex-asset.localhost`。
+
+### 隔离实测
+
+同一个对照实验测 `*.localhost` 子域名是否分进程：
+
+| 场景 | 父页面定时器次数 | 结论 |
+| --- | --- | --- |
+| 同源 frame | 0 | 共用主线程 |
+| `sidex-asset.probe.localhost` 子域名 frame | **186** | **已隔离** |
+| 普通跨域 frame | 187 | 已隔离 |
+
+结论：不同子域名之间是跨站关系，Chromium 会给独立进程。把 webview 搬到 `sidex-asset.<uuid>.localhost` 之后，崩溃隔离成立。
+
+### 改造清单
+
+| 改动点 | 内容 |
+| --- | --- |
+| `webviewExternalEndpoint` | 改成 `https://sidex-asset.{{uuid}}.localhost/webview-pre/`（[environmentService.ts](file:///f:/TRAEWS/sidex/src/vs/workbench/services/environment/browser/environmentService.ts#L277-L280)） |
+| Rust 协议处理器 | 需要能服务内置的 `webview-pre` 资源，现有实现只服务工作区文件 |
+| CSP | `webview-pre/index.html` 的 `frame-src` 要放行新源（[index.html](file:///f:/TRAEWS/sidex/src/vs/workbench/contrib/webview/browser/pre/index.html#L7-L8)） |
+| sandbox | `allow-same-origin` 可以保留——此时它与工作台已不同源，沙箱逃逸的前提消失 |
+
+## 九、修正后的实施顺序
+
+验证通过了，顺序要调整：**先做跨源改造，再补 A 到 F**。
+
+| 顺序 | 事项 | 理由 |
+| --- | --- | --- |
+| 0 | 跨源改造：`webviewExternalEndpoint` + Rust 协议处理器 + CSP | 地基，且改动集中在协议层，不碰服务代码 |
+| 1 | 阶段 A 核心服务 | 依赖 0 的地址形态 |
+| 2 | 阶段 B 输入与面板 | |
+| 3 | 阶段 C Node 桥接 | 可与 D 并行 |
+| 4 | 阶段 D 清单与契约 | |
+| 5 | 阶段 E WASM 推送 | |
+| 6 | 阶段 F 度量与加固 | 有了隔离才谈得上度量 |
+
+如果先做 A 到 F 再改跨源，等于所有编辑器路径都要回头改一遍地址。

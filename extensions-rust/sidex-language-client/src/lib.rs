@@ -397,38 +397,56 @@ fn parse_symbols(response: &str) -> Vec<DocumentSymbol> {
         return Vec::new();
     };
 
+    // Servers answer with hierarchical `DocumentSymbol[]` when the client
+    // advertises `hierarchicalDocumentSymbolSupport`, and flat
+    // `SymbolInformation[]` otherwise. Both end up in one depth-annotated list,
+    // which is what the host uses to rebuild the outline tree.
     let mut symbols = Vec::new();
     for entry in json::array_items(result) {
-        if !entry.starts_with('{') {
-            continue;
-        }
-        let Some(name) = json::string_field(entry, "name") else {
-            continue;
-        };
-        let range = json::take_value(entry, "range")
-            .and_then(parse_range)
-            .or_else(|| {
-                json::take_value(entry, "location")
-                    .and_then(|location| json::take_value(location, "range"))
-                    .and_then(parse_range)
-            });
-        let Some(range) = range else {
-            continue;
-        };
-        let selection_range = json::take_value(entry, "selectionRange")
-            .and_then(parse_range)
-            .unwrap_or(range);
-
-        symbols.push(DocumentSymbol {
-            name,
-            detail: json::string_field(entry, "detail"),
-            kind: json::u32_field(entry, "kind").map(editor_symbol_kind).unwrap_or(11),
-            range,
-            selection_range,
-            depth: 0,
-        });
+        collect_symbol(entry, 0, &mut symbols);
     }
     symbols
+}
+
+fn collect_symbol(entry: &str, depth: u32, out: &mut Vec<DocumentSymbol>) {
+    if !entry.starts_with('{') {
+        return;
+    }
+    let Some(name) = json::string_field(entry, "name") else {
+        return;
+    };
+
+    let range = json::take_value(entry, "range")
+        .and_then(parse_range)
+        .or_else(|| {
+            json::take_value(entry, "location")
+                .and_then(|location| json::take_value(location, "range"))
+                .and_then(parse_range)
+        });
+    let Some(range) = range else {
+        return;
+    };
+    let selection_range = json::take_value(entry, "selectionRange")
+        .and_then(parse_range)
+        .unwrap_or(range);
+
+    out.push(DocumentSymbol {
+        name,
+        detail: json::string_field(entry, "detail")
+            .or_else(|| json::string_field(entry, "containerName")),
+        kind: json::u32_field(entry, "kind")
+            .map(editor_symbol_kind)
+            .unwrap_or(11),
+        range,
+        selection_range,
+        depth,
+    });
+
+    if let Some(children) = json::take_value(entry, "children") {
+        for child in json::array_items(children) {
+            collect_symbol(child, depth + 1, out);
+        }
+    }
 }
 
 fn parse_text_edits(response: &str) -> Vec<TextEdit> {

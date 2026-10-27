@@ -325,7 +325,7 @@ impl LspServerProcess {
         };
 
         let init_params = format!(
-            r#"{{"processId":{},"rootUri":"{}","capabilities":{{"textDocument":{{"completion":{{"completionItem":{{"snippetSupport":true}}}},"hover":{{"contentFormat":["markdown","plaintext"]}},"signatureHelp":{{"signatureInformation":{{"parameterInformation":{{"labelOffsetSupport":true}}}}}},"inlayHint":{{}}}},"workspace":{{"workspaceFolders":true}}}}}}"#,
+            r#"{{"processId":{},"rootUri":"{}","capabilities":{{"textDocument":{{"completion":{{"completionItem":{{"snippetSupport":true}}}},"hover":{{"contentFormat":["markdown","plaintext"]}},"signatureHelp":{{"signatureInformation":{{"parameterInformation":{{"labelOffsetSupport":true}}}}}},"inlayHint":{{}},"documentSymbol":{{"hierarchicalDocumentSymbolSupport":true}}}},"workspace":{{"workspaceFolders":true}}}}}}"#,
             std::process::id(),
             root_uri,
         );
@@ -2244,10 +2244,10 @@ impl WasmHostState {
             .ok_or_else(|| format!("lsp: {server_name} not found"))?;
         let response = server.request_sync(&method, &params);
         if method == "textDocument/documentSymbol" {
-            log::debug!(
-                "[lsp:{server_name}] documentSymbol answered {} bytes",
-                response.as_ref().map_or(0, String::len)
-            );
+            if let Some(body) = &response {
+                let head: String = body.chars().take(240).collect();
+                log::debug!("[lsp:{server_name}] documentSymbol head: {head}");
+            }
         }
         let response = response.ok_or_else(|| format!("lsp: no response for {method}"))?;
 

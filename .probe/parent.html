@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+<body>
+<pre id="out">running</pre>
+<script>
+const ticks = { n: 0 };
+(function tick() { ticks.n++; setTimeout(tick, 10); })();
+
+function runCase(name, src) {
+  return new Promise(resolve => {
+    const f = document.createElement('iframe');
+    f.setAttribute('sandbox', 'allow-scripts allow-same-origin');
+    f.src = src;
+    f.style.width = '200px';
+    f.style.height = '100px';
+    document.body.appendChild(f);
+
+    const onMsg = (e) => {
+      if (!e.data || !e.data.ready) return;
+      setTimeout(() => {
+        const before = ticks.n;
+        const t0 = performance.now();
+        const finish = (ev) => {
+          if (!ev.data || !ev.data.done) return;
+          const elapsed = performance.now() - t0;
+          const used = ticks.n - before;
+          window.removeEventListener('message', onMsg);
+          window.removeEventListener('message', finish);
+          f.remove();
+          resolve({ name, src, measuredMs: Math.round(elapsed), parentTicks: used, expectedTicks: Math.round(elapsed / 10) });
+        };
+        window.addEventListener('message', finish);
+        f.contentWindow.postMessage({ cmd: 'go', ms: 2000 }, '*');
+      }, 300);
+    };
+    window.addEventListener('message', onMsg);
+  });
+}
+
+(async () => {
+  const a = await runCase('same-origin', location.origin + '/child.html');
+  const b = await runCase('localhost-subdomain', 'http://sidex-asset.probe.localhost:8781/child.html');
+  const c = await runCase('cross-host', 'http://localhost:8782/child.html');
+  const out = { parentOrigin: location.origin, sameOrigin: a, localhostSubdomain: b, crossHost: c };
+  window.__result = out;
+  document.getElementById('out').textContent = JSON.stringify(out, null, 2);
+})();
+</script>
+</body>
+</html>
