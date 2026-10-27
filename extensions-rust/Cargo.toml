@@ -2,7 +2,6 @@
 resolver = "2"
 members = [
   "cpp-language-extension",
-  "css-language-extension",
   "go-language-extension",
   "markdown-language-extension",
   "merge-conflict-extension",

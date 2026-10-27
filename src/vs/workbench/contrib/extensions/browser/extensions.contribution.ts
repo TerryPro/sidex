@@ -1028,25 +1028,6 @@ class ExtensionsContributions extends Disposable implements IWorkbenchContributi
 		});
 
 		this.registerExtensionAction({
-			id: 'workbench.extensions.action.showRecommendedExtensions',
-			title: localize2('showRecommendedExtensions', 'Show Recommended Extensions'),
-			category: ExtensionsLocalizedLabel,
-			menu: [{
-				id: MenuId.CommandPalette,
-				when: CONTEXT_HAS_GALLERY
-			}, {
-				id: extensionsFilterSubMenu,
-				when: CONTEXT_HAS_GALLERY,
-				group: '1_predefined',
-				order: 2,
-			}],
-			menuTitles: {
-				[extensionsFilterSubMenu.id]: localize('most popular recommended', "Recommended")
-			},
-			run: () => this.extensionsWorkbenchService.openSearch('@recommended ')
-		});
-
-		this.registerExtensionAction({
 			id: 'workbench.extensions.action.recentlyPublishedExtensions',
 			title: localize2('recentlyPublishedExtensions', 'Show Recently Published Extensions'),
 			category: ExtensionsLocalizedLabel,

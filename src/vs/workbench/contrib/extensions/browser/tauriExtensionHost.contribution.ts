@@ -580,10 +580,10 @@ class TauriExtensionHostContribution extends Disposable implements IWorkbenchCon
 		this._wasmProviderRegistrations.forEach(d => d.dispose());
 		this._wasmProviderRegistrations = [];
 
+		// CSS/SCSS/LESS, HTML and JSON are served by the built-in language services
+		// (see `contrib/languageServices`), so consulting WASM extensions for them
+		// would only add an IPC round trip to every request.
 		const wasmLanguages: LanguageSelector = [
-			'css', 'scss', 'less',
-			'html', 'htm',
-			'json', 'jsonc',
 			'typescript', 'typescriptreact', 'javascript', 'javascriptreact',
 			'php',
 			'markdown',

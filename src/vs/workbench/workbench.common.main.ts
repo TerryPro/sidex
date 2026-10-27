@@ -204,6 +204,7 @@ import './contrib/timeline/browser/timeline.service.contribution.js';
 import './contrib/timeline/browser/timeline.contribution.js';
 import './contrib/timeline/browser/gitTimeline.contribution.js';
 import './contrib/jsonSymbols/browser/jsonSymbols.contribution.js';
+import './contrib/languageServices/browser/languageServices.contribution.js';
 
 // Bulk Edit
 import './contrib/bulkEdit/browser/bulkEditService.js';
@@ -241,6 +242,9 @@ import './contrib/webviewView/browser/webviewView.contribution.js';
 
 // Image Preview
 import './contrib/imagePreview/browser/imagePreview.contribution.js';
+
+// PDF Preview
+import './contrib/pdfPreview/browser/pdfPreview.contribution.js';
 
 // Extensions Management
 import './contrib/extensions/browser/extensions.contribution.js';

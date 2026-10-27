@@ -31,7 +31,9 @@ export default defineConfig({
     watch: {
       // `target/` is the workspace cargo output dir; watching it on Windows
       // throws EBUSY while rustc is writing build artifacts.
-      ignored: ['**/src-tauri/**', '**/target/**'],
+      // Binary artifacts under the workspace root can also be locked by other
+      // apps (e.g. a PDF viewer), which would crash the dev server watcher.
+      ignored: ['**/src-tauri/**', '**/target/**', '**/*.pdf', '**/*.zip', '**/*.vsix'],
     },
   },
   envPrefix: ['VITE_', 'TAURI_'],

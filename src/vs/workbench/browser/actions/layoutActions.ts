@@ -2054,8 +2054,11 @@ registerAction2(
 						quickPick.hide();
 					} else if (button === resetButton) {
 						const resetSetting = (id: string) => {
-							const config = configurationService.inspect(id);
-							configurationService.updateValue(id, config.defaultValue);
+							// Remove the user value so the registered default applies.
+							// Writing inspect().defaultValue can persist `null` for
+							// settings whose default is not resolved yet, which the
+							// layout service then treats as a non-default value.
+							configurationService.updateValue(id, undefined);
 						};
 
 						// Reset all layout options

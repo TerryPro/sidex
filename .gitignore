@@ -102,11 +102,10 @@ extensions-rust/npm-extension/
 extensions-rust/php-language-extension/
 extensions-rust/references-view-extension/
 extensions-rust/terminal-suggest-extension/
-extensions-rust/css-language-extension/css-data.json
-extensions-rust/css-language-extension/css-builtin.json
-extensions-rust/css-language-extension/src/css_data.rs
 extensions-meta.json
 public/builtin-extensions.js
+# pdf.js 静态资源（由 scripts/copy-pdfjs-assets.js 从 node_modules 复制）
+public/pdfjs/
 
 # ── Cloudflare Wrangler (marketplace-proxy dev state) ────────────────────────
 infrastructure/marketplace-proxy/.wrangler/

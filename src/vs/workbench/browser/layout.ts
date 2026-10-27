@@ -3772,11 +3772,14 @@ class LayoutStateModel extends Disposable {
 		const oldValue = this.configurationService.getValue<boolean | undefined>(
 			WorkbenchLayoutSettings.ACTIVITY_BAR_VISIBLE
 		);
-		if (oldValue !== undefined) {
+		if (oldValue !== undefined && oldValue !== null) {
 			return !oldValue;
 		}
 
-		return this.configurationService.getValue(LayoutSettings.ACTIVITY_BAR_LOCATION) !== ActivityBarPosition.DEFAULT;
+		const location =
+			this.configurationService.getValue<ActivityBarPosition>(LayoutSettings.ACTIVITY_BAR_LOCATION) ??
+			ActivityBarPosition.DEFAULT;
+		return location !== ActivityBarPosition.DEFAULT;
 	}
 
 	private setRuntimeValueAndFire<T extends StorageKeyType>(key: RuntimeStateKey<T>, value: T): void {
