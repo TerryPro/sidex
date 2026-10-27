@@ -87,6 +87,11 @@ export class PdfPreviewEditor extends EditorPane {
 	private findTimeout: number | undefined;
 	private findBarVisible = false;
 
+	private panButton!: HTMLButtonElement;
+	private panMode = false;
+	private panning = false;
+	private panStart = { x: 0, y: 0, scrollLeft: 0, scrollTop: 0 };
+
 	private currentPage = 1;
 	private fitMode = true;
 	private reloading = false;
@@ -122,17 +127,64 @@ export class PdfPreviewEditor extends EditorPane {
 		this.createMainColumn();
 
 		parent.appendChild(this.container);
-		this.installPrintStyle();
+		this.installStyle();
 
 		this.createViewer();
 
-		this._register(addDisposableListener(this.container, EventType.WHEEL, (e: WheelEvent) => {
-			if (!e.ctrlKey && !e.metaKey) {
+		// 滚轮：Ctrl/⌘ 缩放，其余情况由我们自己滚动容器，
+		// 避免个别环境下嵌套滚动容器收不到原生的滚轮滚动
+		this._register(addDisposableListener(this.scrollContainer, EventType.MOUSE_WHEEL, (e: WheelEvent) => {
+			if (e.ctrlKey || e.metaKey) {
+				e.preventDefault();
+				this.zoomBy(e.deltaY < 0 ? ZOOM_FACTOR : 1 / ZOOM_FACTOR);
+				return;
+			}
+			const dx = this.normalizeWheelDelta(e.deltaX, e.deltaMode, true);
+			const dy = this.normalizeWheelDelta(e.deltaY, e.deltaMode, false);
+			if (dx === 0 && dy === 0) {
 				return;
 			}
 			e.preventDefault();
-			this.zoomBy(e.deltaY < 0 ? ZOOM_FACTOR : 1 / ZOOM_FACTOR);
+			this.scrollContainer.scrollLeft += dx;
+			this.scrollContainer.scrollTop += dy;
 		}, { passive: false }));
+
+		// 抓手拖动：按住左键拖动页面
+		this._register(addDisposableListener(this.scrollContainer, 'pointerdown', (e: PointerEvent) => {
+			if (!this.panMode || e.button !== 0) {
+				return;
+			}
+			e.preventDefault();
+			this.panning = true;
+			this.panStart = {
+				x: e.clientX,
+				y: e.clientY,
+				scrollLeft: this.scrollContainer.scrollLeft,
+				scrollTop: this.scrollContainer.scrollTop
+			};
+			this.container.classList.add('panning');
+			this.scrollContainer.setPointerCapture(e.pointerId);
+		}));
+		this._register(addDisposableListener(this.scrollContainer, 'pointermove', (e: PointerEvent) => {
+			if (!this.panning) {
+				return;
+			}
+			e.preventDefault();
+			this.scrollContainer.scrollLeft = this.panStart.scrollLeft - (e.clientX - this.panStart.x);
+			this.scrollContainer.scrollTop = this.panStart.scrollTop - (e.clientY - this.panStart.y);
+		}));
+		const endPan = (e: PointerEvent) => {
+			if (!this.panning) {
+				return;
+			}
+			this.panning = false;
+			this.container.classList.remove('panning');
+			if (this.scrollContainer.hasPointerCapture?.(e.pointerId)) {
+				this.scrollContainer.releasePointerCapture(e.pointerId);
+			}
+		};
+		this._register(addDisposableListener(this.scrollContainer, 'pointerup', endPan));
+		this._register(addDisposableListener(this.scrollContainer, 'pointercancel', endPan));
 
 		this._register(addDisposableListener(this.container, EventType.KEY_DOWN, (e: KeyboardEvent) => {
 			if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
@@ -240,6 +292,7 @@ export class PdfPreviewEditor extends EditorPane {
 		toolbar.appendChild(this.zoomLabel);
 		this.createIconButton(toolbar, Codicon.zoomIn, localize('pdfPreview.zoomIn', '放大'), () => this.zoomBy(ZOOM_FACTOR));
 		this.createIconButton(toolbar, Codicon.arrowBoth, localize('pdfPreview.fitWidth', '适合宽度'), () => this.fitWidth());
+		this.panButton = this.createIconButton(toolbar, Codicon.move, localize('pdfPreview.panMode', '拖动浏览（抓手）'), () => this.setPanMode(!this.panMode));
 
 		const spacer = $('span');
 		spacer.style.cssText = 'flex:1 1 auto';
@@ -758,13 +811,20 @@ export class PdfPreviewEditor extends EditorPane {
 
 	// --- 打印 ---
 
-	private installPrintStyle(): void {
-		if (document.getElementById('pdf-preview-print-style')) {
+	private installStyle(): void {
+		if (document.getElementById('pdf-preview-style')) {
 			return;
 		}
 		const style = document.createElement('style');
-		style.id = 'pdf-preview-print-style';
+		style.id = 'pdf-preview-style';
 		style.textContent = `
+/* 抓手下，屏蔽文本层/注释层对指针的拦截，并禁用文本选择 */
+.pdf-preview-editor.pdf-pan-mode .pdfViewer .textLayer,
+.pdf-preview-editor.pdf-pan-mode .pdfViewer .annotationLayer,
+.pdf-preview-editor.pdf-pan-mode .pdfViewer .annotationEditorLayer { pointer-events: none !important; }
+.pdf-preview-editor.pdf-pan-mode { cursor: grab; user-select: none; }
+.pdf-preview-editor.pdf-pan-mode.panning { cursor: grabbing; }
+
 .pdf-print-container { display: none; }
 @media print {
 	body > :not(.pdf-print-container) { display: none !important; }
@@ -861,6 +921,30 @@ export class PdfPreviewEditor extends EditorPane {
 		}
 		this.fitMode = true;
 		viewer.currentScaleValue = 'page-width';
+	}
+
+	private setPanMode(enabled: boolean): void {
+		this.panMode = enabled;
+		this.container.classList.toggle('pdf-pan-mode', enabled);
+		this.panButton.style.background = enabled
+			? 'var(--vscode-inputOption-activeBackground, rgba(128,128,128,0.25))'
+			: 'transparent';
+
+		if (!enabled && this.panning) {
+			this.panning = false;
+			this.container.classList.remove('panning');
+		}
+	}
+
+	private normalizeWheelDelta(delta: number, deltaMode: number, horizontal: boolean): number {
+		if (deltaMode === WheelEvent.DOM_DELTA_LINE) {
+			return delta * 16;
+		}
+		if (deltaMode === WheelEvent.DOM_DELTA_PAGE) {
+			const size = horizontal ? this.scrollContainer.clientWidth : this.scrollContainer.clientHeight;
+			return delta * size * 0.9;
+		}
+		return delta;
 	}
 
 	private syncPageInput(): void {

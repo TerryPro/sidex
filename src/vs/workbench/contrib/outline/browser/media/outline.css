@@ -2,39 +2,23 @@
  *  SideX: Outline view for the active editor.
  *--------------------------------------------------------------------------------------------*/
 
+.outline-view {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	overflow: hidden;
+}
+
+.outline-scrollable {
+	flex: 1 1 auto;
+	min-height: 0;
+	min-width: 0;
+}
+
 .outline-list {
 	height: 100%;
-	overflow: auto;
+	box-sizing: border-box;
 	padding: 2px 0;
-	/* Match the 10px overlay scrollbar the explorer and other lists use. */
-	scrollbar-width: thin;
-	scrollbar-color: var(--vscode-scrollbarSlider-background) transparent;
-}
-
-.outline-list::-webkit-scrollbar {
-	width: 10px;
-	height: 10px;
-}
-
-.outline-list::-webkit-scrollbar-track {
-	background: transparent;
-}
-
-.outline-list::-webkit-scrollbar-thumb {
-	background: var(--vscode-scrollbarSlider-background);
-	border-radius: 4px;
-}
-
-.outline-list::-webkit-scrollbar-thumb:hover {
-	background: var(--vscode-scrollbarSlider-hoverBackground);
-}
-
-.outline-list::-webkit-scrollbar-thumb:active {
-	background: var(--vscode-scrollbarSlider-activeBackground);
-}
-
-.outline-list::-webkit-scrollbar-corner {
-	background: transparent;
 }
 
 .outline-row {
@@ -73,6 +57,7 @@
 }
 
 .outline-empty {
+	flex: 0 0 auto;
 	padding: 8px 12px;
 	font-size: 12px;
 	opacity: 0.7;

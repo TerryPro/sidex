@@ -810,6 +810,7 @@ pub fn run() {
             commands::wasm_provide_document_highlights_all,
             commands::wasm_provide_rename_all,
             commands::wasm_provide_folding_ranges_all,
+            commands::wasm_provide_selection_ranges_all,
             commands::wasm_provide_inlay_hints_all,
             commands::wasm_provide_range_formatting_all,
             commands::wasm_provide_workspace_symbols_all,

@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 sidex-extension-sdk = { workspace = true }
+sidex-language-client = { workspace = true }
 
 [lib]
 crate-type = ["cdylib"]

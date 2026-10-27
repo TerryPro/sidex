@@ -5,9 +5,11 @@
 import './media/outline.css';
 
 import { $, append } from '../../../../base/browser/dom.js';
+import { DomScrollableElement } from '../../../../base/browser/ui/scrollbar/scrollableElement.js';
 import { Codicon } from '../../../../base/common/codicons.js';
 import { CancellationTokenSource } from '../../../../base/common/cancellation.js';
 import { DisposableStore } from '../../../../base/common/lifecycle.js';
+import { ScrollbarVisibility } from '../../../../base/common/scrollable.js';
 import { localize, localize2 } from '../../../../nls.js';
 import { SyncDescriptor } from '../../../../platform/instantiation/common/descriptors.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
@@ -113,6 +115,7 @@ class OutlineView extends ViewPane {
 
 	private list!: HTMLElement;
 	private empty!: HTMLElement;
+	private scrollableElement: DomScrollableElement | undefined;
 	private readonly viewDisposables = this._register(new DisposableStore());
 	private readonly modelListeners = this._register(new DisposableStore());
 	private refreshCts: CancellationTokenSource | undefined;
@@ -167,9 +170,38 @@ class OutlineView extends ViewPane {
 
 	protected override renderBody(container: HTMLElement): void {
 		super.renderBody(container);
-		this.list = append(container, $('.outline-list'));
-		this.empty = append(container, $('.outline-empty'));
+
+		const root = append(container, $('.outline-view'));
+		this.list = $('.outline-list');
+		this.scrollableElement = new DomScrollableElement(this.list, {
+			alwaysConsumeMouseWheel: true,
+			horizontal: ScrollbarVisibility.Hidden,
+			vertical: ScrollbarVisibility.Auto,
+			verticalScrollbarSize: 10,
+			useShadows: false
+		});
+		this.viewDisposables.add(this.scrollableElement);
+		const scrollableNode = this.scrollableElement.getDomNode();
+		scrollableNode.classList.add('outline-scrollable');
+		append(root, scrollableNode);
+
+		this.empty = append(root, $('.outline-empty'));
+		this.updateEmptyState('');
 		void this.refresh();
+	}
+
+	protected override layoutBody(height: number, width: number): void {
+		super.layoutBody(height, width);
+		this.scrollableElement?.scanDomNode();
+	}
+
+	private updateEmptyState(text: string): void {
+		this.empty.textContent = text;
+		this.empty.style.display = text ? '' : 'none';
+		const scrollableNode = this.scrollableElement?.getDomNode();
+		if (scrollableNode) {
+			scrollableNode.style.display = text ? 'none' : '';
+		}
 	}
 
 	private get activeModel(): ITextModel | null {
@@ -199,10 +231,11 @@ class OutlineView extends ViewPane {
 		}
 
 		this.list.replaceChildren();
-		this.empty.textContent = '';
+		this.updateEmptyState('');
 
 		if (!model) {
-			this.empty.textContent = localize('outline.noEditor', '没有活动的文本编辑器');
+			this.updateEmptyState(localize('outline.noEditor', '没有活动的文本编辑器'));
+			this.scrollableElement?.scanDomNode();
 			return;
 		}
 
@@ -234,15 +267,17 @@ class OutlineView extends ViewPane {
 		}
 
 		if (entries.length === 0) {
-			this.empty.textContent = localize('outline.noSymbols', '没有可显示的大纲符号');
+			let message = localize('outline.noSymbols', '没有可显示的大纲符号');
 			// Language servers can miss the first request while they are still
 			// indexing the project, which used to leave the outline empty.
 			if (this.emptyRetryIndex < OutlineView.EMPTY_RETRY_DELAYS.length) {
-				this.empty.textContent = localize('outline.loading', '正在加载大纲符号…');
+				message = localize('outline.loading', '正在加载大纲符号…');
 				const delay = OutlineView.EMPTY_RETRY_DELAYS[this.emptyRetryIndex];
 				this.emptyRetryIndex++;
 				this.emptyRetry = setTimeout(() => void this.refresh(), delay);
 			}
+			this.updateEmptyState(message);
+			this.scrollableElement?.scanDomNode();
 			return;
 		}
 
@@ -281,6 +316,8 @@ class OutlineView extends ViewPane {
 			rows.appendChild(row);
 		}
 		this.list.appendChild(rows);
+		this.updateEmptyState('');
+		this.scrollableElement?.scanDomNode();
 	}
 
 	private clearEmptyRetry(): void {

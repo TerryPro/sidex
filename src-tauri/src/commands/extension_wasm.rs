@@ -214,6 +214,10 @@ struct LspServerProcess {
     /// notifications (e.g. `textDocument/publishDiagnostics`) keep flowing
     /// even when no request is in flight.
     rx: std::sync::mpsc::Receiver<String>,
+    /// Tail of the server's stderr, filled by a drain thread. A server that
+    /// logs more than the pipe buffer (64 KiB) would otherwise block forever
+    /// waiting for someone to read it.
+    stderr_tail: std::sync::Arc<std::sync::Mutex<String>>,
     pending_notifications: Vec<String>,
     versions: HashMap<String, i32>,
     req_id: u64,
@@ -240,6 +244,39 @@ impl LspServerProcess {
 
         let stdin = child.stdin.take()?;
         let stdout = child.stdout.take()?;
+
+        // Drain stderr for the whole lifetime of the server. Without this the
+        // pipe fills up and the server blocks on its next log write, which
+        // looks exactly like a server that never answers requests.
+        let stderr_tail = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
+        if let Some(mut stderr) = child.stderr.take() {
+            let tail = std::sync::Arc::clone(&stderr_tail);
+            let stderr_name = name.to_string();
+            std::thread::spawn(move || {
+                use std::io::Read;
+                let mut buffer = [0u8; 8192];
+                loop {
+                    match stderr.read(&mut buffer) {
+                        Ok(0) | Err(_) => break,
+                        Ok(read) => {
+                            let chunk = String::from_utf8_lossy(&buffer[..read]).to_string();
+                            log::debug!("[lsp:{stderr_name}] {}", chunk.trim_end());
+                            if let Ok(mut guard) = tail.lock() {
+                                guard.push_str(&chunk);
+                                if guard.len() > 16 * 1024 {
+                                    let cut = guard.len() - 8 * 1024;
+                                    let cut = (cut..guard.len())
+                                        .find(|index| guard.is_char_boundary(*index))
+                                        .unwrap_or(guard.len());
+                                    *guard = guard[cut..].to_string();
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
         let (tx, rx) = std::sync::mpsc::channel::<String>();
         let thread_name = name.to_string();
         std::thread::spawn(move || {
@@ -279,6 +316,7 @@ impl LspServerProcess {
             child,
             stdin,
             rx,
+            stderr_tail,
             pending_notifications: Vec::new(),
             versions: HashMap::new(),
             req_id: 0,
@@ -287,7 +325,7 @@ impl LspServerProcess {
         };
 
         let init_params = format!(
-            r#"{{"processId":{},"rootUri":"{}","capabilities":{{"textDocument":{{"completion":{{"completionItem":{{"snippetSupport":true}}}},"hover":{{"contentFormat":["markdown","plaintext"]}},"signatureHelp":{{"signatureInformation":{{"parameterInformation":{{"labelOffsetSupport":true}}}}}}}},"workspace":{{"workspaceFolders":true}}}}}}"#,
+            r#"{{"processId":{},"rootUri":"{}","capabilities":{{"textDocument":{{"completion":{{"completionItem":{{"snippetSupport":true}}}},"hover":{{"contentFormat":["markdown","plaintext"]}},"signatureHelp":{{"signatureInformation":{{"parameterInformation":{{"labelOffsetSupport":true}}}}}},"inlayHint":{{}}}},"workspace":{{"workspaceFolders":true}}}}}}"#,
             std::process::id(),
             root_uri,
         );
@@ -334,9 +372,13 @@ impl LspServerProcess {
                 }
             };
 
-            if body_str.contains(&format!(r#""id":{id}"#))
-                || body_str.contains(&format!(r#""id": {id}"#))
-            {
+            let has_id = body_str.contains(&format!(r#""id":{id}"#))
+                || body_str.contains(&format!(r#""id": {id}"#));
+            // Servers also send *requests* to the client (capability registration,
+            // progress creation) and those carry an id of their own. Only a body
+            // without a `method` field is the response to our request.
+            let is_request = body_str.contains(r#""method":"#) || body_str.contains(r#""method" :"#);
+            if has_id && !is_request {
                 return Some(body_str);
             }
 
@@ -413,16 +455,12 @@ fn decode_uri(uri: &str) -> String {
 
 impl Drop for LspServerProcess {
     fn drop(&mut self) {
-        // Kill before reading stderr: reading a live child's stderr blocks until
-        // it exits, and callers usually hold the runtime lock while dropping.
+        // The stderr drain thread owns the pipe; it exits once the child dies.
         let _ = self.child.kill();
         let _ = self.child.wait();
-        if let Some(mut stderr) = self.child.stderr.take() {
-            use std::io::Read;
-            let mut buf = String::new();
-            let _ = stderr.read_to_string(&mut buf);
-            if !buf.is_empty() {
-                for line in buf.lines().take(10) {
+        if let Ok(tail) = self.stderr_tail.lock() {
+            if !tail.is_empty() {
+                for line in tail.lines().take(10) {
                     log::warn!("[lsp:{}] stderr: {}", self.server_name, line);
                 }
             }
@@ -2096,19 +2134,18 @@ impl WasmHostState {
                     )
                 },
             );
-            let binary = download_url
-                .as_deref()
-                .and_then(|url| download_lsp_binary(&cmd, url))
-                .or_else(|| {
-                    find_binary(
-                        &cmd,
-                        &[
-                            &format!("/usr/local/bin/{cmd}"),
-                            &format!("/opt/homebrew/bin/{cmd}"),
-                            &format!("/usr/bin/{cmd}"),
-                        ],
-                    )
-                });
+            // Prefer a server that is already installed: attempting the download
+            // on every spawn costs seconds and logs a 404 when the URL has no
+            // build for this platform.
+            let binary = find_binary(
+                &cmd,
+                &[
+                    &format!("/usr/local/bin/{cmd}"),
+                    &format!("/opt/homebrew/bin/{cmd}"),
+                    &format!("/usr/bin/{cmd}"),
+                ],
+            )
+            .or_else(|| download_url.as_deref().and_then(|url| download_lsp_binary(&cmd, url)));
             let Some(binary) = binary else {
                 // Extensions ignore this error, so log it: a missing server is the
                 // usual reason a language shows no features at all.
@@ -2205,9 +2242,14 @@ impl WasmHostState {
             .lsp_servers
             .get_mut(&server_name)
             .ok_or_else(|| format!("lsp: {server_name} not found"))?;
-        let response = server
-            .request_sync(&method, &params)
-            .ok_or_else(|| format!("lsp: no response for {method}"))?;
+        let response = server.request_sync(&method, &params);
+        if method == "textDocument/documentSymbol" {
+            log::debug!(
+                "[lsp:{server_name}] documentSymbol answered {} bytes",
+                response.as_ref().map_or(0, String::len)
+            );
+        }
+        let response = response.ok_or_else(|| format!("lsp: no response for {method}"))?;
 
         // Requests are the moments when the server pipe gets pumped; capture any
         // diagnostics it pushed while answering.
@@ -3373,6 +3415,10 @@ pub async fn wasm_provide_document_symbols_all(
                 .call_provide_document_symbols(&mut ext.store, &ctx)
             {
                 Ok(symbols) => {
+                    log::debug!(
+                        "[wasm] document symbols from {ext_id}: {} (language {language_id})",
+                        symbols.len()
+                    );
                     for s in &symbols {
                         flat.push((
                             s.depth,

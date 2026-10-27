@@ -33,7 +33,7 @@ export default defineConfig({
       // throws EBUSY while rustc is writing build artifacts.
       // Binary artifacts under the workspace root can also be locked by other
       // apps (e.g. a PDF viewer), which would crash the dev server watcher.
-      ignored: ['**/src-tauri/**', '**/target/**', '**/*.pdf', '**/*.zip', '**/*.vsix'],
+      ignored: ['**/src-tauri/**', '**/target/**', '**/*.pdf', '**/*.zip', '**/*.vsix', '**/*.bin'],
     },
   },
   envPrefix: ['VITE_', 'TAURI_'],

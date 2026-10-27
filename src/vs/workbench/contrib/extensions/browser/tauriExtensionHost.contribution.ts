@@ -76,6 +76,7 @@ import {
 	wasmProvideDocumentHighlightsAll,
 	wasmProvideRenameAll,
 	wasmProvideFoldingRangesAll,
+	wasmProvideSelectionRangesAll,
 	wasmProvideInlayHintsAll,
 	wasmProvideRangeFormattingAll,
 	getWasmDiagnostics,
@@ -929,6 +930,30 @@ class TauriExtensionHostContribution extends Disposable implements IWorkbenchCon
 					} catch {
 						return null;
 					}
+				}
+			})
+		);
+
+		this._wasmProviderRegistrations.push(
+			this.languageFeatures.selectionRangeProvider.register(wasmLanguages, {
+				provideSelectionRanges: async (model, positions, _token) => {
+					// The host answers per position, so ask once per position and
+					// treat the returned ranges as that position's expand chain.
+					const results: { range: any }[][] = [];
+					for (const position of positions) {
+						try {
+							const result = await wasmProvideSelectionRangesAll(
+								model.uri.toString(), model.getLanguageId(), model.getVersionId(),
+								[[position.lineNumber - 1, position.column - 1]]
+							);
+							results.push(Array.isArray(result)
+								? result.map((entry: any) => ({ range: toVscRange(entry.range) }))
+								: []);
+						} catch {
+							results.push([]);
+						}
+					}
+					return results.length ? results : null;
 				}
 			})
 		);

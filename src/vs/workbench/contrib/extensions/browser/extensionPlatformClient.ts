@@ -405,6 +405,12 @@ export async function wasmProvideFoldingRangesAll(
   return invoke<any>('wasm_provide_folding_ranges_all', { uri, languageId, version });
 }
 
+export async function wasmProvideSelectionRangesAll(
+  uri: string, languageId: string, version: number, positions: [number, number][],
+): Promise<any> {
+  return invoke<any>('wasm_provide_selection_ranges_all', { uri, languageId, version, positions });
+}
+
 export async function wasmProvideInlayHintsAll(
   uri: string, languageId: string, version: number,
   startLine: number, startCharacter: number, endLine: number, endCharacter: number,
