@@ -519,6 +519,7 @@ export class ExtensionsViewPaneContainer extends ViewPaneContainer<IExtensionsVi
 		this.searchDelayer = this._register(new Delayer(500));
 		this.extensionsSearchValueContextKey = ExtensionsSearchValueContext.bindTo(contextKeyService);
 		this.defaultViewsContextKey = DefaultViewsContext.bindTo(contextKeyService);
+		this.defaultViewsContextKey.set(true);
 		this.sortByContextKey = ExtensionsSortByContext.bindTo(contextKeyService);
 		this.searchMarketplaceExtensionsContextKey = SearchMarketplaceExtensionsContext.bindTo(contextKeyService);
 		this.searchAgentPluginsContextKey = SearchAgentPluginsContext.bindTo(contextKeyService);
@@ -559,114 +560,13 @@ export class ExtensionsViewPaneContainer extends ViewPaneContainer<IExtensionsVi
 	override create(parent: HTMLElement): void {
 		parent.classList.add('extensions-viewlet');
 		this.root = parent;
-
-		const overlay = append(this.root, $('.overlay'));
-		const overlayBackgroundColor = this.getColor(SIDE_BAR_DRAG_AND_DROP_BACKGROUND) ?? '';
-		overlay.style.backgroundColor = overlayBackgroundColor;
-		hide(overlay);
-
-		this.header = append(this.root, $('.header'));
-		const placeholder = localize('searchExtensions', "Search Extensions in Marketplace");
-
-		const searchValue = this.searchViewletState['query.value'] ? this.searchViewletState['query.value'] : '';
-
-		const searchContainer = append(this.header, $('.extensions-search-container'));
-
-		this.searchBox = this._register(this.instantiationService.createInstance(SuggestEnabledInput, `${VIEWLET_ID}.searchbox`, searchContainer, {
-			triggerCharacters: ['@'],
-			sortKey: (item: string) => {
-				if (item.indexOf(':') === -1) { return 'a'; }
-				else if (/ext:/.test(item) || /id:/.test(item) || /tag:/.test(item)) { return 'b'; }
-				else if (/sort:/.test(item)) { return 'c'; }
-				else { return 'd'; }
-			},
-			provideResults: (query: string) => Query.suggestions(query, this.extensionGalleryManifest)
-		}, placeholder, 'extensions:searchinput', { placeholderText: placeholder, value: searchValue }));
-
-		this.notificationContainer = append(this.header, $('.notification-container.hidden', { 'tabindex': '0' }));
-		this.renderNotificaiton();
-		this._register(this.extensionsWorkbenchService.onDidChangeExtensionsNotification(() => this.renderNotificaiton()));
-
-		this.updateInstalledExtensionsContexts();
-		if (this.searchBox.getValue()) {
-			this.triggerSearch();
-		}
-
-		this._register(this.searchBox.onInputDidChange(() => {
-			this.sortByContextKey.set(Query.parse(this.searchBox?.getValue() ?? '').sortBy);
-			this.triggerSearch();
-		}, this));
-
-		this._register(this.searchBox.onShouldFocusResults(() => this.focusListView(), this));
-
-		const controlElement = append(searchContainer, $('.extensions-search-actions-container'));
-		this._register(this.instantiationService.createInstance(MenuWorkbenchToolBar, controlElement, extensionsSearchActionsMenu, {
-			toolbarOptions: {
-				primaryGroup: () => true,
-			},
-			actionViewItemProvider: (action, options) => createActionViewItem(this.instantiationService, action, options)
-		}));
-
-		// Register DragAndDrop support
-		this._register(new DragAndDropObserver(this.root, {
-			onDragEnter: (e: DragEvent) => {
-				if (this.isSupportedDragElement(e)) {
-					show(overlay);
-				}
-			},
-			onDragLeave: (e: DragEvent) => {
-				if (this.isSupportedDragElement(e)) {
-					hide(overlay);
-				}
-			},
-			onDragOver: (e: DragEvent) => {
-				if (this.isSupportedDragElement(e)) {
-					e.dataTransfer!.dropEffect = 'copy';
-				}
-			},
-			onDrop: async (e: DragEvent) => {
-				if (this.isSupportedDragElement(e)) {
-					hide(overlay);
-
-					const vsixs = coalesce((await this.instantiationService.invokeFunction(accessor => extractEditorsAndFilesDropData(accessor, e)))
-						.map(editor => editor.resource && extname(editor.resource) === '.vsix' ? editor.resource : undefined));
-
-					if (vsixs.length > 0) {
-						try {
-							// Attempt to install the extension(s)
-							await this.commandService.executeCommand(INSTALL_EXTENSION_FROM_VSIX_COMMAND_ID, vsixs);
-						}
-						catch (err) {
-							this.notificationService.error(err);
-						}
-					}
-				}
-			}
-		}));
-
+		// The marketplace was removed with the Node extension host; only the
+		// built-in and Rust extension views remain in this container.
 		super.create(append(this.root, $('.extensions')));
-
-		const focusTracker = this._register(trackFocus(this.root));
-		const isSearchBoxFocused = () => this.searchBox?.inputWidget.hasWidgetFocus();
-		this._register(registerNavigableContainer({
-			name: 'extensionsView',
-			focusNotifiers: [focusTracker],
-			focusNextWidget: () => {
-				if (isSearchBoxFocused()) {
-					this.focusListView();
-				}
-			},
-			focusPreviousWidget: () => {
-				if (!isSearchBoxFocused()) {
-					this.searchBox?.focus();
-				}
-			}
-		}));
 	}
 
 	override focus(): void {
 		super.focus();
-		this.searchBox?.focus();
 	}
 
 	private _dimension: Dimension | undefined;
@@ -676,11 +576,7 @@ export class ExtensionsViewPaneContainer extends ViewPaneContainer<IExtensionsVi
 			this.root.classList.toggle('narrow', dimension.width <= 250);
 			this.root.classList.toggle('mini', dimension.width <= 200);
 		}
-		this.searchBox?.layout(new Dimension(dimension.width - 34 - /*padding*/8 - (24 * 2), 20));
-		const searchBoxHeight = 20 + 21 /*margin*/;
-		const headerHeight = this.header && !!this.notificationContainer?.childNodes.length ? this.notificationContainer.clientHeight + searchBoxHeight + 10 /*margin*/ : searchBoxHeight;
-		this.header!.style.height = `${headerHeight}px`;
-		super.layout(new Dimension(dimension.width, dimension.height - headerHeight));
+		super.layout(dimension);
 	}
 
 	override getOptimalWidth(): number {

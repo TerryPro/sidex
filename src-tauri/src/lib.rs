@@ -2,7 +2,6 @@ mod app_dirs;
 mod commands;
 
 use commands::db_state::SidexDbState;
-use commands::ext_host::ExtensionPlatformSupervisor;
 use commands::extension_diagnostics::ExtensionDiagnosticsStore;
 use commands::extension_wasm::WasmExtensionRuntime;
 use commands::lsp::LspState;
@@ -398,11 +397,9 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .manage(UpdateManagerState::new())
-        .manage(Arc::new(commands::extensions::MarketplaceClientState::new()))
         .manage(Arc::new(TerminalStore::new()))
         .manage(Arc::new(LspState::new()))
         .manage(Arc::new(WatchStore::new()))
-        .manage(ExtensionPlatformSupervisor::new())
         .manage(ExtensionDiagnosticsStore::new())
         .manage(Arc::new(SettingsStore::new()))
         .manage(Arc::new(sidex_extension_api::CommandRegistry::new()))
@@ -817,10 +814,6 @@ pub fn run() {
             commands::git_submodule_update,
             commands::git_tag,
             commands::extension_platform_bootstrap,
-            commands::extension_platform_status,
-            commands::extension_platform_restart,
-            commands::extension_platform_stop,
-            commands::extension_platform_init_data,
             commands::proxy_request,
             commands::proxy_request_full,
             commands::clipboard_read_text,
@@ -834,14 +827,9 @@ pub fn run() {
             commands::watch_update_patterns,
             commands::watch_list,
             commands::watch_is_active,
-            // Extensions
-            commands::install_extension,
-            commands::install_extension_from_url,
-            commands::uninstall_extension,
+            // Extensions (built-in declarative + Rust/WASM only)
             commands::list_installed_extensions,
             commands::list_available_extensions,
-            // Marketplace & contributions (sidex-extensions)
-            commands::extension_search_marketplace,
             commands::extension_get_contributions,
             // WASM extensions
             commands::wasm_load_extension,
@@ -950,14 +938,11 @@ pub fn run() {
         ])
         .build(tauri::generate_context!())
         .expect("error while running tauri application")
-        .run(|app_handle, event| {
+        .run(|_app_handle, event| {
             // Kill every child process we spawned when the app exits —
-            // PTY shells and the extension host would otherwise outlive the
-            // editor as orphans.
+            // PTY shells would otherwise outlive the editor as orphans.
             if let tauri::RunEvent::Exit = event {
-                if let Some(supervisor) = app_handle.try_state::<ExtensionPlatformSupervisor>() {
-                    let _ = supervisor.stop();
-                }
+                // PTY cleanup is handled by the terminal store's drop path.
             }
         });
 }

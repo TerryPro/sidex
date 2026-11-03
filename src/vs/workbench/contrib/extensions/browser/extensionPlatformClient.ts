@@ -1,23 +1,10 @@
 import { invoke } from '@tauri-apps/api/core';
 
 // ---------------------------------------------------------------------------
-// Platform bootstrap / lifecycle
+// Platform bootstrap
 // ---------------------------------------------------------------------------
 
-export interface IExtensionTransportInfo {
-  kind: string;
-  endpoint: string;
-}
-
-export interface INodeRuntimeInfo {
-  path: string;
-  version?: string;
-  source: string;
-  bundled: boolean;
-}
-
 export interface IExtensionPathsInfo {
-  serverScript: string;
   builtinExtensionsDir: string;
   userExtensionsDir: string;
   globalStorageDir: string;
@@ -51,14 +38,9 @@ export interface IExtensionManifestSummary {
 }
 
 export interface IExtensionPlatformBootstrap {
-  transport: IExtensionTransportInfo;
-  runtime: INodeRuntimeInfo;
   paths: IExtensionPathsInfo;
   sessionKind: string;
   extensions: IExtensionManifestSummary[];
-  initDataJson: string;
-  /** False when no extension declares `main`/`browser`, so no Node host was spawned. */
-  nodeHost?: boolean;
 }
 
 export interface IWasmCustomEditorAction {
@@ -93,34 +75,8 @@ export async function saveWasmCustomEditor(uri: string): Promise<boolean> {
   return invoke<boolean>('wasm_custom_editor_save', { uri });
 }
 
-export interface IExtensionPlatformStatus {
-  running: boolean;
-  port?: number;
-  sessionId?: string;
-  uptimeSecs?: number;
-  extensionCount?: number;
-  restartCount?: number;
-  totalCrashes: number;
-}
-
 export async function bootstrapExtensionPlatform(): Promise<IExtensionPlatformBootstrap> {
   return invoke<IExtensionPlatformBootstrap>('extension_platform_bootstrap');
-}
-
-export async function getExtensionPlatformStatus(): Promise<IExtensionPlatformStatus> {
-  return invoke<IExtensionPlatformStatus>('extension_platform_status');
-}
-
-export async function restartExtensionPlatform(): Promise<IExtensionPlatformStatus> {
-  return invoke<IExtensionPlatformStatus>('extension_platform_restart');
-}
-
-export async function stopExtensionPlatform(): Promise<void> {
-  return invoke<void>('extension_platform_stop');
-}
-
-export async function getExtensionPlatformInitData(): Promise<string> {
-  return invoke<string>('extension_platform_init_data');
 }
 
 // ---------------------------------------------------------------------------

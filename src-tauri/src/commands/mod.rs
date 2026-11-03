@@ -3,7 +3,6 @@ pub mod db_state;
 pub mod editor;
 pub mod encoding;
 pub mod ext_api;
-pub mod ext_host;
 pub mod extension_diagnostics;
 pub mod extension_platform;
 pub mod extension_wasm;

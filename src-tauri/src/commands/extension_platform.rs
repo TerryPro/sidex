@@ -2,7 +2,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
 
 use tauri::{AppHandle, Manager};
 
@@ -11,37 +10,6 @@ use tauri::{AppHandle, Manager};
 pub enum ExtensionKind {
     Node,
     Wasm,
-}
-
-#[allow(dead_code)]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct NodeRuntimeInfo {
-    pub path: String,
-    pub version: Option<String>,
-    pub source: String,
-    pub bundled: bool,
-}
-
-#[allow(dead_code)]
-#[derive(Debug, Clone)]
-pub struct ResolvedNode {
-    pub path: String,
-    pub version: Option<String>,
-    pub source: &'static str,
-    pub bundled: bool,
-}
-
-#[allow(dead_code)]
-impl ResolvedNode {
-    pub fn to_info(&self) -> NodeRuntimeInfo {
-        NodeRuntimeInfo {
-            path: self.path.clone(),
-            version: self.version.clone(),
-            source: self.source.to_string(),
-            bundled: self.bundled,
-        }
-    }
 }
 
 /// Extension manifest record produced entirely by Rust.
@@ -101,35 +69,6 @@ pub struct WasmCustomEditorContribution {
     #[serde(default)]
     pub filename_patterns: Vec<String>,
     pub priority: Option<String>,
-}
-
-/// VS Code-compatible extension description sent to the Node extension host
-/// as part of the init data payload. Mirrors `IExtensionDescription`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ExtensionDescription {
-    pub identifier: ExtensionIdentifier,
-    pub extension_location: UriComponents,
-    pub package_json: serde_json::Value,
-    pub is_builtin: bool,
-    pub is_under_development: bool,
-    pub target_platform: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ExtensionIdentifier {
-    pub id: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub uuid: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UriComponents {
-    pub scheme: String,
-    pub path: String,
-    #[serde(default)]
-    pub authority: String,
 }
 
 pub fn path_to_uri_path(path: &str) -> String {
@@ -332,90 +271,12 @@ pub fn read_wasm_extension_manifest(
     })
 }
 
-/// The complete init data payload that Rust generates and hands to the Node
-/// extension host process. Mirrors VS Code's `IExtensionHostInitData`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ExtensionHostInitData {
-    pub version: String,
-    pub commit: Option<String>,
-    pub parent_pid: u32,
-    pub environment: InitDataEnvironment,
-    pub workspace: Option<serde_json::Value>,
-    pub extensions: Vec<ExtensionDescription>,
-    pub telemetry_info: InitDataTelemetry,
-    pub log_level: u8,
-    pub loggers: Vec<serde_json::Value>,
-    pub logs_location: UriComponents,
-    pub auto_start: bool,
-    pub remote: InitDataRemote,
-    pub ui_kind: u8,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct InitDataEnvironment {
-    pub is_extension_development_debug: bool,
-    pub app_root: String,
-    pub app_name: String,
-    pub app_host: String,
-    pub app_uri_scheme: String,
-    pub app_language: String,
-    pub extension_telemetry_log_resource: UriComponents,
-    pub is_extension_telemetry_logging_only: bool,
-    pub global_storage_home: UriComponents,
-    pub workspace_storage_home: UriComponents,
-    pub extension_development_location_uri: Option<String>,
-    pub extension_tests_location_uri: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct InitDataTelemetry {
-    pub session_id: String,
-    pub machine_id: String,
-    pub sqm_id: String,
-    pub dev_device_id: String,
-    pub first_session_date: String,
-    pub msft_internal: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct InitDataRemote {
-    pub is_remote: bool,
-    pub authority: Option<String>,
-    pub connection_data: Option<serde_json::Value>,
-}
-
 pub fn user_extensions_dir() -> PathBuf {
     sidex_extensions::paths::user_extensions_dir()
 }
 
 pub fn global_storage_dir() -> PathBuf {
     sidex_extensions::paths::global_storage_dir()
-}
-
-fn user_data_dir() -> PathBuf {
-    sidex_extensions::paths::user_data_dir()
-}
-
-pub fn resolve_server_script(app: &AppHandle) -> PathBuf {
-    let resource_path = app
-        .path()
-        .resolve(
-            "extension-host/server.cjs",
-            tauri::path::BaseDirectory::Resource,
-        )
-        .ok();
-
-    if let Some(ref p) = resource_path {
-        if p.exists() {
-            return p.clone();
-        }
-    }
-
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("extension-host/server.cjs")
 }
 
 pub fn resolve_builtin_extensions_dir(app: &AppHandle) -> PathBuf {
@@ -433,98 +294,6 @@ pub fn resolve_builtin_extensions_dir(app: &AppHandle) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("extensions")
-}
-
-fn read_node_version(binary: &str) -> Option<String> {
-    Command::new(binary)
-        .arg("--version")
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .output()
-        .ok()
-        .and_then(|out| String::from_utf8(out.stdout).ok())
-        .map(|v| v.trim().to_string())
-        .filter(|v| !v.is_empty())
-}
-
-fn is_usable_node(binary: &str) -> bool {
-    Command::new(binary)
-        .arg("--version")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .is_ok()
-}
-
-pub fn bundled_node_candidates(app: &AppHandle) -> Vec<PathBuf> {
-    let mut candidates = Vec::new();
-
-    if let Ok(path) = std::env::var("SIDEX_NODE_BINARY") {
-        candidates.push(PathBuf::from(path));
-    }
-
-    let resource_candidates = if cfg!(target_os = "windows") {
-        vec!["node/node.exe", "bin/node.exe", "node.exe"]
-    } else {
-        vec!["node/bin/node", "bin/node", "node"]
-    };
-
-    for relative in resource_candidates {
-        if let Ok(path) = app
-            .path()
-            .resolve(relative, tauri::path::BaseDirectory::Resource)
-        {
-            candidates.push(path);
-        }
-    }
-
-    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    if cfg!(target_os = "windows") {
-        candidates.push(manifest_dir.join("bin").join("node.exe"));
-    } else {
-        candidates.push(manifest_dir.join("bin").join("node"));
-    }
-
-    candidates
-}
-
-pub fn resolve_node_runtime(app: &AppHandle) -> Result<ResolvedNode, String> {
-    for candidate in bundled_node_candidates(app) {
-        if let Some(path) = candidate.to_str() {
-            if candidate.exists() && is_usable_node(path) {
-                return Ok(ResolvedNode {
-                    path: path.to_string(),
-                    version: read_node_version(path),
-                    source: "bundled",
-                    bundled: true,
-                });
-            }
-        }
-    }
-
-    let candidates = if cfg!(target_os = "windows") {
-        vec!["node.exe", "node"]
-    } else {
-        vec![
-            "node",
-            "/usr/local/bin/node",
-            "/usr/bin/node",
-            "/opt/homebrew/bin/node",
-        ]
-    };
-
-    for candidate in candidates {
-        if is_usable_node(candidate) {
-            return Ok(ResolvedNode {
-                path: candidate.to_string(),
-                version: read_node_version(candidate),
-                source: "system",
-                bundled: false,
-            });
-        }
-    }
-
-    Err("Node runtime not found. Bundle Node with SideX or install Node.js (>=18).".into())
 }
 
 fn extension_source(app: &AppHandle, path: &Path) -> (String, bool) {
@@ -807,146 +576,6 @@ pub fn scan_extensions(app: &AppHandle, paths: &[PathBuf]) -> Vec<ExtensionManif
     values
 }
 
-/// Build the VS Code-compatible extension descriptions from Rust-scanned manifests.
-/// Only includes Node extensions — WASM extensions are loaded directly by the runtime.
-///
-/// NOTE: WASM extensions are additive — they do NOT suppress Node equivalents yet.
-/// The WASM implementations provide basic static completions while the Node
-/// extensions talk to real language servers (tsserver, css-languageservice, etc.).
-/// Once the WASM extensions reach feature parity, re-enable suppression.
-pub fn build_extension_descriptions(manifests: &[ExtensionManifest]) -> Vec<ExtensionDescription> {
-    manifests
-        .iter()
-        .filter(|m| m.kind == ExtensionKind::Node && (m.main.is_some() || m.browser.is_some()))
-        .map(|m| {
-            let pkg_path = Path::new(&m.path).join("package.json");
-            let package_json =
-                crate::commands::encoding::read_json_file::<serde_json::Value>(&pkg_path)
-                    .unwrap_or(serde_json::Value::Null);
-
-            ExtensionDescription {
-                identifier: ExtensionIdentifier {
-                    id: m.id.clone(),
-                    uuid: None,
-                },
-                extension_location: UriComponents {
-                    scheme: "file".to_string(),
-                    path: path_to_uri_path(&m.path),
-                    authority: String::new(),
-                },
-                package_json,
-                is_builtin: m.builtin,
-                is_under_development: false,
-                target_platform: "undefined".to_string(),
-            }
-        })
-        .collect()
-}
-
-/// Build the complete init data payload for the Node extension host process.
-pub fn build_init_data(
-    extensions: &[ExtensionDescription],
-    workspace_folders: &[String],
-) -> ExtensionHostInitData {
-    let global_storage = global_storage_dir();
-    let data_dir = user_data_dir();
-
-    ExtensionHostInitData {
-        version: "1.93.0".to_string(),
-        commit: None,
-        parent_pid: std::process::id(),
-        environment: InitDataEnvironment {
-            is_extension_development_debug: false,
-            app_root: std::env::current_dir()
-                .unwrap_or_else(|_| PathBuf::from("."))
-                .to_string_lossy()
-                .to_string(),
-            app_name: "SideX".to_string(),
-            app_host: "desktop".to_string(),
-            app_uri_scheme: "sidex".to_string(),
-            app_language: "en".to_string(),
-            extension_telemetry_log_resource: UriComponents {
-                scheme: "file".to_string(),
-                path: String::new(),
-                authority: String::new(),
-            },
-            is_extension_telemetry_logging_only: false,
-            global_storage_home: UriComponents {
-                scheme: "file".to_string(),
-                path: path_to_uri_path(&global_storage.to_string_lossy()),
-                authority: String::new(),
-            },
-            workspace_storage_home: UriComponents {
-                scheme: "file".to_string(),
-                path: path_to_uri_path(&data_dir.join("workspaceStorage").to_string_lossy()),
-                authority: String::new(),
-            },
-            extension_development_location_uri: None,
-            extension_tests_location_uri: None,
-        },
-        workspace: if workspace_folders.is_empty() {
-            None
-        } else {
-            Some(serde_json::json!({
-                "folders": workspace_folders.iter().map(|f| {
-                    serde_json::json!({ "uri": { "scheme": "file", "path": path_to_uri_path(f) } })
-                }).collect::<Vec<_>>()
-            }))
-        },
-        extensions: extensions.to_vec(),
-        telemetry_info: InitDataTelemetry {
-            session_id: uuid::Uuid::new_v4().to_string(),
-            machine_id: uuid::Uuid::new_v4().to_string(),
-            sqm_id: uuid::Uuid::new_v4().to_string(),
-            dev_device_id: uuid::Uuid::new_v4().to_string(),
-            first_session_date: chrono::Utc::now().to_rfc3339(),
-            msft_internal: false,
-        },
-        log_level: 2,
-        loggers: vec![],
-        logs_location: UriComponents {
-            scheme: "file".to_string(),
-            path: path_to_uri_path(&data_dir.join("logs").to_string_lossy()),
-            authority: String::new(),
-        },
-        auto_start: true,
-        remote: InitDataRemote {
-            is_remote: false,
-            authority: None,
-            connection_data: None,
-        },
-        ui_kind: 1,
-    }
-}
-
-/// Whether any discovered extension declares an executable entry (`main` or
-/// `browser`). Only those need the Node extension host; declarative extensions
-/// (grammars, themes, language configuration) are consumed by the workbench.
-pub fn has_node_extensions(manifests: &[ExtensionManifest]) -> bool {
-    manifests
-        .iter()
-        .any(|m| m.main.is_some() || m.browser.is_some())
-}
-
-/// The Node extension host is disabled by default — SideX is Rust-first.
-/// Declarative contributions (grammars, themes, snippets, language
-/// configuration) are still loaded; only executable extension code is skipped.
-/// Set `SIDEX_NODE_EXTENSIONS=on` (or `1`/`true`) to spawn the host when an
-/// extension declares `main`/`browser`.
-pub fn node_extensions_enabled() -> bool {
-    matches!(
-        std::env::var("SIDEX_NODE_EXTENSIONS")
-            .unwrap_or_default()
-            .to_ascii_lowercase()
-            .as_str(),
-        "on" | "1" | "true" | "enabled"
-    )
-}
-
-pub fn should_start_node_host(manifests: &[ExtensionManifest]) -> bool {
-    node_extensions_enabled() && has_node_extensions(manifests)
-}
-
 #[tauri::command]
 pub async fn list_available_extensions(app: AppHandle) -> Result<Vec<ExtensionManifest>, String> {
     let paths = extension_search_paths(&app);
@@ -956,7 +585,6 @@ pub async fn list_available_extensions(app: AppHandle) -> Result<Vec<ExtensionMa
 #[tauri::command]
 pub async fn extension_platform_bootstrap(
     app: AppHandle,
-    supervisor: tauri::State<'_, crate::commands::ext_host::ExtensionPlatformSupervisor>,
     wasm_runtime: tauri::State<
         '_,
         std::sync::Arc<crate::commands::extension_wasm::WasmExtensionRuntime>,
@@ -964,35 +592,6 @@ pub async fn extension_platform_bootstrap(
 ) -> Result<serde_json::Value, String> {
     let paths = extension_search_paths(&app);
     let manifests = scan_extensions(&app, &paths);
-    let node_extensions = should_start_node_host(&manifests);
-    let descriptions = build_extension_descriptions(&manifests);
-    let init_data = build_init_data(&descriptions, &[]);
-    let init_data_json = serde_json::to_string(&init_data).map_err(|e| e.to_string())?;
-    let search_paths: Vec<String> = paths
-        .iter()
-        .map(|p| p.to_string_lossy().to_string())
-        .collect();
-
-    let port = if node_extensions {
-        Some(supervisor.ensure_started(&app, &init_data_json, &search_paths)?)
-    } else {
-        if has_node_extensions(&manifests) {
-            log::info!(
-                "[platform] Node extension host disabled (set SIDEX_NODE_EXTENSIONS=on to enable)"
-            );
-        } else {
-            log::info!(
-                "[platform] no extensions with 'main'/'browser' found — skipping Node extension host"
-            );
-        }
-        None
-    };
-
-    let node = if node_extensions {
-        resolve_node_runtime(&app).ok()
-    } else {
-        None
-    };
 
     let wasm_manifests: Vec<ExtensionManifest> = manifests
         .iter()
@@ -1044,83 +643,12 @@ pub async fn extension_platform_bootstrap(
         .collect();
 
     Ok(serde_json::json!({
-        "transport": {
-            "kind": "websocket",
-            "endpoint": port.map(|p| format!("ws://127.0.0.1:{p}/")).unwrap_or_default()
-        },
-        "runtime": {
-            "path": node.as_ref().map(|n| n.path.clone()).unwrap_or_default(),
-            "version": node.as_ref().and_then(|n| n.version.clone()),
-            "source": if node.is_some() { "system" } else { "none" },
-            "bundled": false
-        },
-        "nodeHost": node_extensions,
         "paths": {
-            "serverScript": dunce::simplified(&resolve_server_script(&app)).to_string_lossy(),
             "builtinExtensionsDir": dunce::simplified(&resolve_builtin_extensions_dir(&app)).to_string_lossy(),
             "userExtensionsDir": dunce::simplified(&user_extensions_dir()).to_string_lossy(),
             "globalStorageDir": dunce::simplified(&global_storage_dir()).to_string_lossy(),
         },
         "sessionKind": "local",
         "extensions": summaries,
-        "initDataJson": init_data_json,
     }))
-}
-
-#[tauri::command]
-pub async fn extension_platform_status(
-    app: AppHandle,
-    supervisor: tauri::State<'_, crate::commands::ext_host::ExtensionPlatformSupervisor>,
-) -> Result<serde_json::Value, String> {
-    let snapshot = supervisor.snapshot()?;
-    let paths = extension_search_paths(&app);
-    #[allow(clippy::cast_possible_truncation)]
-    let ext_count = scan_extensions(&app, &paths).len() as u32;
-    Ok(serde_json::json!({
-        "running": snapshot.running,
-        "port": snapshot.port,
-        "sessionId": snapshot.session_id,
-        "uptimeSecs": snapshot.uptime_secs,
-        "extensionCount": ext_count,
-        "restartCount": snapshot.restart_count,
-        "totalCrashes": snapshot.total_crashes,
-    }))
-}
-
-#[tauri::command]
-pub async fn extension_platform_restart(
-    app: AppHandle,
-    supervisor: tauri::State<'_, crate::commands::ext_host::ExtensionPlatformSupervisor>,
-) -> Result<serde_json::Value, String> {
-    let paths = extension_search_paths(&app);
-    let manifests = scan_extensions(&app, &paths);
-    let descriptions = build_extension_descriptions(&manifests);
-    let init_data = build_init_data(&descriptions, &[]);
-    let init_data_json = serde_json::to_string(&init_data).map_err(|e| e.to_string())?;
-    let search_paths: Vec<String> = paths
-        .iter()
-        .map(|p| p.to_string_lossy().to_string())
-        .collect();
-    if should_start_node_host(&manifests) {
-        let _ = supervisor.restart(&app, &init_data_json, &search_paths)?;
-    } else {
-        supervisor.stop()?;
-    }
-    extension_platform_status(app, supervisor).await
-}
-
-#[tauri::command]
-pub async fn extension_platform_stop(
-    supervisor: tauri::State<'_, crate::commands::ext_host::ExtensionPlatformSupervisor>,
-) -> Result<(), String> {
-    supervisor.stop()
-}
-
-#[tauri::command]
-pub async fn extension_platform_init_data(app: AppHandle) -> Result<String, String> {
-    let paths = extension_search_paths(&app);
-    let manifests = scan_extensions(&app, &paths);
-    let descriptions = build_extension_descriptions(&manifests);
-    let init_data = build_init_data(&descriptions, &[]);
-    serde_json::to_string(&init_data).map_err(|e| e.to_string())
 }

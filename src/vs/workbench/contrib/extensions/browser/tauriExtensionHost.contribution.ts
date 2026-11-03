@@ -237,26 +237,9 @@ class TauriExtensionHostContribution extends Disposable implements IWorkbenchCon
 		if ((globalThis as any).__SIDEX_TAURI__ !== true) {
 			return;
 		}
-		this._register(this.extensionManagementService.onDidInstallExtensions((results) => {
-			for (const result of results) {
-				if (result.local && !result.error) {
-					this._hotLoadInstalledExtension(result);
-				}
-			}
-		}));
-		this._register(this.extensionManagementService.onDidUninstallExtension((event) => {
-			if (!event.error) {
-				this._removeUninstalledExtension(event);
-			}
-		}));
 		try {
 			const bootstrap = await bootstrapExtensionPlatform();
 			this._applyBootstrap(bootstrap);
-			if (bootstrap.transport.endpoint) {
-				this._connect(bootstrap.transport.endpoint);
-			} else {
-				this.logService.info('[ExtHost] no Node extensions installed — Node extension host not started');
-			}
 		} catch (error) {
 			this.logService.warn(`[ExtHost] platform bootstrap failed ${(error as Error)?.message ?? String(error)}`);
 		}
@@ -385,57 +368,6 @@ class TauriExtensionHostContribution extends Disposable implements IWorkbenchCon
 		return html.replace(/__SIDEX_WEBVIEW_URI__\d+__([^"'\s)]*)/g, (_match, path: string) => {
 			return `https://sidex-asset.localhost/${path.replace(/^\/+/, '')}`;
 		});
-	}
-
-	private async _hotLoadInstalledExtension(result: InstallExtensionResult): Promise<void> {
-		const extId = result.identifier.id;
-		try {
-			const { invoke } = await import('@tauri-apps/api/core');
-
-			const source = result.source;
-			let installed: { id: string; path: string } | undefined;
-
-			if (source && !URI.isUri(source) && (source as IGalleryExtension).assets?.download?.uri) {
-				const downloadUrl = (source as IGalleryExtension).assets.download.uri;
-				this.logService.info(`[ExtHost] Downloading extension ${extId} from gallery`);
-				installed = await invoke<{ id: string; path: string }>('install_extension_from_url', { url: downloadUrl });
-			} else if (result.local?.location.scheme === 'file') {
-				installed = { id: extId, path: result.local.location.fsPath };
-			}
-
-			if (!installed?.path) {
-				this.logService.warn(`[ExtHost] Cannot hot-load ${extId}: no filesystem path available`);
-				return;
-			}
-
-			if (result.local?.manifest?.contributes) {
-				const cmds: { command?: string }[] = (result.local.manifest.contributes as any).commands || [];
-				for (const cmd of cmds) {
-					if (cmd.command) {
-						this._onCommandRegistered(cmd.command);
-					}
-				}
-			}
-
-			this.logService.info(`[ExtHost] Hot-loading extension ${extId} from ${installed.path}`);
-			const loadResult = await this._request<{ extensionId?: string; alreadyActive?: boolean }>('loadExtension', { extensionPath: installed.path });
-			if (loadResult?.extensionId && !loadResult.alreadyActive) {
-				this._send({ id: this._nextId(), type: 'activateExtension', params: { extensionId: loadResult.extensionId } });
-			}
-		} catch (err: any) {
-			this.logService.warn(`[ExtHost] Failed to hot-load ${extId}: ${err?.message ?? err}`);
-		}
-	}
-
-	private async _removeUninstalledExtension(event: DidUninstallExtensionEvent): Promise<void> {
-		const extId = event.identifier.id;
-		try {
-			const { invoke } = await import('@tauri-apps/api/core');
-			await invoke('uninstall_extension', { extensionId: extId });
-			this.logService.info(`[ExtHost] Removed extension ${extId} from disk`);
-		} catch (err: any) {
-			this.logService.warn(`[ExtHost] Failed to remove ${extId} from disk: ${err?.message ?? err}`);
-		}
 	}
 
 	private _applyBootstrap(bootstrap: IExtensionPlatformBootstrap): void {
