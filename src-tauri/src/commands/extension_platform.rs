@@ -63,6 +63,44 @@ pub struct ExtensionManifest {
     pub builtin: bool,
     pub activation_events: Vec<String>,
     pub contributes_keys: Vec<String>,
+    #[serde(default)]
+    pub custom_editors: Vec<WasmCustomEditorContribution>,
+    #[serde(default)]
+    pub commands: Vec<ManifestCommand>,
+    #[serde(default)]
+    pub menus: HashMap<String, Vec<ManifestMenuItem>>,
+}
+
+/// Command contributed by an extension (`contributes.commands`).
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ManifestCommand {
+    pub id: String,
+    pub title: String,
+    #[serde(default)]
+    pub icon: Option<String>,
+}
+
+/// Menu item contributed by an extension (`contributes.menus.<menuId>`).
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ManifestMenuItem {
+    pub command: String,
+    #[serde(default)]
+    pub when: Option<String>,
+    #[serde(default)]
+    pub group: Option<String>,
+}
+
+/// Custom editor declared by a WASM extension through `[contributes.custom-editors]`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WasmCustomEditorContribution {
+    pub view_type: String,
+    pub display_name: Option<String>,
+    #[serde(default)]
+    pub filename_patterns: Vec<String>,
+    pub priority: Option<String>,
 }
 
 /// VS Code-compatible extension description sent to the Node extension host
@@ -134,6 +172,10 @@ struct SidexTomlContributes {
     languages: Vec<String>,
     #[serde(default)]
     commands: Vec<SidexTomlCommand>,
+    #[serde(default, rename = "custom-editors")]
+    custom_editors: Vec<SidexTomlCustomEditor>,
+    #[serde(default)]
+    menus: HashMap<String, Vec<SidexTomlMenuItem>>,
 }
 
 #[allow(dead_code)]
@@ -141,6 +183,31 @@ struct SidexTomlContributes {
 struct SidexTomlCommand {
     id: String,
     title: String,
+    #[serde(default)]
+    icon: Option<String>,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Deserialize)]
+struct SidexTomlMenuItem {
+    command: String,
+    #[serde(default)]
+    when: Option<String>,
+    #[serde(default)]
+    group: Option<String>,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Deserialize)]
+struct SidexTomlCustomEditor {
+    #[serde(rename = "viewType")]
+    view_type: String,
+    #[serde(default, rename = "displayName")]
+    display_name: Option<String>,
+    #[serde(default, rename = "filenamePatterns")]
+    filename_patterns: Vec<String>,
+    #[serde(default)]
+    priority: Option<String>,
 }
 
 pub fn read_wasm_extension_manifest(
@@ -180,9 +247,69 @@ pub fn read_wasm_extension_manifest(
         if !c.commands.is_empty() {
             contributes_keys.push("commands".to_string());
         }
+        if !c.custom_editors.is_empty() {
+            contributes_keys.push("customEditors".to_string());
+        }
     }
 
     let (source, builtin) = extension_source(app, ext_dir);
+
+    let custom_editors = manifest
+        .contributes
+        .as_ref()
+        .map(|contributes| {
+            contributes
+                .custom_editors
+                .iter()
+                .map(|editor| WasmCustomEditorContribution {
+                    view_type: editor.view_type.clone(),
+                    display_name: editor.display_name.clone(),
+                    filename_patterns: editor.filename_patterns.clone(),
+                    priority: editor.priority.clone(),
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let commands = manifest
+        .contributes
+        .as_ref()
+        .map(|contributes| {
+            contributes
+                .commands
+                .iter()
+                .map(|command| ManifestCommand {
+                    id: command.id.clone(),
+                    title: command.title.clone(),
+                    icon: command.icon.clone(),
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let menus = manifest
+        .contributes
+        .as_ref()
+        .map(|contributes| {
+            contributes
+                .menus
+                .iter()
+                .map(|(menu, items)| {
+                    (
+                        menu.clone(),
+                        items
+                            .iter()
+                            .map(|item| ManifestMenuItem {
+                                command: item.command.clone(),
+                                when: item.when.clone(),
+                                group: item.group.clone(),
+                            })
+                            .collect(),
+                    )
+                })
+                .collect()
+        })
+        .unwrap_or_default();
 
     Ok(ExtensionManifest {
         id: manifest.extension.id,
@@ -199,6 +326,9 @@ pub fn read_wasm_extension_manifest(
         builtin,
         activation_events,
         contributes_keys,
+        custom_editors,
+        commands,
+        menus,
     })
 }
 
@@ -476,6 +606,69 @@ pub fn read_extension_manifest(
         .map(|obj| obj.keys().cloned().collect())
         .unwrap_or_default();
 
+    let commands: Vec<ManifestCommand> = val
+        .get("contributes")
+        .and_then(|c| c.get("commands"))
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|item| {
+                    let id = item.get("id")?.as_str()?.to_string();
+                    let title = item
+                        .get("title")
+                        .map(|title| {
+                            title
+                                .as_str()
+                                .map(str::to_string)
+                                .or_else(|| {
+                                    title.get("value").and_then(|v| v.as_str()).map(str::to_string)
+                                })
+                                .unwrap_or_else(|| id.clone())
+                        })
+                        .unwrap_or_else(|| id.clone());
+                    let icon = item.get("icon").and_then(|icon| {
+                        icon.as_str()
+                            .map(str::to_string)
+                            .or_else(|| icon.get("light").and_then(|v| v.as_str()).map(str::to_string))
+                    });
+                    Some(ManifestCommand { id, title, icon })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let menus: HashMap<String, Vec<ManifestMenuItem>> = val
+        .get("contributes")
+        .and_then(|c| c.get("menus"))
+        .and_then(|v| v.as_object())
+        .map(|menus| {
+            menus
+                .iter()
+                .filter_map(|(menu, items)| {
+                    let items = items.as_array()?;
+                    let parsed: Vec<ManifestMenuItem> = items
+                        .iter()
+                        .filter_map(|item| {
+                            let command = item.get("command")?.as_str()?.to_string();
+                            Some(ManifestMenuItem {
+                                command,
+                                when: item
+                                    .get("when")
+                                    .and_then(|v| v.as_str())
+                                    .map(str::to_string),
+                                group: item
+                                    .get("group")
+                                    .and_then(|v| v.as_str())
+                                    .map(str::to_string),
+                            })
+                        })
+                        .collect();
+                    Some((menu.clone(), parsed))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
     let (source, builtin) = extension_source(app, ext_dir);
 
     Ok(ExtensionManifest {
@@ -493,6 +686,9 @@ pub fn read_extension_manifest(
         builtin,
         activation_events,
         contributes_keys,
+        custom_editors: Vec::new(),
+        commands,
+        menus,
     })
 }
 
@@ -840,6 +1036,8 @@ pub async fn extension_platform_bootstrap(
                 "browser": m.browser,
                 "wasmBinary": m.wasm_binary,
                 "contributes": m.contributes_keys,
+                "commands": m.commands,
+                "menus": m.menus,
                 "location": m.path,
             })
         })

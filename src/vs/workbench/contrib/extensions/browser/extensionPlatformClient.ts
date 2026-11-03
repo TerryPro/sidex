@@ -23,6 +23,18 @@ export interface IExtensionPathsInfo {
   globalStorageDir: string;
 }
 
+export interface IExtensionContributedCommand {
+  id: string;
+  title: string;
+  icon?: string;
+}
+
+export interface IExtensionContributedMenuItem {
+  command: string;
+  when?: string;
+  group?: string;
+}
+
 export interface IExtensionManifestSummary {
   id: string;
   name: string;
@@ -33,6 +45,8 @@ export interface IExtensionManifestSummary {
   browser?: string;
   wasmBinary?: string;
   contributes: string[];
+  commands?: IExtensionContributedCommand[];
+  menus?: Record<string, IExtensionContributedMenuItem[]>;
   location: string;
 }
 
@@ -45,6 +59,38 @@ export interface IExtensionPlatformBootstrap {
   initDataJson: string;
   /** False when no extension declares `main`/`browser`, so no Node host was spawned. */
   nodeHost?: boolean;
+}
+
+export interface IWasmCustomEditorAction {
+  kind: 'register' | 'create' | 'html' | 'post' | 'command';
+  viewType?: string;
+  handle?: number;
+  uri?: string;
+  webviewId?: string;
+  html?: string;
+  message?: string;
+  extensionId?: string;
+  displayName?: string;
+  filenamePatterns?: string[];
+  priority?: string;
+  command?: string;
+  args?: string;
+}
+
+export async function takeWasmCustomEditorActions(): Promise<IWasmCustomEditorAction[]> {
+  return invoke<IWasmCustomEditorAction[]>('wasm_take_custom_editor_actions');
+}
+
+export async function activateWasmCustomEditor(viewType: string, uri: string, webviewId: string): Promise<void> {
+  return invoke<void>('wasm_activate_custom_editor', { viewType, uri, webviewId });
+}
+
+export async function sendWasmCustomEditorMessage(handle: number, message: string): Promise<void> {
+  return invoke<void>('wasm_custom_editor_message', { handle, message });
+}
+
+export async function saveWasmCustomEditor(uri: string): Promise<boolean> {
+  return invoke<boolean>('wasm_custom_editor_save', { uri });
 }
 
 export interface IExtensionPlatformStatus {

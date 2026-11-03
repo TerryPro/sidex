@@ -676,6 +676,23 @@ struct WasmHostState {
     next_debug_handle: u64,
     lang_config_handles: HashMap<u64, wit_types::LanguageConfiguration>,
     next_lang_config_handle: u64,
+    /// Pending custom editor actions drained by the workbench.
+    custom_editor_actions: Vec<serde_json::Value>,
+    /// Webview handle -> last html written by the extension.
+    webviews: HashMap<u64, String>,
+    next_webview_handle: u64,
+    /// Webview that the current `custom-editor-open` call should render into.
+    active_webview_id: Option<String>,
+    /// View types this extension registered as a custom editor provider.
+    custom_editor_view_types: Vec<String>,
+    /// Document uri -> webview handle for open custom editors.
+    custom_editor_handles: HashMap<String, u64>,
+    /// Webview handle -> editor id returned by `custom-editor-open`.
+    custom_editor_editor_ids: HashMap<u64, String>,
+    /// Most recent webview created during the active open call.
+    last_webview_handle: Option<u64>,
+    /// Command ids this extension registered; used to route command execution.
+    registered_commands: std::collections::HashSet<String>,
 }
 
 #[allow(dead_code)]
@@ -837,6 +854,15 @@ impl WasmHostState {
             next_debug_handle: 1,
             lang_config_handles: HashMap::new(),
             next_lang_config_handle: 1,
+            custom_editor_actions: Vec::new(),
+            webviews: HashMap::new(),
+            next_webview_handle: 1,
+            active_webview_id: None,
+            custom_editor_view_types: Vec::new(),
+            custom_editor_handles: HashMap::new(),
+            custom_editor_editor_ids: HashMap::new(),
+            last_webview_handle: None,
+            registered_commands: std::collections::HashSet::new(),
         }
     }
 }
@@ -992,7 +1018,9 @@ impl wit_bindings::sidex::extension::host_api::Host for WasmHostState {
         self.documents.get(&uri).map(|d| d.language_id.clone())
     }
 
-    fn register_command(&mut self, _id: String) {}
+    fn register_command(&mut self, id: String) {
+        self.registered_commands.insert(id);
+    }
 
     fn execute_command(&mut self, id: String, args: String) -> Result<String, String> {
         if id == "__sidex.tsserver" {
@@ -1016,6 +1044,55 @@ impl wit_bindings::sidex::extension::host_api::Host for WasmHostState {
 
     fn remove_status_bar_item(&mut self, id: String) {
         self.status_bar_items.remove(&id);
+    }
+
+    // -- Custom editors ------------------------------------------------------
+
+    fn register_custom_editor(&mut self, view_type: String) -> Result<u64, String> {
+        if !self.custom_editor_view_types.contains(&view_type) {
+            self.custom_editor_view_types.push(view_type.clone());
+        }
+        self.custom_editor_actions.push(serde_json::json!({
+            "kind": "register",
+            "viewType": view_type,
+        }));
+        Ok(0)
+    }
+
+    fn create_webview(&mut self, view_type: String, uri: String) -> Result<u64, String> {
+        let handle = self.next_webview_handle;
+        self.next_webview_handle += 1;
+        self.webviews.insert(handle, String::new());
+        self.last_webview_handle = Some(handle);
+        self.custom_editor_actions.push(serde_json::json!({
+            "kind": "create",
+            "handle": handle,
+            "viewType": view_type,
+            "uri": uri,
+            "webviewId": self.active_webview_id.clone().unwrap_or_default(),
+        }));
+        Ok(handle)
+    }
+
+    fn webview_set_html(&mut self, handle: u64, html: String) {
+        self.webviews.insert(handle, html.clone());
+        self.custom_editor_actions.push(serde_json::json!({
+            "kind": "html",
+            "handle": handle,
+            "html": html,
+        }));
+    }
+
+    fn webview_post_message(&mut self, handle: u64, message: String) {
+        self.custom_editor_actions.push(serde_json::json!({
+            "kind": "post",
+            "handle": handle,
+            "message": message,
+        }));
+    }
+
+    fn webview_as_webview_uri(&mut self, handle: u64, path: String) -> String {
+        format!("__SIDEX_WEBVIEW_URI__{handle}__{path}")
     }
 
     fn watch_files(&mut self, _pattern: String) -> Result<u64, String> {
@@ -1392,7 +1469,11 @@ impl wit_bindings::sidex::extension::host_api::Host for WasmHostState {
     fn register_text_editor_command(&mut self, _id: String) {}
     fn unregister_command(&mut self, _id: String) {}
     fn execute_built_in_command(&mut self, id: String, args: String) -> Result<String, String> {
-        log::info!("[wasm-ext] execute_built_in_command: {id} args={args}");
+        self.custom_editor_actions.push(serde_json::json!({
+            "kind": "command",
+            "command": id,
+            "args": args,
+        }));
         Ok("{}".to_string())
     }
     fn get_all_commands(&mut self, _filter_internal: bool) -> Vec<String> {
@@ -2514,6 +2595,7 @@ impl WasmExtensionRuntime {
             .map_err(|e| format!("failed to load wasm component {}: {e}", wasm_path.display()))?;
 
         let mut store = Store::new(&guard.engine, WasmHostState::new());
+        store.data_mut().extension_path = manifest.path.clone();
 
         {
             let host_state = store.data_mut();
@@ -2628,6 +2710,171 @@ impl WasmExtensionRuntime {
                 .cmp(&b.get("id").and_then(|v| v.as_str()))
         });
         out
+    }
+
+    /// Drains pending custom editor UI actions from every loaded extension.
+    pub fn take_custom_editor_actions(&self) -> Vec<serde_json::Value> {
+        let mut guard = self
+            .inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let contributions: std::collections::HashMap<
+            String,
+            Vec<crate::commands::extension_platform::WasmCustomEditorContribution>,
+        > = guard
+            .manifests
+            .iter()
+            .map(|(id, manifest)| (id.clone(), manifest.custom_editors.clone()))
+            .collect();
+        let mut out = Vec::new();
+        for (extension_id, ext) in guard.extensions.iter_mut() {
+            let data = ext.store.data_mut();
+            // Registration is replayed on every poll: the workbench can reload
+            // at any time, and a one-shot action would be lost with it. The
+            // frontend de-duplicates registrations by view type.
+            let view_types = data.custom_editor_view_types.clone();
+            let pending: Vec<serde_json::Value> = data.custom_editor_actions.drain(..).collect();
+
+            for view_type in view_types {
+                let mut action = serde_json::json!({
+                    "kind": "register",
+                    "viewType": view_type.clone(),
+                    "extensionId": extension_id.clone(),
+                });
+                if let Some(contribution) = contributions
+                    .get(extension_id)
+                    .and_then(|list| list.iter().find(|c| c.view_type == view_type))
+                {
+                    if let Some(obj) = action.as_object_mut() {
+                        obj.insert(
+                            "displayName".to_string(),
+                            serde_json::Value::String(
+                                contribution
+                                    .display_name
+                                    .clone()
+                                    .unwrap_or_else(|| view_type.clone()),
+                            ),
+                        );
+                        obj.insert(
+                            "filenamePatterns".to_string(),
+                            serde_json::json!(contribution.filename_patterns),
+                        );
+                        if let Some(priority) = &contribution.priority {
+                            obj.insert(
+                                "priority".to_string(),
+                                serde_json::Value::String(priority.clone()),
+                            );
+                        }
+                    }
+                }
+                out.push(action);
+            }
+
+            for mut action in pending {
+                if let Some(obj) = action.as_object_mut() {
+                    obj.insert(
+                        "extensionId".to_string(),
+                        serde_json::Value::String(extension_id.clone()),
+                    );
+                    // Keep dynamic actions that duplicate the replayed
+                    // registration out of the stream.
+                    if obj.get("kind").and_then(|k| k.as_str()) == Some("register") {
+                        continue;
+                    }
+                }
+                out.push(action);
+            }
+        }
+        out
+    }
+
+    /// Asks the extension that owns `view_type` to render `uri` into `webview_id`.
+    pub fn activate_custom_editor(
+        &self,
+        view_type: &str,
+        uri: &str,
+        webview_id: &str,
+    ) -> Result<(), String> {
+        let mut guard = self
+            .inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        for ext in guard.extensions.values_mut() {
+            let owns = ext
+                .store
+                .data()
+                .custom_editor_view_types
+                .iter()
+                .any(|value| value == view_type);
+            if !owns {
+                continue;
+            }
+            ext.store.data_mut().active_webview_id = Some(webview_id.to_string());
+            let api = ext.bindings.sidex_extension_extension_api();
+            let result =
+                api.call_custom_editor_open(&mut ext.store, view_type, uri, 1);
+            ext.store.data_mut().active_webview_id = None;
+            match result {
+                Ok(Ok(editor_id)) => {
+                    let data = ext.store.data_mut();
+                    if let Some(handle) = data.last_webview_handle.take() {
+                        data.custom_editor_handles.insert(uri.to_string(), handle);
+                        data.custom_editor_editor_ids.insert(handle, editor_id);
+                    }
+                    return Ok(());
+                }
+                Ok(Err(message)) => return Err(message),
+                Err(error) => return Err(error.to_string()),
+            }
+        }
+        Err(format!(
+            "no WASM extension registered custom editor '{view_type}'"
+        ))
+    }
+
+    /// Delivers a webview message back to the extension that owns `handle`.
+    pub fn custom_editor_message(&self, handle: u64, message: &str) -> Result<(), String> {
+        let mut guard = self
+            .inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        for ext in guard.extensions.values_mut() {
+            if !ext.store.data().custom_editor_editor_ids.contains_key(&handle) {
+                continue;
+            }
+            let api = ext.bindings.sidex_extension_extension_api();
+            api.call_webview_receive_message(&mut ext.store, &handle.to_string(), message)
+                .map_err(|error| error.to_string())?;
+            return Ok(());
+        }
+        Err(format!("no extension owns webview handle {handle}"))
+    }
+
+    /// Saves the custom editor that owns `uri`.
+    pub fn custom_editor_save(&self, uri: &str) -> Result<bool, String> {
+        let mut guard = self
+            .inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        for ext in guard.extensions.values_mut() {
+            let editor_id = {
+                let data = ext.store.data();
+                data.custom_editor_handles
+                    .get(uri)
+                    .and_then(|handle| data.custom_editor_editor_ids.get(handle))
+                    .cloned()
+            };
+            let Some(editor_id) = editor_id else {
+                continue;
+            };
+            let api = ext.bindings.sidex_extension_extension_api();
+            return match api.call_custom_editor_save(&mut ext.store, &editor_id) {
+                Ok(Ok(())) => Ok(true),
+                Ok(Err(message)) => Err(message),
+                Err(error) => Err(error.to_string()),
+            };
+        }
+        Ok(false)
     }
 
     /// Diagnostics published by every loaded extension for `uri`.
@@ -3159,6 +3406,9 @@ pub async fn wasm_load_extension(
         builtin: false,
         activation_events: Vec::new(),
         contributes_keys: Vec::new(),
+        custom_editors: Vec::new(),
+        commands: Vec::new(),
+        menus: HashMap::new(),
     };
     state.load_extension(&manifest)
 }
@@ -3213,6 +3463,40 @@ pub async fn wasm_extension_details(
 }
 
 /// Diagnostics published by loaded WASM extensions for a document.
+#[tauri::command]
+pub fn wasm_take_custom_editor_actions(
+    state: State<'_, Arc<WasmExtensionRuntime>>,
+) -> Vec<serde_json::Value> {
+    state.take_custom_editor_actions()
+}
+
+#[tauri::command]
+pub fn wasm_activate_custom_editor(
+    view_type: String,
+    uri: String,
+    webview_id: String,
+    state: State<'_, Arc<WasmExtensionRuntime>>,
+) -> Result<(), String> {
+    state.activate_custom_editor(&view_type, &uri, &webview_id)
+}
+
+#[tauri::command]
+pub fn wasm_custom_editor_message(
+    handle: u64,
+    message: String,
+    state: State<'_, Arc<WasmExtensionRuntime>>,
+) -> Result<(), String> {
+    state.custom_editor_message(handle, &message)
+}
+
+#[tauri::command]
+pub fn wasm_custom_editor_save(
+    uri: String,
+    state: State<'_, Arc<WasmExtensionRuntime>>,
+) -> Result<bool, String> {
+    state.custom_editor_save(&uri)
+}
+
 #[tauri::command]
 pub fn wasm_get_diagnostics(
     uri: String,
@@ -4168,6 +4452,9 @@ pub async fn wasm_execute_command_all(
     let ids: Vec<String> = guard.extensions.keys().cloned().collect();
     for id in &ids {
         if let Some(ext) = guard.extensions.get_mut(id) {
+            if !ext.store.data().registered_commands.contains(&command_id) {
+                continue;
+            }
             match ext
                 .bindings
                 .sidex_extension_extension_api()

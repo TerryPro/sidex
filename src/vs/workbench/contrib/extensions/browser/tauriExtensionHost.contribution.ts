@@ -94,6 +94,9 @@ import { IOpenerService } from '../../../../platform/opener/common/opener.js';
 import { IFileDialogService } from '../../../../platform/dialogs/common/dialogs.js';
 import { ITextFileService } from '../../../services/textfile/common/textfiles.js';
 import { IWebviewWorkbenchService } from '../../webviewPanel/browser/webviewWorkbenchService.js';
+import { ICustomEditorModel, ICustomEditorProvider, ICustomEditorService } from '../../customEditor/common/customEditor.js';
+import { activateWasmCustomEditor, saveWasmCustomEditor, sendWasmCustomEditorMessage, takeWasmCustomEditorActions, type IWasmCustomEditorAction } from './extensionPlatformClient.js';
+import { RegisteredEditorPriority } from '../../../services/editor/common/editorResolverService.js';
 import type { WebviewInput } from '../../webviewPanel/browser/webviewEditorInput.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
 import { Registry } from '../../../../platform/registry/common/platform.js';
@@ -104,6 +107,7 @@ import { IWorkbenchExtensionManagementService } from '../../../services/extensio
 import type { DidUninstallExtensionEvent, InstallExtensionResult, IGalleryExtension } from '../../../../platform/extensionManagement/common/extensionManagement.js';
 import { CommandsRegistry } from '../../../../platform/commands/common/commands.js';
 import { MenuId, MenuRegistry } from '../../../../platform/actions/common/actions.js';
+import { ContextKeyExpr } from '../../../../platform/contextkey/common/contextkey.js';
 import { ICommandService } from '../../../../platform/commands/common/commands.js';
 import { IWebviewViewService } from '../../webviewView/browser/webviewViewService.js';
 import { ExtensionIdentifier } from '../../../../platform/extensions/common/extensions.js';
@@ -223,6 +227,7 @@ class TauriExtensionHostContribution extends Disposable implements IWorkbenchCon
 		@IWebviewViewService private readonly webviewViewService: IWebviewViewService,
 		@IWebviewService private readonly webviewService: IWebviewService,
 		@ICodeEditorService private readonly codeEditorService: ICodeEditorService,
+		@ICustomEditorService private readonly customEditorService: ICustomEditorService,
 	) {
 		super();
 		this._init();
@@ -255,6 +260,131 @@ class TauriExtensionHostContribution extends Disposable implements IWorkbenchCon
 		} catch (error) {
 			this.logService.warn(`[ExtHost] platform bootstrap failed ${(error as Error)?.message ?? String(error)}`);
 		}
+
+		this._startWasmCustomEditorBridge();
+	}
+
+	private _wasmCustomEditorTimer: ReturnType<typeof setInterval> | undefined;
+	private readonly _wasmCustomEditorProviders = new Map<string, IDisposable>();
+	private readonly _wasmWebviews = new Map<string, any>();
+	private readonly _wasmWebviewHandles = new Map<number, string>();
+
+	/** Polls the WASM host for custom editor UI actions. */
+	private _startWasmCustomEditorBridge(): void {
+		if (this._wasmCustomEditorTimer) {
+			return;
+		}
+		this._wasmCustomEditorTimer = setInterval(() => {
+			this._drainWasmCustomEditorActions();
+		}, 200);
+	}
+
+	private async _drainWasmCustomEditorActions(): Promise<void> {
+		let actions: IWasmCustomEditorAction[];
+		try {
+			actions = await takeWasmCustomEditorActions();
+		} catch {
+			return;
+		}
+		for (const action of actions) {
+			try {
+				this._handleWasmCustomEditorAction(action);
+			} catch (error) {
+				this.logService.warn(`[ExtHost] custom editor action failed: ${String(error)}`);
+			}
+		}
+	}
+
+	private _handleWasmCustomEditorAction(action: IWasmCustomEditorAction): void {
+		switch (action.kind) {
+			case 'register': {
+				const viewType = action.viewType;
+				const patterns = action.filenamePatterns ?? [];
+				if (!viewType || this._wasmCustomEditorProviders.has(viewType) || patterns.length === 0) {
+					return;
+				}
+				const priority = action.priority === 'exclusive' ? RegisteredEditorPriority.exclusive
+					: action.priority === 'builtin' ? RegisteredEditorPriority.builtin
+						: action.priority === 'option' ? RegisteredEditorPriority.option
+							: RegisteredEditorPriority.default;
+				const provider: ICustomEditorProvider = {
+					viewType,
+					displayName: action.displayName ?? viewType,
+					filenamePatterns: patterns,
+					priority,
+					supportsMultipleEditorsPerDocument: false,
+					resolveCustomEditor: async (model, webview) => {
+						const webviewId = `wasm-editor-${this._nextId()}`;
+						this._wasmWebviews.set(webviewId, webview);
+						webview.onDidDispose(() => {
+							this._wasmWebviews.delete(webviewId);
+						});
+						await activateWasmCustomEditor(viewType, model.resource.toString(), webviewId);
+					},
+					save: async model => {
+						return saveWasmCustomEditor(model.resource.toString()).catch(() => false);
+					},
+					revert: async () => { },
+					backup: async () => undefined,
+				};
+				this._wasmCustomEditorProviders.set(viewType, this.customEditorService.registerEditorProvider(provider));
+				this.logService.info(`[ExtHost] WASM custom editor registered: ${viewType}`);
+				return;
+			}
+			case 'create': {
+				if (typeof action.handle === 'number' && action.webviewId) {
+					this._wasmWebviewHandles.set(action.handle, action.webviewId);
+					const webview = this._wasmWebviews.get(action.webviewId);
+					if (webview) {
+						webview.onMessage((event: any) => {
+							sendWasmCustomEditorMessage(action.handle!, JSON.stringify(event.message)).catch(() => { });
+						});
+					}
+				}
+				return;
+			}
+			case 'html': {
+				const webviewId = typeof action.handle === 'number' ? this._wasmWebviewHandles.get(action.handle) : undefined;
+				const webview = webviewId ? this._wasmWebviews.get(webviewId) : undefined;
+				if (webview && typeof action.html === 'string') {
+					webview.setHtml(this._rewriteWasmWebviewUris(action.html));
+				}
+				return;
+			}
+			case 'post': {
+				const webviewId = typeof action.handle === 'number' ? this._wasmWebviewHandles.get(action.handle) : undefined;
+				const webview = webviewId ? this._wasmWebviews.get(webviewId) : undefined;
+				if (webview && typeof action.message === 'string') {
+					try {
+						webview.postMessage(JSON.parse(action.message));
+					} catch {
+						webview.postMessage(action.message);
+					}
+				}
+				return;
+			}
+			case 'command': {
+				let args: unknown[] = [];
+				if (action.args) {
+					try {
+						const parsed = JSON.parse(action.args);
+						args = Array.isArray(parsed) ? parsed : [parsed];
+					} catch {
+						args = [];
+					}
+				}
+				if (action.command) {
+					void this.commandService.executeCommand(action.command, ...args);
+				}
+				return;
+			}
+		}
+	}
+
+	private _rewriteWasmWebviewUris(html: string): string {
+		return html.replace(/__SIDEX_WEBVIEW_URI__\d+__([^"'\s)]*)/g, (_match, path: string) => {
+			return `https://sidex-asset.localhost/${path.replace(/^\/+/, '')}`;
+		});
 	}
 
 	private async _hotLoadInstalledExtension(result: InstallExtensionResult): Promise<void> {
@@ -310,6 +440,7 @@ class TauriExtensionHostContribution extends Disposable implements IWorkbenchCon
 
 	private _applyBootstrap(bootstrap: IExtensionPlatformBootstrap): void {
 		this._bootstrapExtensions = bootstrap.extensions || [];
+		this._registerContributedCommandsAndMenus(this._bootstrapExtensions);
 
 		const wasmExtensions = this._bootstrapExtensions.filter(e => e.kind === 'wasm');
 		if (wasmExtensions.length > 0) {
@@ -345,6 +476,76 @@ class TauriExtensionHostContribution extends Disposable implements IWorkbenchCon
 	}
 
 	private _wasmDocSyncInitialized = false;
+
+	private readonly _contributedMenuKeys = new Set<string>();
+
+	/**
+	 * Registers commands and menu items declared in extension manifests
+	 * (`contributes.commands` / `contributes.menus`), mirroring VS Code.
+	 */
+	private _registerContributedCommandsAndMenus(extensions: IExtensionManifestSummary[]): void {
+		for (const extension of extensions) {
+			const commandMeta = new Map((extension.commands ?? []).map(command => [command.id, command]));
+
+			for (const command of extension.commands ?? []) {
+				if (CommandsRegistry.getCommand(command.id)) {
+					continue;
+				}
+				const disposable = CommandsRegistry.registerCommand(command.id, (_accessor, ...args: unknown[]) => {
+					if (extension.kind === 'wasm') {
+						return this._executeWasmCommand(command.id);
+					}
+					return this._request('executeCommand', { command: command.id, args });
+				});
+				this._registeredCommands.set(command.id, disposable);
+			}
+
+			for (const [menuId, items] of Object.entries(extension.menus ?? {})) {
+				const menu = menuId === 'editor/title' ? MenuId.EditorTitle
+					: menuId === 'editor/title/context' ? MenuId.EditorTitleContext
+						: menuId === 'commandPalette' ? MenuId.CommandPalette
+							: undefined;
+				if (!menu) {
+					continue;
+				}
+
+				for (const item of items) {
+					const key = `${menuId}|${item.command}|${item.when ?? ''}|${extension.id}`;
+					if (this._contributedMenuKeys.has(key)) {
+						continue;
+					}
+					this._contributedMenuKeys.add(key);
+
+					const meta = commandMeta.get(item.command);
+					const [group, orderText] = (item.group ?? 'navigation').split('@');
+					const order = Number(orderText);
+
+					MenuRegistry.appendMenuItem(menu, {
+						command: {
+							id: item.command,
+							title: meta?.title ?? item.command,
+							icon: this._contributedIcon(meta?.icon)
+						},
+						when: item.when ? ContextKeyExpr.deserialize(item.when) : undefined,
+						group,
+						order: Number.isFinite(order) ? order : undefined
+					});
+				}
+			}
+		}
+	}
+
+	private _contributedIcon(icon: string | undefined): { id: string } | undefined {
+		if (!icon) {
+			return undefined;
+		}
+		const themeIcon = /^\$\(([^)]+)\)$/.exec(icon);
+		if (themeIcon) {
+			return { id: themeIcon[1] };
+		}
+		// Codicon names are plain identifiers; file-path icons are not supported.
+		return /^[a-z0-9-]+$/i.test(icon) ? { id: icon } : undefined;
+	}
 
 	/**
 	 * Push the document to the WASM runtime and then pull back any decorations
@@ -443,12 +644,11 @@ class TauriExtensionHostContribution extends Disposable implements IWorkbenchCon
 	private async _executeWasmCommand(commandId: string): Promise<void> {
 		const editor = this.codeEditorService.getActiveCodeEditor();
 		const model = editor?.getModel();
-		if (!model) {
-			return;
-		}
-		const position = editor.getPosition();
+		const position = editor?.getPosition() ?? null;
+		// Commands can run without a code editor (for example from a custom
+		// editor title action), so always forward the invocation.
 		const args = JSON.stringify({
-			uri: model.uri.toString(),
+			uri: model?.uri.toString() ?? '',
 			line: (position?.lineNumber ?? 1) - 1,
 			character: (position?.column ?? 1) - 1
 		});
@@ -1340,7 +1540,22 @@ class TauriExtensionHostContribution extends Disposable implements IWorkbenchCon
 				this._onRegisterWebviewViewProvider(msg.viewId);
 				break;
 			case 'registerCustomEditorProvider':
-				this.logService.info(`[ExtHost] registerCustomEditorProvider: ${msg.viewType}`);
+				this._onRegisterCustomEditorProvider(msg);
+				break;
+			case 'customEditorHtml':
+				this._onCustomEditorHtml(msg.webviewId, msg.html);
+				break;
+			case 'customEditorPostMessage':
+				this._onCustomEditorPostMessage(msg.webviewId, msg.message);
+				break;
+			case 'customEditorDirty':
+				this._onCustomEditorDirty(msg)
+				break;
+			case 'customEditorTitle':
+				this._onCustomEditorTitle(msg.webviewId, msg.title);
+				break;
+			case 'customEditorDispose':
+				this._onCustomEditorDispose(msg.webviewId);
 				break;
 			case 'scmSourceControlCreated':
 				this.logService.info(`[ExtHost] scmSourceControlCreated: ${msg.id}`);
@@ -3283,6 +3498,102 @@ class TauriExtensionHostContribution extends Disposable implements IWorkbenchCon
 		if (panel) {
 			panel.dispose();
 			this._webviewPanels.delete(id);
+		}
+	}
+
+	private readonly _customEditors = new Map<string, { webview: any; model: ICustomEditorModel; viewType: string }>();
+	private readonly _customEditorRegistrations = new Map<string, IDisposable>();
+
+	private _onRegisterCustomEditorProvider(msg: any): void {
+		const viewType: string = msg.viewType;
+		if (!viewType || this._customEditorRegistrations.has(viewType)) {
+			return;
+		}
+		const patterns: string[] = Array.isArray(msg.filenamePatterns) ? msg.filenamePatterns : [];
+
+		const provider: ICustomEditorProvider = {
+			viewType,
+			displayName: msg.displayName || viewType,
+			filenamePatterns: patterns,
+			priority: msg.priority || RegisteredEditorPriority.default,
+			supportsMultipleEditorsPerDocument: !!msg.supportsMultipleEditorsPerDocument,
+			resolveCustomEditor: async (model, webview) => {
+				const webviewId = `custom-editor-${this._nextId()}`;
+				this._customEditors.set(webviewId, { webview, model, viewType });
+
+				webview.onMessage(event => {
+					this._send({
+						id: this._nextId(),
+						type: 'customEditorMessage',
+						params: { webviewId, message: event.message },
+					});
+				});
+				webview.onDidDispose(() => {
+					if (this._customEditors.delete(webviewId)) {
+						this._send({ id: this._nextId(), type: 'customEditorWebviewDisposed', params: { webviewId } });
+					}
+				});
+
+				await this._request('resolveCustomEditor', {
+					webviewId,
+					viewType,
+					uri: model.resource.toString(),
+					title: model.resource.path,
+				}).catch(error => this.logService.warn(`[ExtHost] resolveCustomEditor failed: ${error}`));
+			},
+			save: async model => {
+				const result = await this._request<{ saved?: boolean }>('customEditorSave', {
+					viewType,
+					uri: model.resource.toString(),
+				}).catch(() => undefined);
+				return !!result?.saved;
+			},
+			revert: async model => {
+				await this._request('customEditorRevert', {
+					viewType,
+					uri: model.resource.toString(),
+				}).catch(() => undefined);
+			},
+			backup: async model => {
+				const result = await this._request<{ backupId?: string }>('customEditorBackup', {
+					viewType,
+					uri: model.resource.toString(),
+				}).catch(() => undefined);
+				return result?.backupId;
+			},
+		};
+
+		this._customEditorRegistrations.set(viewType, this.customEditorService.registerEditorProvider(provider));
+		this.logService.info(`[ExtHost] custom editor registered: ${viewType}`);
+	}
+
+	private _onCustomEditorHtml(webviewId: string, html: string): void {
+		this._customEditors.get(webviewId)?.webview.setHtml(html);
+	}
+
+	private _onCustomEditorPostMessage(webviewId: string, message: any): void {
+		this._customEditors.get(webviewId)?.webview.postMessage(message);
+	}
+
+	private _onCustomEditorTitle(webviewId: string, title: string): void {
+		const entry = this._customEditors.get(webviewId);
+		if (entry && typeof entry.webview.setTitle === 'function') {
+			entry.webview.setTitle(title);
+		}
+	}
+
+	private _onCustomEditorDirty(msg: any): void {
+		const model = this.customEditorService.getModel(URI.parse(msg.uri), msg.viewType);
+		if (model && typeof (model as any).setDirty === 'function') {
+			(model as any).setDirty(!!msg.dirty);
+		}
+	}
+
+	private _onCustomEditorDispose(webviewId: string): void {
+		const entry = this._customEditors.get(webviewId);
+		if (entry) {
+			this._customEditors.delete(webviewId);
+			entry.webview.dispose();
 		}
 	}
 

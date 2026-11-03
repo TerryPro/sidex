@@ -40,7 +40,7 @@ export const CONTEXT_ACTIVE_WEBVIEW_PANEL_ID = new RawContextKey<string>('active
 });
 
 export class WebviewEditor extends EditorPane {
-	public static readonly ID = 'WebviewEditor';
+	public static readonly ID: string = 'WebviewEditor';
 
 	private _element?: HTMLElement;
 	private _dimension?: DOM.Dimension;
@@ -68,7 +68,7 @@ export class WebviewEditor extends EditorPane {
 		@IHostService private readonly _hostService: IHostService,
 		@IContextKeyService private readonly _contextKeyService: IContextKeyService
 	) {
-		super(WebviewEditor.ID, group, telemetryService, themeService, storageService);
+		super((new.target as typeof WebviewEditor | undefined)?.ID ?? WebviewEditor.ID, group, telemetryService, themeService, storageService);
 
 		const part = _editorGroupsService.getPart(group);
 		this._register(

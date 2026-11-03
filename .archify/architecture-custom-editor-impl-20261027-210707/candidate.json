@@ -1,0 +1,256 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "SideX 自定义编辑器子系统（实现后）",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "output": ".archify/architecture-custom-editor-impl-20261027-210707/custom-editor-architecture.html",
+    "repository": {
+      "url": "https://github.com/TerryPro/sidex.git",
+      "provider": "github",
+      "link_mode": "local-only",
+      "revision": "f5d39708b37d86b5ef0400f8da789ba197777003"
+    }
+  },
+  "components": [
+    {
+      "id": "resolver",
+      "type": "frontend",
+      "label": "编辑器解析服务",
+      "sublabel": "glob → 编辑器类型",
+      "tag": "已有",
+      "pos": [40, 60],
+      "size": [180, 72],
+      "sources": [
+        { "path": "src/vs/workbench/services/editor/common/editorResolverService.ts", "line": 189, "end_line": 194, "label": "registerEditor" }
+      ]
+    },
+    {
+      "id": "service",
+      "type": "frontend",
+      "label": "自定义编辑器服务",
+      "sublabel": "注册表 + 模型层",
+      "tag": "新增",
+      "pos": [290, 60],
+      "size": [180, 72],
+      "sources": [
+        { "path": "src/vs/workbench/contrib/customEditor/common/customEditor.ts", "line": 13, "label": "服务契约" }
+      ]
+    },
+    {
+      "id": "input",
+      "type": "frontend",
+      "label": "CustomEditorInput",
+      "sublabel": "脏状态 / 保存 / 序列化",
+      "tag": "新增",
+      "pos": [540, 60],
+      "size": [170, 72],
+      "sources": [
+        { "path": "src/vs/workbench/contrib/customEditor/browser/customEditorInput.ts", "line": 1, "label": "输入实现" }
+      ]
+    },
+    {
+      "id": "pane",
+      "type": "frontend",
+      "label": "CustomEditorPane",
+      "sublabel": "承载 webview",
+      "tag": "新增",
+      "pos": [790, 60],
+      "size": [170, 72],
+      "sources": [
+        { "path": "src/vs/workbench/contrib/webviewPanel/browser/webviewEditor.ts", "line": 42, "label": "面板基类" }
+      ]
+    },
+    {
+      "id": "webview",
+      "type": "frontend",
+      "label": "Webview 容器",
+      "sublabel": "iframe + Service Worker",
+      "tag": "已有",
+      "pos": [1040, 60],
+      "size": [170, 72],
+      "sources": [
+        { "path": "src/vs/workbench/contrib/webview/browser/webviewElement.ts", "line": 467, "label": "创建 iframe" }
+      ]
+    },
+    {
+      "id": "node-host",
+      "type": "backend",
+      "label": "Node 扩展宿主",
+      "sublabel": "host.cjs · 默认关",
+      "tag": "已有",
+      "pos": [40, 200],
+      "size": [170, 72],
+      "sources": [
+        { "path": "src-tauri/extension-host/host.cjs", "line": 3502, "end_line": 3519, "label": "provider 注册" }
+      ]
+    },
+    {
+      "id": "bridge",
+      "type": "frontend",
+      "label": "扩展桥接",
+      "sublabel": "tauriExtensionHost",
+      "tag": "改动",
+      "pos": [290, 200],
+      "size": [170, 72],
+      "sources": [
+        { "path": "src/vs/workbench/contrib/extensions/browser/tauriExtensionHost.contribution.ts", "line": 3310, "end_line": 3348, "label": "provider 接入" }
+      ]
+    },
+    {
+      "id": "isolated",
+      "type": "security",
+      "label": "跨源渲染进程",
+      "sublabel": "sidex-asset.<uuid>.localhost",
+      "tag": "新增",
+      "pos": [1040, 200],
+      "size": [170, 72],
+      "sources": [
+        { "path": "src/vs/workbench/services/environment/browser/environmentService.ts", "line": 277, "end_line": 288, "label": "子域名端点" }
+      ]
+    },
+    {
+      "id": "wasm-host",
+      "type": "backend",
+      "label": "WASM 扩展宿主",
+      "sublabel": "extension_wasm.rs",
+      "tag": "已有",
+      "pos": [40, 340],
+      "size": [170, 72],
+      "sources": [
+        { "path": "src-tauri/src/commands/extension_wasm.rs", "line": 1037, "end_line": 1075, "label": "host-api 实现" }
+      ]
+    },
+    {
+      "id": "actionqueue",
+      "type": "messagebus",
+      "label": "动作队列 + 轮询",
+      "sublabel": "200ms 拉取",
+      "tag": "新增",
+      "pos": [290, 340],
+      "size": [170, 72],
+      "sources": [
+        { "path": "src-tauri/src/commands/extension_wasm.rs", "line": 2696, "end_line": 2754, "label": "队列读取" }
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "扩展层",
+      "wraps": ["node-host", "wasm-host"]
+    },
+    {
+      "kind": "security-group",
+      "label": "隔离渲染层",
+      "wraps": ["isolated"]
+    }
+  ],
+  "connections": [
+    {
+      "id": "resolver-service",
+      "from": "resolver",
+      "to": "service",
+      "label": "glob 匹配",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "service-input",
+      "from": "service",
+      "to": "input",
+      "label": "创建",
+      "variant": "emphasis",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "input-pane",
+      "from": "input",
+      "to": "pane",
+      "label": "打开",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "pane-webview",
+      "from": "pane",
+      "to": "webview",
+      "label": "承载",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "webview-isolated",
+      "from": "webview",
+      "to": "isolated",
+      "label": "子域名 iframe",
+      "variant": "security",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "bridge-service",
+      "from": "bridge",
+      "to": "service",
+      "label": "注册 provider",
+      "variant": "emphasis",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "node-bridge",
+      "from": "node-host",
+      "to": "bridge",
+      "label": "消息协议",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "wasm-queue",
+      "from": "wasm-host",
+      "to": "actionqueue",
+      "label": "动作入队",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "queue-bridge",
+      "from": "actionqueue",
+      "to": "bridge",
+      "label": "轮询",
+      "fromSide": "top",
+      "toSide": "bottom"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "已完成",
+      "items": [
+        "服务层、模型层、编辑器输入与面板全部落地",
+        "Node 与 WASM 两条扩展路径都已接线",
+        "webview 改为每实例子域名，与工作台不同源"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "隔离效果",
+      "items": [
+        "不同 localhost 子域名属跨站，Chromium 分配独立渲染进程",
+        "页面里跑死循环冻结的只是自己，不再拖垮工作台",
+        "编辑器崩溃时保留工作台并给出重新加载入口"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "已知缺口",
+      "items": [
+        "webview 消息回传给扩展的通道未接，当前只支持单向渲染",
+        "WASM 路径的保存与还原仍是空实现",
+        "打包版需要首次构建后确认 webview-pre 资源正确分发"
+      ]
+    }
+  ]
+}

@@ -658,6 +658,13 @@ interface host-api {
     execute-built-in-command: func(id: string, args: string) -> result<string, string>;
     get-all-commands: func(filter-internal: bool) -> list<string>;
 
+    // -- Custom editors --
+    register-custom-editor: func(view-type: string) -> result<u64, string>;
+    create-webview: func(view-type: string, uri: string) -> result<u64, string>;
+    webview-set-html: func(handle: u64, html: string);
+    webview-post-message: func(handle: u64, message: string);
+    webview-as-webview-uri: func(handle: u64, path: string) -> string;
+
     // -- Editor actions --
     apply-workspace-edit: func(edit: workspace-edit) -> result<_, string>;
     show-text-document: func(uri: string);

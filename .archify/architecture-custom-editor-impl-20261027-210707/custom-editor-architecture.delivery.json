@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "37e9020d-003e-4b4b-bd0a-76df402a207c",
+  "status": "current",
+  "command": "deliver",
+  "type": "architecture",
+  "input": "F:\\TRAEWS\\sidex\\.archify\\architecture-custom-editor-impl-20261027-210707\\candidate.json",
+  "output": "F:\\TRAEWS\\sidex\\.archify\\architecture-custom-editor-impl-20261027-210707\\custom-editor-architecture.html",
+  "specification": {
+    "sha256": "bdd3e7c9fa71ddd4b6bb3a3bbac6e7f6df1950ebf8ad1060eaca051cde3ab2c2",
+    "bytes": 7042
+  },
+  "artifact": {
+    "sha256": "e8c33c6618a0f39c994cdae67658f605dfd86bb1f385c5744928bdbe8cd4e7d1",
+    "bytes": 828515
+  }
+}

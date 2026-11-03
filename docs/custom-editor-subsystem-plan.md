@@ -1,6 +1,8 @@
 # 补齐自定义编辑器子系统方案
 
-> 架构图：[SideX 自定义编辑器子系统补齐架构](computer://f:\TRAEWS\sidex\.archify\architecture-custom-editor-20261027-125722\custom-editor-architecture.html)
+> 架构图（实现后）：[SideX 自定义编辑器子系统](computer://f:\TRAEWS\sidex\.archify\architecture-custom-editor-impl-20261027-210707\custom-editor-architecture.html)
+>
+> 实现前：[补齐方案架构](computer://f:\TRAEWS\sidex\.archify\architecture-custom-editor-20261027-125722\custom-editor-architecture.html)
 
 ## 一、目标与边界
 
@@ -285,7 +287,80 @@ wry 给 WebView2 注册的过滤器是 `https://<协议名>.*`（[webview2/mod.r
 | CSP | `webview-pre/index.html` 的 `frame-src` 要放行新源（[index.html](file:///f:/TRAEWS/sidex/src/vs/workbench/contrib/webview/browser/pre/index.html#L7-L8)） |
 | sandbox | `allow-same-origin` 可以保留——此时它与工作台已不同源，沙箱逃逸的前提消失 |
 
-## 九、修正后的实施顺序
+## 十、实施状态（2026-10-27）
+
+| 项 | 状态 | 位置 |
+| --- | --- | --- |
+| A 核心服务 | 已完成 | `contrib/customEditor/browser/customEditorService.ts`、`customEditorModel.ts` |
+| B 输入与面板 | 已完成 | `customEditorInput.ts`、`customEditorPane.ts`、`customEditorInputFactory.ts`、`common/customTextEditorModel.ts` |
+| C Node 桥接 | 已完成 | `tauriExtensionHost.contribution.ts`、`extension-host/host.cjs` |
+| D 清单解析 | 已完成 | `extension_platform.rs` 解析 `[contributes.custom-editors]` |
+| 0 跨源改造 | 已完成 | `environmentService.ts`、`lib.rs` 协议处理器、`tauri.conf.json`、`vite.config.ts` |
+| D WIT 契约 | 已完成 | 两份 `world.wit` 各加 5 个 host-api 函数 |
+| E WASM 推送通道 | 已完成 | 动作队列 + 运行时读取 + Tauri 命令 + 前端轮询 |
+| F 度量加固 | 已完成（基础版） | 编辑器崩溃时保活 + 「重新加载」入口 |
+
+跨源改造已在真实应用验证：HTML 预览正常显示，webview 从独立子域名加载。
+
+### WASM 路径的设计结论
+
+排查后发现一个关键事实：每个 WASM 扩展持有**长期存活的 `Store<WasmHostState>`**，不是每次调用新建。这比原先估计的简单——UI 动作可以直接存在 `WasmHostState` 里，像 diagnostics 一样由运行时读取，不需要额外的回收管线。
+
+| 步骤 | 改动 |
+| --- | --- |
+| 1 | 两份 WIT 各加 5 个 host-api 函数：`register-custom-editor`、`create-webview`、`webview-set-html`、`webview-post-message`、`webview-as-webview-uri` |
+| 2 | `WasmHostState` 增加 `ui_actions: Vec<Value>` 与 `webviews: HashMap<u64, String>` |
+| 3 | 实现 5 个函数，把动作压入队列 |
+| 4 | `WasmExtensionRuntime::take_ui_actions()` 遍历扩展、取走队列 |
+| 5 | 新增 Tauri 命令并注册 |
+| 6 | 前端轮询命令，按动作注册 provider、设置 HTML、投递消息 |
+
+必须一次做完并重启验证，中途停下会留下无法工作的半成品。
+
+### WASM 路径的实现细节
+
+| 环节 | 落地方式 |
+| --- | --- |
+| 动作来源 | 扩展调用 `register-custom-editor` / `create-webview` / `webview-set-html` / `webview-post-message`，动作压入 `WasmHostState.custom_editor_actions` |
+| 清单补齐 | `register` 动作由运行时从该扩展的 `sidex.toml` 补上 `displayName`、`filenamePatterns`、`priority` |
+| 打开流程 | 前端 provider 的 `resolveCustomEditor` 调 `wasm_activate_custom_editor`，宿主把 `active_webview_id` 设好再调扩展的 `custom-editor-open` |
+| 渲染 | 扩展在调用中 `create-webview` 拿到句柄，再 `webview-set-html`；前端每 200ms 取一次动作并套用 |
+| 资源地址 | `webview-as-webview-uri` 返回 `__SIDEX_WEBVIEW_URI__<handle>__<path>` 标记，前端替换成 `https://sidex-asset.localhost/<path>` |
+
+**已知缺口**：无。webview 消息回传与保存已在 CSV 示例扩展中跑通。
+
+### CSV 示例扩展
+
+`extensions-rust/csv-editor-extension` 是第一个使用该链路的 WASM 扩展。
+
+| 项 | 内容 |
+| --- | --- |
+| 视图类型 | `sidex.csv.preview` |
+| 匹配 | `*.csv`，优先级 default |
+| 激活 | `onStartupFinished`，启动即注册 provider |
+| 渲染 | Rust 解析 CSV，输出带 `contenteditable` 单元格的表格 |
+| 回传 | 单元格失焦时页面发 `{type:'edit',row,col,value}`，前端转给扩展 |
+| 保存 | 扩展收到消息后直接写回文件 |
+
+
+已验证：TypeScript 类型检查无新增错误；`cargo check` 通过（仅既有 warning）；Vite 能转换全部新增模块。
+
+剩下的是同一条链上的三个环节（WIT 契约 → Rust 宿主实现 → 前端轮询），彼此强依赖，拆开做没有意义，必须一次完成并重启验证。
+
+### 行为变化
+
+webview 现在从 `<uuid>.webview.localhost`（开发）或 `https://sidex-asset.<uuid>.localhost`（打包）加载，与工作台不同源，因此渲染进程独立。
+
+首次重启后如果 webview 白屏，优先检查三处：
+
+| 检查点 | 预期 |
+| --- | --- |
+| Vite 是否接受该 Host | `allowedHosts` 已加入 `.webview.localhost` |
+| `webview-pre` 资源是否可达 | 开发走 Vite，打包走 `sidex-asset` 协议 |
+| 服务源校验 | `<hash>.webview.localhost` 满足 `hostname.startsWith(hash + '.')` |
+
+
+## 十一、实施顺序
 
 验证通过了，顺序要调整：**先做跨源改造，再补 A 到 F**。
 

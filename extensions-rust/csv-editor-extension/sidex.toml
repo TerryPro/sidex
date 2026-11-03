@@ -1,0 +1,35 @@
+[extension]
+id = "sidex.csv-editor"
+name = "csv-editor"
+version = "0.1.0"
+description = "SideX CSV 表格编辑器"
+wasm = "../target/wasm32-wasip2/release/csv_editor_extension.wasm"
+
+[activation]
+events = ["onStartupFinished"]
+
+[[contributes.commands]]
+id = "sidex.csv.openTable"
+title = "打开表格视图"
+icon = "table"
+
+[[contributes.commands]]
+id = "sidex.csv.openText"
+title = "打开原始文本"
+icon = "file-text"
+
+[[contributes.custom-editors]]
+viewType = "sidex.csv.preview"
+displayName = "CSV 表格"
+filenamePatterns = ["*.csv"]
+priority = "option"
+
+[contributes.menus]
+"editor/title" = [
+  { command = "sidex.csv.openTable", when = "resourceExtname == '.csv' && activeCustomEditorId != 'sidex.csv.preview'", group = "navigation@1" },
+  { command = "sidex.csv.openText", when = "resourceExtname == '.csv' && activeCustomEditorId == 'sidex.csv.preview'", group = "navigation@1" },
+]
+"commandPalette" = [
+  { command = "sidex.csv.openTable", when = "resourceExtname == '.csv' && activeCustomEditorId != 'sidex.csv.preview'" },
+  { command = "sidex.csv.openText", when = "activeCustomEditorId == 'sidex.csv.preview'" },
+]

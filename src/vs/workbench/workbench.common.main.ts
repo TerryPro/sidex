@@ -246,6 +246,9 @@ import './contrib/imagePreview/browser/imagePreview.contribution.js';
 // PDF Preview
 import './contrib/pdfPreview/browser/pdfPreview.contribution.js';
 
+// Custom Editors
+import './contrib/customEditor/browser/customEditor.contribution.js';
+
 // Extensions Management
 import './contrib/extensions/browser/extensions.contribution.js';
 import './contrib/extensions/browser/extensionsViewlet.js';

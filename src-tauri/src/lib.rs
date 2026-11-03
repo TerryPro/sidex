@@ -410,16 +410,82 @@ pub fn run() {
         .manage(Arc::new(
             WasmExtensionRuntime::new().expect("failed to initialize WASM runtime"),
         ))
-        .register_asynchronous_uri_scheme_protocol("sidex-asset", |_ctx, request, responder| {
+        .register_asynchronous_uri_scheme_protocol("sidex-asset", |ctx, request, responder| {
+            let app = ctx.app_handle().clone();
             std::thread::spawn(move || {
                 let raw_path = request.uri().path();
                 let decoded = urlencoding::decode(raw_path.strip_prefix('/').unwrap_or(raw_path))
                     .unwrap_or_default();
 
+                // The webview host runs on `<uuid>` subdomains of this scheme so
+                // it is a different origin (and therefore a different renderer
+                // process) than the workbench.
+                if decoded.starts_with("webview-pre/") {
+                    let base = if cfg!(debug_assertions) {
+                        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../public")
+                    } else {
+                        let resources = app.path().resource_dir().unwrap_or_default();
+                        let direct = resources.join("webview-pre");
+                        if direct.exists() {
+                            resources.clone()
+                        } else {
+                            // Tauri maps `../` sources under `_up_` in the bundle.
+                            resources.join("_up_").join("public")
+                        }
+                    };
+                    let file = base.join(decoded.as_ref());
+                    let mime = match file
+                        .extension()
+                        .and_then(|e| e.to_str())
+                        .unwrap_or_default()
+                    {
+                        "html" => "text/html; charset=utf-8",
+                        "js" | "mjs" => "text/javascript; charset=utf-8",
+                        "css" => "text/css; charset=utf-8",
+                        "json" => "application/json; charset=utf-8",
+                        "svg" => "image/svg+xml",
+                        "png" => "image/png",
+                        "jpg" | "jpeg" => "image/jpeg",
+                        "gif" => "image/gif",
+                        "webp" => "image/webp",
+                        "bmp" => "image/bmp",
+                        "ico" | "cur" => "image/x-icon",
+                        "woff" => "font/woff",
+                        "woff2" => "font/woff2",
+                        "ttf" => "font/ttf",
+                        "otf" => "font/otf",
+                        "wasm" => "application/wasm",
+                        _ => "application/octet-stream",
+                    };
+                    match std::fs::read(&file) {
+                        Ok(bytes) => {
+                            let _ = responder.respond(
+                                tauri::http::Response::builder()
+                                    .status(200)
+                                    .header("Content-Type", mime)
+                                    .header("Access-Control-Allow-Origin", "*")
+                                    .body(bytes)
+                                    .unwrap(),
+                            );
+                        }
+                        Err(_) => {
+                            let _ = responder.respond(
+                                tauri::http::Response::builder()
+                                    .status(404)
+                                    .header("Access-Control-Allow-Origin", "*")
+                                    .body(Vec::new())
+                                    .unwrap(),
+                            );
+                        }
+                    }
+                    return;
+                }
+
                 // Security: only serve files from the app's resource directories
                 // Block path traversal, symlinks to sensitive files, and absolute paths
                 // outside the expected asset directories.
                 let path = std::path::Path::new(decoded.as_ref());
+                log::info!("[sidex-asset] {}", decoded);
                 let canonical = match path.canonicalize() {
                     Ok(p) => p,
                     Err(_) => {
@@ -815,6 +881,10 @@ pub fn run() {
             commands::wasm_provide_range_formatting_all,
             commands::wasm_provide_workspace_symbols_all,
             commands::wasm_get_diagnostics,
+            commands::wasm_take_custom_editor_actions,
+            commands::wasm_activate_custom_editor,
+            commands::wasm_custom_editor_message,
+            commands::wasm_custom_editor_save,
             // Extension diagnostics
             commands::extension_report_activated,
             commands::extension_report_provider_call,

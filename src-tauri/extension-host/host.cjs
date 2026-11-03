@@ -22,6 +22,27 @@ function uriPathToFsPath(uriPath) {
   return uriPath;
 }
 
+// Local files are served by the app's asset protocol; the VS Code CDN host is
+// a placeholder that only existed inside real VS Code.
+function toAssetWebviewUri(uriPath, nativePath, localUri) {
+  const assetPath = uriPath.startsWith('/') ? uriPath : `/${uriPath}`;
+  const query = localUri.query || '';
+  const fragment = localUri.fragment || '';
+  return {
+    scheme: 'https',
+    authority: 'sidex-asset.localhost',
+    path: assetPath,
+    query,
+    fragment,
+    fsPath: nativePath || uriPathToFsPath(uriPath) || '',
+    toString() {
+      return `https://sidex-asset.localhost${assetPath}${query ? `?${query}` : ''}${fragment ? `#${fragment}` : ''}`;
+    },
+    with(change) { return { ...this, ...change }; },
+    toJSON() { return { scheme: this.scheme, authority: this.authority, path: this.path }; },
+  };
+}
+
 const VSCODE_RESOURCE_RE = /https:\/\/file\+[^.]*\.vscode-resource\.vscode-cdn\.net(\/[^"')\s]*)/g;
 
 function extractResourcePath(url) {
@@ -40,7 +61,7 @@ function inlineWebviewResources(html) {
       if (!p) return _match;
       try {
         let css = fs.readFileSync(p, 'utf8');
-        css = inlineCssUrls(css);
+        css = inlineCssUrls(css, path.dirname(p));
         return `<style>${css}</style>`;
       } catch { return _match; }
     }
@@ -71,6 +92,12 @@ function inlineWebviewResources(html) {
     if (mime) {
       try { return `data:${mime};base64,${fs.readFileSync(p).toString('base64')}`; } catch { return _match; }
     }
+    // Only inline text-like resources; anything else (PDFs, cmaps, fonts) is
+    // rewritten to the asset protocol by the second pass below. Reading a
+    // binary file as utf8 would corrupt it.
+    if (ext !== '.css' && ext !== '.js' && ext !== '.json' && ext !== '.txt' && ext !== '.html') {
+      return _match;
+    }
     try {
       const content = fs.readFileSync(p, 'utf8');
       const guessedMime = ext === '.css' ? 'text/css' : ext === '.js' ? 'text/javascript' : 'text/plain';
@@ -78,25 +105,52 @@ function inlineWebviewResources(html) {
     } catch { return _match; }
   });
 
+  // Documents and other runtime fetches (PDF files, cmaps, fonts) cannot be
+  // inlined; point them at the app's local asset protocol instead of the
+  // VS Code CDN placeholder so the webview can actually load them.
+  result = result.replace(
+    /https:\/\/file\+[^.]*\.vscode-resource\.vscode-cdn\.net(\/[^"')\s]*)/gi,
+    (_match, rawPath) => `https://sidex-asset.localhost${rawPath}`
+  );
+
   result = result.replace(/<meta[^>]+http-equiv=["']Content-Security-Policy["'][^>]*>/gi, '');
 
   return result;
 }
 
-function inlineCssUrls(css) {
+function inlineCssUrls(css, baseDir) {
   const binaryMimes = {
     '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg',
     '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp',
     '.woff': 'font/woff', '.woff2': 'font/woff2', '.ttf': 'font/ttf',
     '.otf': 'font/otf', '.eot': 'application/vnd.ms-fontobject',
   };
-  return css.replace(/url\(["']?(https:\/\/file\+[^.]*\.vscode-resource\.vscode-cdn\.net\/[^"')\s]+)["']?\)/gi, (_match, url) => {
+  const inlineFile = (filePath) => {
+    const mime = binaryMimes[path.extname(filePath).toLowerCase()];
+    if (!mime) return undefined;
+    try { return `url(data:${mime};base64,${fs.readFileSync(filePath).toString('base64')})`; } catch { return undefined; }
+  };
+
+  css = css.replace(/url\(["']?(https:\/\/file\+[^.]*\.vscode-resource\.vscode-cdn\.net\/[^"')\s]+)["']?\)/gi, (_match, url) => {
     const p = extractResourcePath(url);
     if (!p) return _match;
-    const mime = binaryMimes[path.extname(p).toLowerCase()];
-    if (!mime) return _match;
-    try { return `url(data:${mime};base64,${fs.readFileSync(p).toString('base64')})`; } catch { return _match; }
+    return inlineFile(p) || _match;
   });
+
+  // Stylesheets inlined into the document lose their original base
+  // directory, so relative asset URLs (pdf.js toolbar icons) must be resolved
+  // and embedded here as well.
+  if (baseDir) {
+    css = css.replace(/url\(\s*(["']?)([^"')\s]+)\1\s*\)/gi, (_match, _quote, url) => {
+      if (/^(data:|https?:|blob:|#|\/)/i.test(url)) return _match;
+      const withoutSuffix = url.split(/[?#]/)[0];
+      if (!withoutSuffix) return _match;
+      const resolved = path.resolve(baseDir, withoutSuffix);
+      return inlineFile(resolved) || _match;
+    });
+  }
+
+  return css;
 }
 
 process.on('unhandledRejection', (reason) => {
@@ -112,6 +166,42 @@ process.env.VSCODE_NLS_CONFIG = JSON.stringify({
   locale: 'en',
   availableLanguages: {},
 });
+
+// VS Code-style event emitter used by the custom editor bridge and document
+// events. It lives at module scope because both the extension host methods and
+// the API surface create instances.
+class VscEventEmitter {
+  constructor() {
+    this._listeners = [];
+  }
+  get event() {
+    const self = this;
+    return (listener, thisArg, disposables) => {
+      const bound = thisArg ? listener.bind(thisArg) : listener;
+      self._listeners.push(bound);
+      const d = {
+        dispose() {
+          const i = self._listeners.indexOf(bound);
+          if (i >= 0) self._listeners.splice(i, 1);
+        },
+      };
+      if (disposables) disposables.push(d);
+      return d;
+    };
+  }
+  fire(data) {
+    for (const fn of this._listeners.slice()) {
+      try {
+        fn(data);
+      } catch (e) {
+        log(`event error: ${e.message}`);
+      }
+    }
+  }
+  dispose() {
+    this._listeners.length = 0;
+  }
+}
 
 class ExtensionHost extends EventEmitter {
   constructor() {
@@ -311,6 +401,19 @@ class ExtensionHost extends EventEmitter {
         return this._handleWebviewMessage(id, params);
       case 'webviewPanelClosed':
         return this._handleWebviewPanelClosed(id, params);
+      case 'resolveCustomEditor':
+        return this._handleResolveCustomEditor(id, params);
+      case 'customEditorMessage':
+        return this._handleCustomEditorMessage(id, params);
+      case 'customEditorSave':
+        return this._handleCustomEditorSave(id, params);
+      case 'customEditorRevert':
+        return this._handleCustomEditorRevert(id, params);
+      case 'customEditorBackup':
+        return this._handleCustomEditorBackup(id, params);
+      case 'customEditorWebviewDisposed':
+        this._cleanupCustomEditor(params?.webviewId);
+        return { id, result: true };
       case 'workbenchCommandResult':
         if (params?.editorState && this._activeEditorId) {
           const ed = this._editors.get(this._activeEditorId);
@@ -328,6 +431,246 @@ class ExtensionHost extends EventEmitter {
     }
   }
 
+
+  _findCustomEditorContribution(viewType) {
+    for (const ext of this._extensions.values()) {
+      const contributed = ext.manifest?.contributes?.customEditors;
+      if (!Array.isArray(contributed)) continue;
+      for (const entry of contributed) {
+        if (entry && entry.viewType === viewType) return entry;
+      }
+    }
+    return undefined;
+  }
+
+  _emitCustomEditorRegistration(viewType, supportsMultipleEditorsPerDocument) {
+    const contribution = this._findCustomEditorContribution(viewType);
+    // VS Code manifests declare `selector` as an array of pattern objects.
+    const rawSelector = contribution?.selector;
+    const selectors = Array.isArray(rawSelector) ? rawSelector : rawSelector ? [rawSelector] : [];
+    const filenamePatterns = [];
+    for (const selector of selectors) {
+      for (const pattern of [].concat(selector?.filenamePattern || [], selector?.filenamePatterns || [])) {
+        if (typeof pattern === 'string' && pattern && !filenamePatterns.includes(pattern)) {
+          filenamePatterns.push(pattern);
+        }
+      }
+    }
+    this.emit('event', {
+      type: 'registerCustomEditorProvider',
+      viewType,
+      displayName: contribution?.displayName || viewType,
+      filenamePatterns,
+      priority: contribution?.priority || 'default',
+      supportsMultipleEditorsPerDocument: !!supportsMultipleEditorsPerDocument,
+    });
+  }
+
+  // The workbench reloads independently of this process; providers registered
+  // during activation would otherwise be forgotten after a reload.
+  _replayCustomEditorProviders() {
+    if (!this._customEditorProviders) return;
+    for (const viewType of this._customEditorProviders.keys()) {
+      const meta = this._customEditorProviderMetas?.get(viewType);
+      this._emitCustomEditorRegistration(viewType, meta && meta.supportsMultipleEditorsPerDocument);
+    }
+  }
+
+  _toVscUri(uri) {
+    let url;
+    try { url = new URL(uri); } catch { url = null; }
+    const pathname = url ? decodeURIComponent(url.pathname) : uri;
+    return {
+      scheme: url ? url.protocol.replace(':', '') : 'file',
+      authority: url ? url.host : '',
+      path: pathname,
+      fsPath: uriPathToFsPath(pathname),
+      query: url ? url.search.replace(/^\?/, '') : '',
+      fragment: url ? url.hash.replace(/^#/, '') : '',
+      toString() { return uri; },
+      with(change) { return { ...this, ...change }; },
+      toJSON() {
+        return { scheme: this.scheme, authority: this.authority, path: this.path, query: this.query, fragment: this.fragment };
+      },
+    };
+  }
+
+  _createCustomEditorPanel(webviewId, viewType, messageEmitter, closeEmitter) {
+    const self = this;
+    let html = '';
+    let title = '';
+    const stateEmitter = new VscEventEmitter();
+    const webview = {
+      get html() { return html; },
+      set html(value) {
+        html = value;
+        self.emit('event', { type: 'customEditorHtml', webviewId, html: inlineWebviewResources(value) });
+      },
+      onDidReceiveMessage: messageEmitter.event,
+      postMessage(message) {
+        self.emit('event', { type: 'customEditorPostMessage', webviewId, message });
+        return Promise.resolve(true);
+      },
+      asWebviewUri(localUri) {
+        if (!localUri) return localUri;
+        const scheme = localUri.scheme || 'file';
+        const uriPath = localUri.path || '';
+        const nativePath = localUri.fsPath || uriPathToFsPath(uriPath) || '';
+        if (scheme === 'file') {
+          return toAssetWebviewUri(uriPath, nativePath, localUri);
+        }
+        const RESOURCE_AUTHORITY = 'vscode-resource.vscode-cdn.net';
+        return {
+          scheme: 'https',
+          authority: `${scheme}+${localUri.authority || ''}.${RESOURCE_AUTHORITY}`,
+          path: uriPath,
+          query: localUri.query || '',
+          fragment: localUri.fragment || '',
+          fsPath: nativePath,
+          toString() { return `https://${this.authority}${this.path}`; },
+          with(change) { return { ...this, ...change }; },
+          toJSON() { return { scheme: this.scheme, authority: this.authority, path: this.path }; },
+        };
+      },
+      cspSource: "https://*.vscode-resource.vscode-cdn.net 'self' http://localhost:* *",
+    };
+    return {
+      viewType,
+      webview,
+      get title() { return title; },
+      set title(value) {
+        title = value;
+        self.emit('event', { type: 'customEditorTitle', webviewId, title: value });
+      },
+      get visible() { return true; },
+      get active() { return true; },
+      get viewColumn() { return 1; },
+      onDidDispose: closeEmitter.event,
+      onDidChangeViewState: stateEmitter.event,
+      reveal() { },
+      dispose() {
+        self.emit('event', { type: 'customEditorDispose', webviewId });
+        self._cleanupCustomEditor(webviewId);
+      },
+    };
+  }
+
+  _handleResolveCustomEditor(id, params) {
+    const { webviewId, viewType, uri } = params || {};
+    log(`resolveCustomEditor ${viewType} (${webviewId})`);
+    const provider = this._customEditorProviders?.get(viewType);
+    if (!provider) {
+      return { id, error: `no custom editor provider for ${viewType}` };
+    }
+    if (!this._customEditorDocs) this._customEditorDocs = new Map();
+
+    let text = '';
+    try {
+      const fsPath = uriPathToFsPath(decodeURIComponent(new URL(uri).pathname));
+      text = fs.readFileSync(fsPath, 'utf8');
+    } catch { text = ''; }
+
+    const messageEmitter = new VscEventEmitter();
+    const closeEmitter = new VscEventEmitter();
+    const document = {
+      uri: this._toVscUri(uri),
+      fileName: uri,
+      getText: () => text,
+      get value() { return text; },
+      dispose() { closeEmitter.fire(); },
+      onDidChange: messageEmitter.event,
+      onDidClose: closeEmitter.event,
+      onDidDispose: closeEmitter.event,
+    };
+    const panel = this._createCustomEditorPanel(webviewId, viewType, messageEmitter, closeEmitter);
+    this._customEditorDocs.set(webviewId, { provider, document, panel, messageEmitter, closeEmitter });
+
+    const token = { isCancellationRequested: false, onCancellationRequested: () => ({ dispose() { } }) };
+    Promise.resolve()
+      .then(() => {
+        if (typeof provider.resolveCustomTextEditor === 'function') {
+          return provider.resolveCustomTextEditor(document, panel, token);
+        }
+        if (typeof provider.resolveCustomEditor === 'function') {
+          return provider.resolveCustomEditor(document, panel, token);
+        }
+      })
+      .catch((e) => console.error('[customEditor] resolve failed', e));
+
+    return { id, result: true };
+  }
+
+  _findCustomEditorEntry(params) {
+    if (!params || !this._customEditorDocs) return undefined;
+    for (const entry of this._customEditorDocs.values()) {
+      if (entry.document && entry.document.uri && entry.document.uri.toString() === params.uri) {
+        return entry;
+      }
+    }
+    return undefined;
+  }
+
+  _handleCustomEditorMessage(id, params) {
+    const entry = this._customEditorDocs?.get(params?.webviewId);
+    if (entry) entry.messageEmitter.fire(params.message);
+    return { id, result: true };
+  }
+
+  _handleCustomEditorSave(id, params) {
+    const entry = this._findCustomEditorEntry(params);
+    if (!entry) return { id, result: { saved: false } };
+    const token = { isCancellationRequested: false, onCancellationRequested: () => ({ dispose() { } }) };
+    Promise.resolve()
+      .then(() => {
+        if (typeof entry.provider.saveCustomTextDocument === 'function') {
+          return entry.provider.saveCustomTextDocument(entry.document, token);
+        }
+        if (typeof entry.provider.saveCustomDocument === 'function') {
+          return entry.provider.saveCustomDocument(entry.document, token);
+        }
+        return true;
+      })
+      .then(saved => this.emit('event', { id, result: { saved: !!saved } }))
+      .catch(e => this.emit('event', { id, error: e.message }));
+    return undefined;
+  }
+
+  _handleCustomEditorRevert(id, params) {
+    const entry = this._findCustomEditorEntry(params);
+    if (!entry) return { id, result: true };
+    const token = { isCancellationRequested: false, onCancellationRequested: () => ({ dispose() { } }) };
+    Promise.resolve()
+      .then(() => {
+        if (typeof entry.provider.revertCustomDocument === 'function') {
+          return entry.provider.revertCustomDocument(entry.document, token);
+        }
+        return true;
+      })
+      .then(() => this.emit('event', { id, result: true }))
+      .catch(e => this.emit('event', { id, error: e.message }));
+    return undefined;
+  }
+
+  _handleCustomEditorBackup(id, params) {
+    const entry = this._findCustomEditorEntry(params);
+    if (!entry) return { id, result: { backupId: undefined } };
+    const token = { isCancellationRequested: false, onCancellationRequested: () => ({ dispose() { } }) };
+    Promise.resolve()
+      .then(() => typeof entry.provider.backupCustomDocument === 'function'
+        ? entry.provider.backupCustomDocument(entry.document, token)
+        : undefined)
+      .then(backup => this.emit('event', { id, result: { backupId: backup && backup.backupId } }))
+      .catch(e => this.emit('event', { id, error: e.message }));
+    return undefined;
+  }
+
+  _cleanupCustomEditor(webviewId) {
+    const entry = this._customEditorDocs?.get(webviewId);
+    if (!entry) return;
+    this._customEditorDocs.delete(webviewId);
+    try { entry.messageEmitter.dispose(); } catch { }
+    try { entry.closeEmitter.dispose(); } catch { }
+  }
 
   _handleInitialize(id, params) {
     if (params && params.extensionPaths) {
@@ -431,9 +774,11 @@ class ExtensionHost extends EventEmitter {
           return { id, result: { activated: false, deferred: true } };
         }
       }
-      this._activateExtension(extensionId).catch((e) => {
-        log(`activation error (${extensionId}): ${e.message}`);
-      });
+      this._activateExtension(extensionId)
+        .then(() => this._replayCustomEditorProviders())
+        .catch((e) => {
+          log(`activation error (${extensionId}): ${e.message}`);
+        });
       return { id, result: { activated: true } };
     } catch (e) {
       return { id, error: e.message };
@@ -3499,11 +3844,15 @@ function createVscodeShim() {
       host.emit('event', { type: 'registerWebviewViewProvider', viewId });
       return { dispose() { host._webviewViewProviders?.delete(viewId); } };
     },
-    registerCustomEditorProvider: (viewType, provider) => {
+    registerCustomEditorProvider: (viewType, provider, options) => {
       if (!host._customEditorProviders) host._customEditorProviders = new Map();
       host._customEditorProviders.set(viewType, provider);
-      host.emit('event', { type: 'registerCustomEditorProvider', viewType });
-      return { dispose() { host._customEditorProviders?.delete(viewType); } };
+      if (!host._customEditorProviderMetas) host._customEditorProviderMetas = new Map();
+      host._customEditorProviderMetas.set(viewType, {
+        supportsMultipleEditorsPerDocument: !!(options && options.supportsMultipleEditorsPerDocument),
+      });
+      host._emitCustomEditorRegistration(viewType, options && options.supportsMultipleEditorsPerDocument);
+      return { dispose() { host._customEditorProviders?.delete(viewType); host._customEditorProviderMetas?.delete(viewType); } };
     },
     registerUriHandler: (handler) => {
       host._uriHandler = handler;
@@ -4792,11 +5141,24 @@ if (process.env.SIDEX_EXTENSION_HOST === 'true' && process.send) {
   process.on('message', (msg) => {
     if (!msg || typeof msg !== 'object') return;
     host.emit('inbound', msg);
-    const reply = host.handleMessage(msg);
+    let reply;
+    try {
+      reply = host.handleMessage(msg);
+    } catch (e) {
+      // Never leave a request unanswered: the workbench waits 10s per request.
+      log(`handle error (${msg.type || msg.method}): ${e.stack || e.message}`);
+      if (msg.id !== undefined) {
+        reply = { id: msg.id, error: e.message };
+      }
+    }
     if (reply && typeof reply.then === 'function') {
       reply.then((r) => {
         if (r && process.send) process.send({ type: 'sidex:host-reply', reply: r });
-      }).catch(() => {});
+      }).catch((e) => {
+        if (msg.id !== undefined && process.send) {
+          process.send({ type: 'sidex:host-reply', reply: { id: msg.id, error: e.message } });
+        }
+      });
     } else if (reply && process.send) {
       process.send({ type: 'sidex:host-reply', reply });
     }

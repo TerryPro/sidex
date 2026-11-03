@@ -276,7 +276,15 @@ export class BrowserWorkbenchEnvironmentService implements IBrowserWorkbenchEnvi
 	@memoize
 	get webviewExternalEndpoint(): string {
 		if ((globalThis as any).__SIDEX_TAURI__) {
-			return `${window.location.origin}/webview-pre/`;
+			// Webviews are served from a per-webview host so they are a different
+			// origin (and renderer process) than the workbench. In dev the Vite
+			// server answers `<uuid>.webview.localhost`; in a packaged build the
+			// `sidex-asset` protocol does.
+			const isDev = !!(import.meta as any).env?.DEV;
+			if (isDev) {
+				return `http://{{uuid}}.webview.localhost:${window.location.port}/webview-pre/`;
+			}
+			return 'https://sidex-asset.{{uuid}}.localhost/webview-pre/';
 		}
 
 		const endpoint =

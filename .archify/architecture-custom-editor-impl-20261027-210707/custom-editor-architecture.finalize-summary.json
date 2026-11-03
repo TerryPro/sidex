@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "command": "finalize",
+  "status": "pass",
+  "type": "architecture",
+  "quality": "showcase",
+  "specification": {
+    "path": "F:\\TRAEWS\\sidex\\.archify\\architecture-custom-editor-impl-20261027-210707\\candidate.json",
+    "sha256": "bdd3e7c9fa71ddd4b6bb3a3bbac6e7f6df1950ebf8ad1060eaca051cde3ab2c2",
+    "bytes": 7042
+  },
+  "artifact": {
+    "path": "F:\\TRAEWS\\sidex\\.archify\\architecture-custom-editor-impl-20261027-210707\\custom-editor-architecture.html",
+    "sha256": "e8c33c6618a0f39c994cdae67658f605dfd86bb1f385c5744928bdbe8cd4e7d1",
+    "bytes": 828515
+  },
+  "gates": {
+    "validate": "pass",
+    "deliver": "pass",
+    "check": "pass",
+    "browser-check": "pass"
+  },
+  "diagnostics": [],
+  "diagnosticSummary": {
+    "total": 0,
+    "shown": 0,
+    "truncated": false
+  },
+  "evidence": {
+    "receipt": "F:\\TRAEWS\\sidex\\.archify\\architecture-custom-editor-impl-20261027-210707\\custom-editor-architecture.finalize.json",
+    "summaryReceipt": "F:\\TRAEWS\\sidex\\.archify\\architecture-custom-editor-impl-20261027-210707\\custom-editor-architecture.finalize-summary.json",
+    "browserCheckReceipt": "F:\\TRAEWS\\sidex\\.archify\\architecture-custom-editor-impl-20261027-210707\\custom-editor-architecture.browser-check.json"
+  },
+  "update": {
+    "status": "current",
+    "installedVersion": "3.1.0",
+    "availableVersion": "3.1.0",
+    "releaseNotes": null,
+    "checkedAt": "2026-10-16T13:58:49.492Z",
+    "source": "cache",
+    "noticeRequired": false,
+    "noticeText": null
+  },
+  "visualReview": "not-requested",
+  "durationMs": 4196
+}

@@ -301,7 +301,7 @@ fn spawn_host_process(
         thread::spawn(move || {
             let reader = BufReader::new(stderr);
             for line in reader.lines().map_while(Result::ok) {
-                log::debug!("[ext-host stderr] {line}");
+                log::info!("[ext-host stderr] {line}");
                 if let Ok(mut guard) = buf.lock() {
                     if guard.len() < 200 {
                         guard.push(line);

@@ -28,6 +28,9 @@ export default defineConfig({
   server: {
     port: 1420,
     strictPort: true,
+    // Webviews are served from `<uuid>.webview.localhost` so they run in a
+    // different origin than the workbench.
+    allowedHosts: ['.webview.localhost', 'localhost', '127.0.0.1'],
     watch: {
       // `target/` is the workspace cargo output dir; watching it on Windows
       // throws EBUSY while rustc is writing build artifacts.

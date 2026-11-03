@@ -53,7 +53,8 @@
     "longDescription": "SideX is a fast, lightweight, open-source code editor built for developers.",
     "resources": [
       "extension-host/*",
-      "shell-integration/*"
+      "shell-integration/*",
+      "../public/webview-pre"
     ],
     "icon": [
       "icons/32x32.png",

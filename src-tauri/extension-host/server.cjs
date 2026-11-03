@@ -391,6 +391,9 @@ class ClientConnection {
 
       if (msg && msg.type === 'sidex:host-event') {
         const event = msg.event;
+        if (event && event.type === 'registerCustomEditorProvider') {
+          log(`forward custom editor registration: ${event.viewType} [${(event.filenamePatterns || []).join(', ')}]`);
+        }
         if (event && event.id !== undefined && this._pendingClientIds.has(event.id)) {
           this._pendingClientIds.delete(event.id);
           this._sendJson(event);
@@ -404,6 +407,9 @@ class ClientConnection {
 
       if (msg && msg.type === 'sidex:host-reply') {
         const reply = msg.reply;
+        if (reply) {
+          log(`forward reply id=${reply.id}${reply.error ? ' (error)' : ''}`);
+        }
         if (reply && reply.id !== undefined && this._pendingClientIds.has(reply.id)) {
           this._pendingClientIds.delete(reply.id);
           this._sendJson(reply);
@@ -461,6 +467,9 @@ class ClientConnection {
         break;
 
       default:
+        if (handler === 'resolveCustomEditor') {
+          log(`client request resolveCustomEditor id=${id}`);
+        }
         this._forwardToExtHost(id, msg);
         break;
     }
