@@ -37,7 +37,6 @@ import {
 } from '../../common/views.js';
 import { VIEWLET_ID as EXPLORER } from '../../contrib/files/common/files.js';
 const REMOTE = 'workbench.view.remote'; // Stub - remote feature removed
-import { VIEWLET_ID as SCM } from '../../contrib/scm/common/scm.js';
 import { WebviewViewPane } from '../../contrib/webviewView/browser/webviewViewPane.js';
 import {
 	Extensions as ExtensionFeaturesRegistryExtensions,
@@ -289,12 +288,6 @@ const viewsContribution: IJSONSchema = {
 	properties: {
 		explorer: {
 			description: localize('views.explorer', 'Contributes views to Explorer container in the Activity bar'),
-			type: 'array',
-			items: viewDescriptor,
-			default: []
-		},
-		scm: {
-			description: localize('views.scm', 'Contributes views to SCM container in the Activity bar'),
 			type: 'array',
 			items: viewDescriptor,
 			default: []
@@ -823,8 +816,6 @@ class ViewsExtensionHandler implements IWorkbenchContribution {
 		switch (value) {
 			case 'explorer':
 				return this.viewContainersRegistry.get(EXPLORER);
-			case 'scm':
-				return this.viewContainersRegistry.get(SCM);
 			case 'remote':
 				return this.viewContainersRegistry.get(REMOTE);
 			default:
@@ -835,7 +826,6 @@ class ViewsExtensionHandler implements IWorkbenchContribution {
 	private showCollapsed(container: ViewContainer): boolean {
 		switch (container.id) {
 			case EXPLORER:
-			case SCM:
 				return true;
 		}
 		return false;

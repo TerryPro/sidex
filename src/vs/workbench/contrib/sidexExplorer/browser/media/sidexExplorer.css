@@ -1,0 +1,650 @@
+/*---------------------------------------------------------------------------------------------
+ *  SideX — Explorer 骨架样式
+ *  颜色统一使用 VS Code 主题变量，随主题切换。
+ *--------------------------------------------------------------------------------------------*/
+
+/* ==================== 标题栏两行布局 ==================== */
+
+.sidex-directory-tabs-host {
+	display: flex;
+	align-items: center;
+	height: 100%;
+	flex: 0 1 auto;
+	min-width: 0;
+	order: 2;
+	/* 标题栏有全屏拖拽区域（absolute 覆盖层），标签栏必须提升到其上才能点击。 */
+	position: relative;
+	z-index: 2500;
+}
+
+/* 让菜单栏跟在标签后面，而不是挤到最右侧或标签前面。 */
+.monaco-workbench .part.titlebar.sidex-explorer-titlebar > .titlebar-container > .titlebar-left > .menubar {
+	order: 3;
+	flex: 0 0 auto;
+	margin-left: 6px;
+}
+
+.sidex-explorer-navbar-host {
+	display: flex;
+	flex: 0 0 50px;
+	height: 50px;
+	min-height: 50px;
+}
+
+.monaco-workbench .part.titlebar.sidex-explorer-titlebar {
+	display: flex;
+	flex-direction: column;
+	height: 88px;
+	background-color: var(--vscode-titleBar-activeBackground);
+	color: var(--vscode-titleBar-activeForeground);
+}
+
+.monaco-workbench .part.titlebar.sidex-explorer-titlebar > .titlebar-container {
+	flex: 0 0 38px;
+	height: 38px;
+	width: 100%;
+}
+
+.monaco-workbench .part.titlebar.sidex-explorer-titlebar > .titlebar-container > .titlebar-drag-region {
+	height: 38px;
+}
+
+.monaco-workbench .part.titlebar.sidex-explorer-titlebar > .titlebar-container > .titlebar-left {
+	flex: 1 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	padding-left: 0;
+}
+
+.monaco-workbench .part.titlebar.sidex-explorer-titlebar > .titlebar-container > .titlebar-center {
+	display: none;
+}
+
+.monaco-workbench .part.titlebar.sidex-explorer-titlebar > .titlebar-container > .titlebar-left > .window-appicon {
+	width: 30px;
+	height: 38px;
+	background-size: 14px;
+}
+
+/* ==================== 目录标签 ==================== */
+
+.sidex-directory-tabs {
+	display: flex;
+	align-items: center;
+	height: 100%;
+	min-width: 0;
+	flex: 1 1 auto;
+	gap: 2px;
+	padding: 0 2px;
+	overflow: hidden;
+}
+
+.sidex-directory-tab {
+	display: flex;
+	align-items: center;
+	gap: 7px;
+	height: 30px;
+	min-width: 120px;
+	max-width: 230px;
+	padding: 0 4px 0 9px;
+	border-radius: 6px;
+	color: var(--vscode-titleBar-inactiveForeground);
+	cursor: default;
+	user-select: none;
+	-webkit-user-select: none;
+	flex: 0 1 auto;
+}
+
+.sidex-directory-tab:hover {
+	background-color: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.2));
+}
+
+.sidex-directory-tab.active {
+	background-color: var(--vscode-editor-background);
+	color: var(--vscode-titleBar-activeForeground);
+}
+
+.sidex-directory-tab-icon {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 16px;
+	height: 16px;
+	flex: 0 0 16px;
+}
+
+.sidex-directory-tab-icon svg {
+	width: 16px;
+	height: 16px;
+}
+
+.sidex-directory-tab-title {
+	flex: 1 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-size: 12px;
+	line-height: 30px;
+}
+
+.sidex-directory-tab-close {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 18px;
+	height: 18px;
+	flex: 0 0 18px;
+	border-radius: 3px;
+	font-size: 14px;
+	line-height: 18px;
+	opacity: 0;
+}
+
+.sidex-directory-tab:hover .sidex-directory-tab-close,
+.sidex-directory-tab.active .sidex-directory-tab-close {
+	opacity: 0.7;
+}
+
+.sidex-directory-tab-close:hover {
+	background-color: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.3));
+	opacity: 1;
+}
+
+.sidex-directory-tab-add {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 28px;
+	height: 26px;
+	flex: 0 0 28px;
+	margin-left: 2px;
+	border: none;
+	border-radius: 5px;
+	background: transparent;
+	color: inherit;
+	font-size: 16px;
+	line-height: 1;
+	cursor: pointer;
+	outline: none;
+}
+
+.sidex-directory-tab-add:hover {
+	background-color: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.2));
+}
+
+/* ==================== 地址导航行 ==================== */
+
+.monaco-workbench .part.titlebar > .sidex-explorer-navbar {
+	display: flex;
+	align-items: center;
+	box-sizing: border-box;
+	flex: 0 0 50px;
+	height: 50px;
+	width: 100%;
+	gap: 4px;
+	padding: 0 10px;
+	background-color: var(--vscode-editor-background);
+	border-bottom: 1px solid var(--vscode-editorGroup-border, rgba(128, 128, 128, 0.25));
+	-webkit-app-region: no-drag;
+}
+
+.sidex-explorer-nav-actions {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+	flex: 0 0 auto;
+}
+
+.sidex-explorer-nav-button {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 30px;
+	height: 30px;
+	border: none;
+	border-radius: 4px;
+	background: transparent;
+	color: var(--vscode-icon-foreground, var(--vscode-foreground));
+	cursor: pointer;
+	padding: 0;
+}
+
+.sidex-explorer-nav-button:hover:not(:disabled) {
+	background-color: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.18));
+}
+
+.sidex-explorer-nav-button:disabled {
+	opacity: 0.3;
+	cursor: default;
+}
+
+.sidex-explorer-nav-button .codicon {
+	font-size: 15px;
+}
+
+.sidex-explorer-address-bar {
+	display: flex;
+	align-items: center;
+	flex: 1 1 auto;
+	min-width: 0;
+	height: 32px;
+	margin: 0 6px;
+	padding: 0 10px;
+	box-sizing: border-box;
+	background-color: var(--vscode-input-background, rgba(128, 128, 128, 0.1));
+	border: 1px solid var(--vscode-input-border, rgba(128, 128, 128, 0.25));
+	border-radius: 4px;
+	overflow: hidden;
+}
+
+.sidex-explorer-breadcrumb {
+	display: flex;
+	align-items: center;
+	min-width: 0;
+	overflow: hidden;
+	white-space: nowrap;
+	font-size: 12px;
+	color: var(--vscode-foreground);
+}
+
+.sidex-explorer-breadcrumb-segment {
+	padding: 2px 4px;
+	border-radius: 3px;
+	cursor: default;
+}
+
+.sidex-explorer-breadcrumb-segment:hover {
+	background-color: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.18));
+}
+
+.sidex-explorer-breadcrumb-segment.current {
+	font-weight: 600;
+	cursor: text;
+}
+
+.sidex-explorer-breadcrumb-segment.current:hover {
+	background-color: transparent;
+}
+
+.sidex-explorer-breadcrumb-sep {
+	margin: 0 2px;
+	opacity: 0.5;
+	font-size: 11px;
+}
+
+.sidex-explorer-search {
+	width: 220px;
+	height: 32px;
+	flex: 0 0 auto;
+	box-sizing: border-box;
+	padding: 0 10px;
+	background-color: var(--vscode-input-background, rgba(128, 128, 128, 0.1));
+	color: var(--vscode-input-foreground, var(--vscode-foreground));
+	border: 1px solid var(--vscode-input-border, rgba(128, 128, 128, 0.25));
+	border-radius: 4px;
+	font-size: 12px;
+	outline: none;
+}
+
+.sidex-explorer-search::placeholder {
+	color: var(--vscode-input-placeholderForeground, rgba(128, 128, 128, 0.8));
+}
+
+.sidex-explorer-search:focus {
+	border-color: var(--vscode-focusBorder);
+}
+
+/* ==================== 左侧导航视图 ==================== */
+
+/* 导航树铺满侧边栏，隐藏容器标题行（其他视图仍保留标题）。 */
+.monaco-workbench .part.sidebar:has(.sidex-navigation-view) > .title,
+.monaco-workbench .part.sidebar:has(.outline-view) > .title {
+	display: none;
+}
+
+.sidex-navigation-view {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	width: 100%;
+	overflow: hidden;
+}
+
+/* 每个目录标签一棵导航树，隐藏的树保留 DOM、展开状态与滚动位置。 */
+.sidex-navigation-views {
+	display: flex;
+	flex-direction: column;
+	flex: 1 1 auto;
+	min-height: 0;
+	width: 100%;
+	overflow: hidden;
+}
+
+.sidex-navigation-scrollable {
+	flex: 1 1 auto;
+	overflow: hidden;
+	min-height: 0;
+}
+
+.sidex-navigation-tree {
+	height: 100%;
+	box-sizing: border-box;
+	padding: 4px 0;
+	font-size: 13px;
+}
+
+.sidex-navigation-row {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	height: 28px;
+	padding-right: 8px;
+	white-space: nowrap;
+	cursor: default;
+	color: var(--vscode-foreground);
+	user-select: none;
+	-webkit-user-select: none;
+}
+
+.sidex-navigation-row:hover {
+	background-color: var(--vscode-list-hoverBackground);
+}
+
+.sidex-navigation-row.active {
+	background-color: var(--vscode-list-activeSelectionBackground);
+	color: var(--vscode-list-activeSelectionForeground);
+}
+
+.sidex-navigation-row:focus {
+	outline: 1px solid var(--vscode-focusBorder);
+	outline-offset: -1px;
+}
+
+.sidex-navigation-chevron {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 14px;
+	height: 14px;
+	flex: 0 0 14px;
+	opacity: 0.7;
+}
+
+.sidex-navigation-chevron .codicon {
+	font-size: 12px;
+}
+
+.sidex-navigation-icon {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 18px;
+	height: 18px;
+	flex: 0 0 18px;
+}
+
+.sidex-navigation-icon svg {
+	width: 18px;
+	height: 18px;
+}
+
+.sidex-navigation-label {
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.sidex-navigation-empty {
+	padding: 8px 20px;
+	opacity: 0.7;
+	font-size: 12px;
+}
+
+/* ==================== 主区域：此电脑驱动器磁贴 ==================== */
+
+/* 目录视图激活时隐藏内层编辑器标签栏，顶部目录标签就是唯一标签。 */
+.monaco-workbench .editor-group-container.sidex-directory-mode > .title {
+	display: none;
+}
+
+/* 每个目录标签一套视图，容器撑满编辑器区域，隐藏的视图保留 DOM 与滚动位置。 */
+.sidex-directory-views {
+	position: relative;
+	display: flex;
+	flex-direction: column;
+	width: 100%;
+	height: 100%;
+	overflow: hidden;
+}
+
+.sidex-directory-view {
+	display: flex;
+	flex-direction: column;
+	width: 100%;
+	max-width: 100%;
+	min-width: 0;
+	height: 100%;
+	box-sizing: border-box;
+	overflow: hidden;
+	background-color: var(--vscode-editor-background);
+	color: var(--vscode-foreground);
+	outline: none;
+}
+
+/* 和编辑器一致的滚动条（DomScrollableElement），内容区只负责布局。 */
+.sidex-directory-scrollable {
+	flex: 1 1 auto;
+	overflow: hidden;
+	min-height: 0;
+}
+
+.sidex-directory-content {
+	box-sizing: border-box;
+	width: 100%;
+	height: 100%;
+	min-width: 0;
+	padding: 14px 16px;
+}
+
+.sidex-directory-status {
+	padding: 12px 4px;
+	font-size: 13px;
+	opacity: 0.75;
+}
+
+.sidex-drive-section {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	width: 100%;
+	min-width: 0;
+}
+
+.sidex-drive-section-header {
+	font-size: 13px;
+	font-weight: 600;
+	opacity: 0.85;
+}
+
+.sidex-drive-grid {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	width: 100%;
+	min-width: 0;
+}
+
+.sidex-drive-tile {
+	display: flex;
+	align-items: flex-start;
+	gap: 12px;
+	box-sizing: border-box;
+	flex: 1 1 260px;
+	min-width: 240px;
+	max-width: 420px;
+	padding: 10px;
+	border-radius: 6px;
+	cursor: default;
+	user-select: none;
+	-webkit-user-select: none;
+}
+
+.sidex-drive-tile:hover {
+	background-color: var(--vscode-list-hoverBackground);
+}
+
+.sidex-drive-tile:focus {
+	outline: 1px solid var(--vscode-focusBorder);
+	outline-offset: -1px;
+}
+
+.sidex-drive-tile-icon {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 36px;
+	height: 36px;
+	flex: 0 0 36px;
+}
+
+.sidex-drive-tile-icon svg {
+	width: 32px;
+	height: 32px;
+}
+
+.sidex-drive-tile-body {
+	display: flex;
+	flex-direction: column;
+	gap: 5px;
+	min-width: 0;
+	flex: 1 1 auto;
+}
+
+.sidex-drive-tile-name {
+	font-size: 13px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.sidex-drive-capacity {
+	height: 7px;
+	width: 100%;
+	border-radius: 2px;
+	background-color: var(--vscode-editorWidget-border, rgba(128, 128, 128, 0.35));
+	overflow: hidden;
+}
+
+.sidex-drive-capacity-used {
+	height: 100%;
+	background-color: #0a6ed1;
+}
+
+.sidex-drive-capacity-label {
+	font-size: 12px;
+	opacity: 0.7;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.sidex-drive-empty {
+	padding: 8px 4px;
+	font-size: 12px;
+	opacity: 0.7;
+}
+
+/* ==================== 主区域：文件夹详细信息列表 ==================== */
+
+.sidex-file-list-header,
+.sidex-file-row {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) 160px 120px 90px;
+	align-items: center;
+	gap: 8px;
+	box-sizing: border-box;
+	padding: 0 8px;
+}
+
+.sidex-file-list-header {
+	height: 30px;
+	border-bottom: 1px solid var(--vscode-editorGroup-border, rgba(128, 128, 128, 0.25));
+	font-size: 12px;
+	opacity: 0.75;
+	flex: 0 0 auto;
+}
+
+.sidex-file-list-column {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.sidex-file-list {
+	display: flex;
+	flex-direction: column;
+	flex: 1 1 auto;
+}
+
+.sidex-file-row {
+	height: 28px;
+	font-size: 12px;
+	cursor: default;
+	user-select: none;
+	-webkit-user-select: none;
+}
+
+.sidex-file-row:hover {
+	background-color: var(--vscode-list-hoverBackground);
+}
+
+.sidex-file-row.selected {
+	background-color: var(--vscode-list-activeSelectionBackground);
+	color: var(--vscode-list-activeSelectionForeground);
+}
+
+.sidex-file-row:focus {
+	outline: 1px solid var(--vscode-focusBorder);
+	outline-offset: -1px;
+}
+
+.sidex-file-name {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	min-width: 0;
+	overflow: hidden;
+}
+
+.sidex-file-icon {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 16px;
+	height: 16px;
+	flex: 0 0 16px;
+}
+
+.sidex-file-icon svg {
+	width: 16px;
+	height: 16px;
+}
+
+.sidex-file-name-text {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.sidex-file-cell {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	opacity: 0.8;
+}
+
+.sidex-file-list-empty {
+	padding: 12px 4px;
+	font-size: 12px;
+	opacity: 0.7;
+}

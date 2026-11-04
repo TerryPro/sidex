@@ -5,11 +5,9 @@ use commands::db_state::SidexDbState;
 use commands::extension_diagnostics::ExtensionDiagnosticsStore;
 use commands::extension_wasm::WasmExtensionRuntime;
 use commands::lsp::LspState;
-use commands::remote::RemoteManagerStore;
 use commands::settings::SettingsStore;
 use commands::storage::StorageDb;
 use commands::terminal::TerminalStore;
-use commands::updater::UpdateManagerState;
 use commands::watch::WatchStore;
 use commands::window::restore_and_show;
 use std::sync::Arc;
@@ -24,11 +22,6 @@ fn build_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         .item(
             &MenuItemBuilder::with_id("new_file", "New File")
                 .accelerator("CmdOrCtrl+N")
-                .build(app)?,
-        )
-        .item(
-            &MenuItemBuilder::with_id("new_window", "New Window")
-                .accelerator("CmdOrCtrl+Shift+N")
                 .build(app)?,
         )
         .separator()
@@ -169,11 +162,6 @@ fn build_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
                 .build(app)?,
         )
         .item(
-            &MenuItemBuilder::with_id("source_control", "Source Control")
-                .accelerator("CmdOrCtrl+Shift+G")
-                .build(app)?,
-        )
-        .item(
             &MenuItemBuilder::with_id("extensions", "Extensions")
                 .accelerator("CmdOrCtrl+Shift+X")
                 .build(app)?,
@@ -263,7 +251,6 @@ fn build_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
                 .accelerator("CmdOrCtrl+Shift+`")
                 .build(app)?,
         )
-        .item(&MenuItemBuilder::with_id("split_terminal", "Split Terminal").build(app)?)
         .build()?;
 
     let window_menu = SubmenuBuilder::with_id(app, "window_menu", "Window")
@@ -396,14 +383,12 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
-        .manage(UpdateManagerState::new())
         .manage(Arc::new(TerminalStore::new()))
         .manage(Arc::new(LspState::new()))
         .manage(Arc::new(WatchStore::new()))
         .manage(ExtensionDiagnosticsStore::new())
         .manage(Arc::new(SettingsStore::new()))
         .manage(Arc::new(sidex_extension_api::CommandRegistry::new()))
-        .manage(Arc::new(RemoteManagerStore::new()))
         .manage(Arc::new(
             WasmExtensionRuntime::new().expect("failed to initialize WASM runtime"),
         ))
@@ -603,7 +588,6 @@ pub fn run() {
                     registry,
                     Arc::new(ext::DebugApi::new()),
                     Arc::new(ext::TasksApi::new()),
-                    Arc::new(ext::ScmApi::new()),
                     Arc::new(ext::TestApi::new()),
                     Arc::new(ext::EnvApi::new()),
                 )));
@@ -635,9 +619,6 @@ pub fn run() {
             };
             app.manage(Arc::new(SidexDbState::new(sidex_db)));
 
-            if let Err(err) = commands::updater::initialize(app.handle()) {
-                log::warn!("update manager disabled: {err}");
-            }
             if let Err(err) = commands::profiles::initialize(app.handle()) {
                 log::warn!("profile storage disabled: {err}");
             }
@@ -685,6 +666,8 @@ pub fn run() {
             commands::write_file,
             commands::write_file_bytes,
             commands::read_dir,
+            commands::list_drives,
+            commands::log_frontend_error,
             commands::stat,
             commands::mkdir,
             commands::remove,
@@ -739,13 +722,6 @@ pub fn run() {
             commands::set_window_title,
             commands::get_monitors,
             commands::save_window_state,
-            commands::update_check,
-            commands::update_download,
-            commands::update_apply,
-            commands::update_cancel,
-            commands::update_state,
-            commands::update_cleanup,
-            commands::update_quit_and_install,
             commands::profiles_load,
             commands::profiles_save,
             commands::profiles_load_associations,
@@ -767,52 +743,6 @@ pub fn run() {
             commands::settings_load,
             commands::settings_parse_jsonc,
             commands::settings_modify_jsonc,
-            commands::git_status,
-            commands::git_diff,
-            commands::git_log,
-            commands::git_file_log,
-            commands::git_add,
-            commands::git_commit,
-            commands::git_checkout,
-            commands::git_restore,
-            commands::git_clean,
-            commands::git_checkout_file,
-            commands::git_branches,
-            commands::git_init,
-            commands::git_is_repo,
-            commands::git_push,
-            commands::git_pull,
-            commands::git_fetch,
-            commands::git_stash,
-            commands::git_create_branch,
-            commands::git_delete_branch,
-            commands::git_remote_list,
-            commands::git_clone,
-            commands::git_reset,
-            commands::git_show,
-            commands::git_run,
-            commands::git_log_graph,
-            commands::git_blame,
-            commands::git_cherry_pick,
-            commands::git_delete_branch_force,
-            commands::git_fetch_all,
-            commands::git_get_config,
-            commands::git_get_remotes,
-            commands::git_list_branches,
-            commands::git_list_submodules,
-            commands::git_list_tags,
-            commands::git_merge,
-            commands::git_pull_detailed,
-            commands::git_push_detailed,
-            commands::git_rebase,
-            commands::git_rename_branch,
-            commands::git_set_config,
-            commands::git_stash_apply,
-            commands::git_stash_drop_index,
-            commands::git_stash_list_parsed,
-            commands::git_submodule_init,
-            commands::git_submodule_update,
-            commands::git_tag,
             commands::extension_platform_bootstrap,
             commands::proxy_request,
             commands::proxy_request_full,
@@ -917,18 +847,6 @@ pub fn run() {
             commands::editor_detect_colors,
             commands::editor_compute_bracket_pairs,
             commands::editor_compute_folding_ranges,
-            // Remote development
-		commands::remote_list_ssh_hosts,
-            commands::remote_list_wsl_distros,
-            commands::remote_list_containers,
-            commands::remote_connect_ssh,
-            commands::remote_connect_wsl,
-            commands::remote_connect_container,
-            commands::remote_connect_codespace,
-            commands::remote_exec_ssh,
-            commands::remote_codespaces_list,
-            commands::remote_disconnect,
-            commands::remote_active_connections,
             // Extension API introspection
             commands::ext_api_get_namespaces,
             commands::ext_api_get_commands,

@@ -14,14 +14,9 @@ pub fn builtin_defaults() -> Value {
     add_terminal_defaults(&mut m);
     add_search_defaults(&mut m);
     add_window_defaults(&mut m);
-    add_debug_defaults(&mut m);
     add_explorer_defaults(&mut m);
     add_extension_defaults(&mut m);
-    add_git_defaults(&mut m);
-    add_scm_defaults(&mut m);
-    add_breadcrumb_defaults(&mut m);
     add_output_defaults(&mut m);
-    add_notebook_defaults(&mut m);
     add_language_specific_defaults(&mut m);
     Value::Object(m)
 }
@@ -72,7 +67,7 @@ fn add_editor_defaults(m: &mut Map<String, Value>) {
     ins(m, "editor.mouseWheelScrollSensitivity", json!(1));
     ins(m, "editor.fastScrollSensitivity", json!(5));
     ins(m, "editor.mouseWheelZoom", json!(false));
-    ins(m, "editor.minimap.enabled", json!(true));
+    ins(m, "editor.minimap.enabled", json!(false));
     ins(m, "editor.minimap.side", json!("right"));
     ins(m, "editor.minimap.maxColumn", json!(120));
     ins(m, "editor.minimap.renderCharacters", json!(true));
@@ -150,13 +145,13 @@ fn add_editor_defaults(m: &mut Map<String, Value>) {
     ins(m, "editor.suggestSelection", json!("first"));
     ins(m, "editor.suggestFontSize", json!(0));
     ins(m, "editor.suggestLineHeight", json!(0));
-    ins(m, "editor.parameterHints.enabled", json!(true));
+    ins(m, "editor.parameterHints.enabled", json!(false));
     ins(m, "editor.parameterHints.cycle", json!(false));
     ins(m, "editor.hover.enabled", json!(true));
     ins(m, "editor.hover.delay", json!(300));
     ins(m, "editor.hover.sticky", json!(true));
     ins(m, "editor.links", json!(true));
-    ins(m, "editor.colorDecorators", json!(true));
+    ins(m, "editor.colorDecorators", json!(false));
     ins(
         m,
         "editor.colorDecoratorsActivatedOn",
@@ -166,7 +161,7 @@ fn add_editor_defaults(m: &mut Map<String, Value>) {
     ins(m, "editor.codeActionsOnSave", json!({}));
     ins(m, "editor.selectionHighlight", json!(true));
     ins(m, "editor.occurrencesHighlight", json!("singleFile"));
-    ins(m, "editor.codeLens", json!(true));
+    ins(m, "editor.codeLens", json!(false));
     ins(m, "editor.codeLensFontFamily", json!(""));
     ins(m, "editor.codeLensFontSize", json!(0));
     ins(m, "editor.showFoldingControls", json!("mouseover"));
@@ -193,7 +188,7 @@ fn add_editor_defaults(m: &mut Map<String, Value>) {
     ins(m, "editor.rename.enablePreview", json!(true));
     ins(m, "editor.definitionLinkOpensInPeek", json!(false));
     ins(m, "editor.showDeprecated", json!(true));
-    ins(m, "editor.inlayHints.enabled", json!("on"));
+    ins(m, "editor.inlayHints.enabled", json!("off"));
     ins(m, "editor.inlayHints.fontSize", json!(0));
     ins(m, "editor.inlayHints.fontFamily", json!(""));
     ins(m, "editor.inlayHints.padding", json!(false));
@@ -208,7 +203,7 @@ fn add_editor_defaults(m: &mut Map<String, Value>) {
     ins(m, "editor.guides.highlightActiveBracketPair", json!(true));
     ins(m, "editor.guides.indentation", json!(true));
     ins(m, "editor.guides.highlightActiveIndentation", json!(true));
-    ins(m, "editor.stickyScroll.enabled", json!(true));
+    ins(m, "editor.stickyScroll.enabled", json!(false));
     ins(m, "editor.stickyScroll.maxLineCount", json!(5));
     ins(m, "editor.stickyScroll.defaultModel", json!("outlineModel"));
     ins(m, "editor.stickyScroll.scrollWithEditor", json!(true));
@@ -467,30 +462,6 @@ fn add_window_defaults(m: &mut Map<String, Value>) {
 }
 
 #[allow(clippy::too_many_lines)]
-fn add_debug_defaults(m: &mut Map<String, Value>) {
-    ins(m, "debug.openDebug", json!("openOnDebugBreak"));
-    ins(
-        m,
-        "debug.internalConsoleOptions",
-        json!("openOnFirstSessionStart"),
-    );
-    ins(m, "debug.openExplorerOnEnd", json!(false));
-    ins(m, "debug.inlineValues", json!("auto"));
-    ins(m, "debug.toolBarLocation", json!("floating"));
-    ins(m, "debug.showBreakpointsInOverviewRuler", json!(false));
-    ins(m, "debug.showInlineBreakpointCandidates", json!(true));
-    ins(m, "debug.showSubSessionsInToolBar", json!(false));
-    ins(m, "debug.allowBreakpointsEverywhere", json!(false));
-    ins(m, "debug.console.fontSize", json!(14));
-    ins(m, "debug.console.fontFamily", json!(""));
-    ins(m, "debug.console.lineHeight", json!(0));
-    ins(m, "debug.console.wordWrap", json!(true));
-    ins(m, "debug.console.closeOnEnd", json!(false));
-    ins(m, "debug.saveBeforeStart", json!("allEditorsInActiveGroup"));
-    ins(m, "debug.confirmOnExit", json!("never"));
-}
-
-#[allow(clippy::too_many_lines)]
 fn add_explorer_defaults(m: &mut Map<String, Value>) {
     ins(m, "explorer.openEditors.visible", json!(9));
     ins(m, "explorer.autoReveal", json!(true));
@@ -513,8 +484,8 @@ fn add_explorer_defaults(m: &mut Map<String, Value>) {
 
 #[allow(clippy::too_many_lines)]
 fn add_extension_defaults(m: &mut Map<String, Value>) {
-    ins(m, "extensions.autoUpdate", json!(true));
-    ins(m, "extensions.autoCheckUpdates", json!(true));
+    ins(m, "extensions.autoUpdate", json!(false));
+    ins(m, "extensions.autoCheckUpdates", json!(false));
     ins(m, "extensions.ignoreRecommendations", json!(false));
     ins(
         m,
@@ -522,105 +493,11 @@ fn add_extension_defaults(m: &mut Map<String, Value>) {
         json!(false),
     );
     ins(m, "extensions.confirmedUriHandlerExtensionIds", json!([]));
-    ins(m, "extensions.supportUntrustedWorkspaces", json!({}));
-}
-
-#[allow(clippy::too_many_lines)]
-fn add_git_defaults(m: &mut Map<String, Value>) {
-    ins(m, "git.enabled", json!(true));
-    ins(m, "git.path", Value::Null);
-    ins(m, "git.autofetch", json!(false));
-    ins(m, "git.autofetchPeriod", json!(180));
-    ins(m, "git.confirmSync", json!(true));
-    ins(m, "git.enableSmartCommit", json!(false));
-    ins(m, "git.smartCommitChanges", json!("all"));
-    ins(m, "git.postCommitCommand", json!("none"));
-    ins(m, "git.openRepositoryInParentFolders", json!("prompt"));
-    ins(m, "git.fetchOnPull", json!(false));
-    ins(m, "git.pullTags", json!(true));
-    ins(m, "git.pruneOnFetch", json!(false));
-    ins(m, "git.branchValidationRegex", json!(""));
-    ins(m, "git.branchWhitespaceChar", json!("-"));
-    ins(m, "git.inputValidation", json!("warn"));
-    ins(m, "git.inputValidationSubjectLength", Value::Null);
-    ins(m, "git.inputValidationLength", json!(72));
-    ins(m, "git.decorations.enabled", json!(true));
-    ins(m, "git.defaultCloneDirectory", Value::Null);
-    ins(m, "git.enableStatusBarSync", json!(true));
-    ins(m, "git.allowForcePush", json!(false));
-    ins(m, "git.allowNoVerifyCommit", json!(false));
-    ins(m, "git.confirmForcePush", json!(true));
-    ins(m, "git.confirmNoVerifyCommit", json!(true));
-    ins(m, "git.closeDiffOnOperation", json!(false));
-    ins(m, "git.showPushSuccessNotification", json!(false));
-    ins(m, "git.countBadge", json!("all"));
-    ins(m, "git.checkoutType", json!(["local", "remote", "tags"]));
-    ins(m, "git.ignoreLimitWarning", json!(false));
-    ins(m, "git.ignoreSubmodules", json!(false));
-    ins(m, "git.ignoreMissingGitWarning", json!(false));
-    ins(m, "git.terminalAuthentication", json!(true));
-    ins(m, "git.terminalGitEditor", json!(false));
-    ins(m, "git.useForcePushWithLease", json!(true));
-    ins(m, "git.autoStash", json!(false));
-    ins(m, "git.timeline.date", json!("committed"));
-    ins(m, "git.timeline.showAuthor", json!(true));
-    ins(m, "git.timeline.showUncommitted", json!(false));
-}
-
-#[allow(clippy::too_many_lines)]
-fn add_scm_defaults(m: &mut Map<String, Value>) {
-    ins(m, "scm.alwaysShowActions", json!(false));
-    ins(m, "scm.alwaysShowRepositories", json!(false));
-    ins(m, "scm.countBadge", json!("all"));
-    ins(m, "scm.defaultViewMode", json!("tree"));
-    ins(m, "scm.diffDecorations", json!("all"));
-    ins(m, "scm.diffDecorationsGutterWidth", json!(3));
-    ins(m, "scm.diffDecorationsGutterAction", json!("diff"));
-    ins(m, "scm.diffDecorationsIgnoreTrimWhitespace", json!("false"));
-    ins(m, "scm.providerCountBadge", json!("hidden"));
-    ins(m, "scm.repositories.visible", json!(10));
-    ins(m, "scm.inputFontFamily", json!("default"));
-    ins(m, "scm.inputFontSize", json!(13));
-}
-
-#[allow(clippy::too_many_lines)]
-fn add_breadcrumb_defaults(m: &mut Map<String, Value>) {
-    ins(m, "breadcrumbs.enabled", json!(true));
-    ins(m, "breadcrumbs.filePath", json!("on"));
-    ins(m, "breadcrumbs.symbolPath", json!("on"));
-    ins(m, "breadcrumbs.symbolSortOrder", json!("position"));
-    ins(m, "breadcrumbs.showFiles", json!(true));
-    ins(m, "breadcrumbs.showSymbols", json!(true));
-    ins(m, "breadcrumbs.showPackages", json!(true));
-    ins(m, "breadcrumbs.showModules", json!(true));
-    ins(m, "breadcrumbs.showNamespaces", json!(true));
-    ins(m, "breadcrumbs.showClasses", json!(true));
-    ins(m, "breadcrumbs.showMethods", json!(true));
-    ins(m, "breadcrumbs.showFunctions", json!(true));
-    ins(m, "breadcrumbs.showEnumMembers", json!(true));
-    ins(m, "breadcrumbs.showInterfaces", json!(true));
-    ins(m, "breadcrumbs.showStructs", json!(true));
-    ins(m, "breadcrumbs.showEvents", json!(true));
-    ins(m, "breadcrumbs.showOperators", json!(true));
-    ins(m, "breadcrumbs.showTypeParameters", json!(true));
 }
 
 #[allow(clippy::too_many_lines)]
 fn add_output_defaults(m: &mut Map<String, Value>) {
     ins(m, "output.smartScroll.enabled", json!(true));
-}
-
-#[allow(clippy::too_many_lines)]
-fn add_notebook_defaults(m: &mut Map<String, Value>) {
-    ins(m, "notebook.lineNumbers", json!("off"));
-    ins(m, "notebook.showCellStatusBar", json!("visible"));
-    ins(m, "notebook.cellToolbarLocation", json!("right"));
-    ins(m, "notebook.compactView", json!(true));
-    ins(m, "notebook.globalToolbar", json!(true));
-    ins(m, "notebook.consolidatedOutputButton", json!(true));
-    ins(m, "notebook.insertToolbarLocation", json!("both"));
-    ins(m, "notebook.undoRedoPerCell", json!(true));
-    ins(m, "notebook.output.textLineLimit", json!(30));
 }
 
 #[allow(clippy::too_many_lines)]
@@ -785,23 +662,9 @@ mod tests {
     }
 
     #[test]
-    fn has_debug_defaults() {
-        let d = builtin_defaults();
-        assert_eq!(d["debug.console.fontSize"], 14);
-    }
-
-    #[test]
     fn has_explorer_defaults() {
         let d = builtin_defaults();
         assert_eq!(d["explorer.confirmDelete"], true);
-    }
-
-    #[test]
-    fn has_git_defaults() {
-        let d = builtin_defaults();
-        assert_eq!(d["git.enabled"], true);
-        assert_eq!(d["git.confirmSync"], true);
-        assert_eq!(d["git.autofetch"], false);
     }
 
     #[test]
@@ -813,21 +676,9 @@ mod tests {
     }
 
     #[test]
-    fn has_breadcrumb_defaults() {
-        let d = builtin_defaults();
-        assert_eq!(d["breadcrumbs.enabled"], true);
-    }
-
-    #[test]
-    fn has_scm_defaults() {
-        let d = builtin_defaults();
-        assert_eq!(d["scm.alwaysShowActions"], false);
-    }
-
-    #[test]
     fn count_defaults() {
         let d = builtin_defaults();
         let count = d.as_object().unwrap().len();
-        assert!(count > 350, "Expected 350+ defaults, got {count}");
+        assert!(count >= 300, "Expected 300+ defaults, got {count}");
     }
 }

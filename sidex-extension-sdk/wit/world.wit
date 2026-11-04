@@ -315,36 +315,6 @@ interface common-types {
         render-options: option<decoration-render-options>,
     }
 
-    // -- SCM types --
-    record scm-resource {
-        uri: string,
-        state: scm-resource-state,
-        decorations: option<scm-decorations>,
-    }
-
-    enum scm-resource-state {
-        index-added,
-        index-modified,
-        index-deleted,
-        index-renamed,
-        index-copied,
-        working-tree-modified,
-        working-tree-deleted,
-        working-tree-new,
-        working-tree-renamed,
-        untracked,
-        ignored,
-        conflicting,
-    }
-
-    record scm-decorations {
-        strikethrough: bool,
-        faded: bool,
-        tooltip: option<string>,
-        color: option<string>,
-        badge: option<string>,
-    }
-
     // -- Task types --
     record task-definition {
         task-type: string,
@@ -548,7 +518,7 @@ interface host-api {
         open-dialog-options, save-dialog-options,
         progress-options, notification-action,
         decoration-render-options, decoration-instance,
-        scm-resource, task-execution, task-definition,
+        task-execution, task-definition,
         debug-session-options, breakpoint, source-breakpoint,
         notebook-cell, notebook-cell-output,
         test-item, test-result,
@@ -682,17 +652,6 @@ interface host-api {
     unregister-language-configuration: func(handle: u64);
     get-languages: func() -> list<string>;
     change-document-language: func(uri: string, language-id: string) -> result<_, string>;
-
-    // -- SCM (source control) --
-    scm-create-source-control: func(id: string, label: string, root-uri: option<string>) -> result<u64, string>;
-    scm-dispose: func(handle: u64);
-    scm-set-count: func(handle: u64, count: u32);
-    scm-set-commit-template: func(handle: u64, template: string);
-    scm-get-input-box-value: func(handle: u64) -> string;
-    scm-set-input-box-value: func(handle: u64, value: string);
-    scm-set-resource-groups: func(handle: u64, groups: list<tuple<string, list<scm-resource>>>) -> result<_, string>;
-    scm-create-resource-group: func(handle: u64, id: string, label: string) -> result<u64, string>;
-    scm-dispose-resource-group: func(group-handle: u64);
 
     // -- Tasks --
     register-task-provider: func(task-type: string) -> result<u64, string>;

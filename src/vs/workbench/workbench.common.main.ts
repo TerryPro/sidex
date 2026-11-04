@@ -13,10 +13,10 @@ import './sidexNullServices.js';
 // SideX: Register Rust-backed bridge services as DI singletons
 import '../platform/sidex/browser/sidexFileSystemProvider.js';
 import '../platform/sidex/browser/sidexSearchProvider.js';
-import '../platform/sidex/browser/sidexSCMProvider.js';
 import '../platform/sidex/browser/sidexSyntaxService.js';
 import '../platform/sidex/browser/sidexLspService.js';
 import '../platform/sidex/browser/sidexRemoteService.js';
+import '../platform/sidex/browser/sidexExplorerService.js';
 import '../platform/sidex/common/sidexThemeService.js';
 import '../platform/sidex/common/sidexSettingsService.js';
 import '../platform/sidex/common/sidexKeymapService.js';
@@ -200,9 +200,6 @@ import './contrib/files/browser/explorerViewlet.js';
 import './contrib/files/browser/fileActions.contribution.js';
 import './contrib/files/browser/files.contribution.js';
 import './contrib/outline/browser/outline.contribution.js';
-import './contrib/timeline/browser/timeline.service.contribution.js';
-import './contrib/timeline/browser/timeline.contribution.js';
-import './contrib/timeline/browser/gitTimeline.contribution.js';
 import './contrib/jsonSymbols/browser/jsonSymbols.contribution.js';
 import './contrib/languageServices/browser/languageServices.contribution.js';
 
@@ -213,18 +210,11 @@ import './contrib/bulkEdit/browser/bulkEditService.js';
 import './contrib/search/browser/search.contribution.js';
 import './contrib/search/browser/searchView.js';
 
-// Search Editor
-import './contrib/searchEditor/browser/searchEditor.contribution.js';
-
 // Sash
 import './contrib/sash/browser/sash.contribution.js';
 
-// SCM
-import './contrib/scm/browser/scm.contribution.js';
-import './contrib/scm/browser/git.contribution.js';
-
-// Remote Explorer
-import './contrib/remote/browser/remote.contribution.js';
+// Quick Diff：SideX 不提供源代码管理界面，只保留快速差异服务供编辑器使用。
+import './contrib/scm/browser/scmService.contribution.js';
 
 // Markers
 import './contrib/markers/browser/markers.contribution.js';
@@ -246,6 +236,9 @@ import './contrib/imagePreview/browser/imagePreview.contribution.js';
 // PDF Preview
 import './contrib/pdfPreview/browser/pdfPreview.contribution.js';
 
+// SideX Explorer (directory tabs / navigation / file list)
+import './contrib/sidexExplorer/browser/sidexExplorer.contribution.js';
+
 // Custom Editors
 import './contrib/customEditor/browser/customEditor.contribution.js';
 
@@ -259,9 +252,6 @@ import './contrib/output/browser/outputView.js';
 
 // Terminal
 import './contrib/terminal/terminal.all.js';
-
-// External terminal
-import './contrib/externalTerminal/browser/externalTerminal.contribution.js';
 
 // Markdown
 import './contrib/markdown/browser/markdown.contribution.js';
@@ -291,10 +281,7 @@ import './contrib/themes/browser/themes.contribution.js';
 import './contrib/languageStatus/browser/languageStatus.contribution.js';
 
 // Workspace
-import './contrib/workspace/browser/workspace.contribution.js';
-
-// Workspaces
-import './contrib/workspaces/browser/workspaces.contribution.js';
+// 工作区/项目语义已移除：只保留内部「已打开目录集合」。
 
 // Accessibility Signals
 import './contrib/accessibilitySignals/browser/accessibilitySignal.contribution.js';

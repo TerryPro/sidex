@@ -3,8 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { Event } from '../../../base/common/event.js';
-import { DisposableMap, DisposableStore } from '../../../base/common/lifecycle.js';
+import { DisposableStore } from '../../../base/common/lifecycle.js';
 import { isEqual } from '../../../base/common/resources.js';
 import { URI } from '../../../base/common/uri.js';
 import { IConfigurationService } from '../../../platform/configuration/common/configuration.js';
@@ -18,8 +17,7 @@ import {
 	MainContext,
 	MainThreadEditorTabsShape,
 	TabInputKind,
-	TabModelOperationKind,
-	TextDiffInputDto
+	TabModelOperationKind
 } from '../common/extHost.protocol.js';
 import { EditorResourceAccessor, GroupModelChangeKind, SideBySideEditor } from '../../common/editor.js';
 import { DiffEditorInput } from '../../common/editor/diffEditorInput.js';
@@ -28,10 +26,6 @@ import { EditorInput } from '../../common/editor/editorInput.js';
 import { SideBySideEditorInput } from '../../common/editor/sideBySideEditorInput.js';
 import { AbstractTextResourceEditorInput } from '../../common/editor/textResourceEditorInput.js';
 import { CustomEditorInput } from '../../contrib/customEditor/browser/customEditorInput.js';
-import { InteractiveEditorInput } from '../../contrib/interactive/browser/interactiveEditorInput.js';
-import { MergeEditorInput } from '../../contrib/mergeEditor/browser/mergeEditorInput.js';
-import { MultiDiffEditorInput } from '../../contrib/multiDiffEditor/browser/multiDiffEditorInput.js';
-import { NotebookEditorInput } from '../../contrib/notebook/common/notebookEditorInput.js';
 import { TerminalEditorInput } from '../../contrib/terminal/browser/terminalEditorInput.js';
 import { WebviewInput } from '../../contrib/webviewPanel/browser/webviewEditorInput.js';
 import {
@@ -63,8 +57,6 @@ export class MainThreadEditorTabs implements MainThreadEditorTabsShape {
 	private readonly _groupLookup: Map<number, IEditorTabGroupDto> = new Map();
 	// Lookup table for finding tab by id
 	private readonly _tabInfoLookup: Map<string, TabInfo> = new Map();
-	// Tracks the currently open MultiDiffEditorInputs to listen to resource changes
-	private readonly _multiDiffEditorInputListeners: DisposableMap<MultiDiffEditorInput> = new DisposableMap();
 
 	constructor(
 		extHostContext: IExtHostContext,
@@ -87,10 +79,6 @@ export class MainThreadEditorTabs implements MainThreadEditorTabsShape {
 			})
 		);
 
-		this._dispoables.add(this._multiDiffEditorInputListeners);
-
-		// Structural group changes (add, remove, move, etc) are difficult to patch.
-		// Since they happen infrequently we just rebuild the entire model
 		this._dispoables.add(this._editorGroupsService.onDidAddGroup(() => this._createTabsModel()));
 		this._dispoables.add(this._editorGroupsService.onDidRemoveGroup(() => this._createTabsModel()));
 
@@ -126,16 +114,6 @@ export class MainThreadEditorTabs implements MainThreadEditorTabsShape {
 	}
 
 	private _editorInputToDto(editor: EditorInput): AnyInputDto {
-		if (editor instanceof MergeEditorInput) {
-			return {
-				kind: TabInputKind.TextMergeInput,
-				base: (editor as any).base,
-				input1: (editor as any).input1.uri,
-				input2: (editor as any).input2.uri,
-				result: editor.resource
-			};
-		}
-
 		if (editor instanceof AbstractTextResourceEditorInput) {
 			return {
 				kind: TabInputKind.TextInput,
@@ -160,14 +138,6 @@ export class MainThreadEditorTabs implements MainThreadEditorTabsShape {
 				};
 			}
 			return { kind: TabInputKind.UnknownInput };
-		}
-
-		if (editor instanceof NotebookEditorInput) {
-			return {
-				kind: TabInputKind.NotebookInput,
-				notebookType: (editor as any).viewType,
-				uri: editor.resource
-			};
 		}
 
 		if (editor instanceof CustomEditorInput) {
@@ -202,40 +172,6 @@ export class MainThreadEditorTabs implements MainThreadEditorTabsShape {
 					original: editor.original.resource
 				};
 			}
-			if (editor.modified instanceof NotebookEditorInput && editor.original instanceof NotebookEditorInput) {
-				return {
-					kind: TabInputKind.NotebookDiffInput,
-					notebookType: (editor.original as any).viewType,
-					modified: editor.modified.resource,
-					original: editor.original.resource
-				};
-			}
-		}
-
-		if (editor instanceof InteractiveEditorInput) {
-			return {
-				kind: TabInputKind.InteractiveEditorInput,
-				uri: editor.resource,
-				inputBoxUri: (editor as any).inputResource
-			};
-		}
-
-		if (editor instanceof MultiDiffEditorInput) {
-			const diffEditors: TextDiffInputDto[] = [];
-			for (const resource of (editor as any)?.resources.get() ?? []) {
-				if (resource.originalUri && resource.modifiedUri) {
-					diffEditors.push({
-						kind: TabInputKind.TextDiffInput,
-						original: resource.originalUri,
-						modified: resource.modifiedUri
-					});
-				}
-			}
-
-			return {
-				kind: TabInputKind.MultiDiffEditorInput,
-				diffEditors
-			};
 		}
 
 		return { kind: TabInputKind.UnknownInput };
@@ -321,25 +257,6 @@ export class MainThreadEditorTabs implements MainThreadEditorTabsShape {
 		const tabId = this._generateTabId(editorInput, groupId);
 		this._tabInfoLookup.set(tabId, { group, editorInput, tab: tabObject });
 
-		if (editorInput instanceof MultiDiffEditorInput) {
-			this._multiDiffEditorInputListeners.set(
-				editorInput,
-				Event.fromObservableLight((editorInput as any).resources)(() => {
-					const tabInfo = this._tabInfoLookup.get(tabId);
-					if (!tabInfo) {
-						return;
-					}
-					tabInfo.tab = this._buildTabObject(group, editorInput, editorIndex);
-					this._proxy.$acceptTabOperation({
-						groupId,
-						index: editorIndex,
-						tabDto: tabInfo.tab,
-						kind: TabModelOperationKind.TAB_UPDATE
-					});
-				})
-			);
-		}
-
 		this._proxy.$acceptTabOperation({
 			groupId,
 			index: editorIndex,
@@ -371,10 +288,6 @@ export class MainThreadEditorTabs implements MainThreadEditorTabsShape {
 
 		// Update lookup
 		this._tabInfoLookup.delete(removedTab[0]?.id ?? '');
-
-		if (removedTab[0]?.input instanceof MultiDiffEditorInput) {
-			this._multiDiffEditorInputListeners.deleteAndDispose(removedTab[0]?.input);
-		}
 
 		this._proxy.$acceptTabOperation({
 			groupId,

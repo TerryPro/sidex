@@ -134,11 +134,6 @@ export namespace Schemas {
 	export const vsls = 'vsls';
 
 	/**
-	 * Scheme used for the Source Control commit input's text document
-	 */
-	export const vscodeSourceControl = 'vscode-scm';
-
-	/**
 	 * Scheme used for input box for creating comments.
 	 */
 	export const commentsInput = 'comment';

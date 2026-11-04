@@ -85,6 +85,12 @@ pub fn get_user_data_dir(app: tauri::AppHandle) -> Result<String, String> {
     Ok(user_dir.to_string_lossy().to_string())
 }
 
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
+pub fn log_frontend_error(message: String) {
+    log::error!("[frontend] {message}");
+}
+
 pub(crate) fn resolve_user_data_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     #[cfg(target_os = "linux")]
     if let Some(config_dir) = dirs::config_dir() {

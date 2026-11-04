@@ -83,7 +83,6 @@ import * as Constants from '../common/constants.js';
 import { IReplaceService } from './replace.js';
 import { getOutOfWorkspaceEditorResources, SearchStateKey, SearchUIState } from '../common/search.js';
 import { ISearchHistoryService, ISearchHistoryValues, SearchHistoryService } from '../common/searchHistoryService.js';
-import { createEditorFromSearchResult } from '../../searchEditor/browser/searchEditorActions.js';
 import { ACTIVE_GROUP, IEditorService, SIDE_GROUP } from '../../../services/editor/common/editorService.js';
 import { IPreferencesService, ISettingsEditorOptions } from '../../../services/preferences/common/preferences.js';
 import { ITextQueryBuilderOptions, QueryBuilder } from '../../../services/search/common/queryBuilder.js';
@@ -2539,27 +2538,6 @@ export class SearchView extends ViewPane {
 			}
 
 			dom.append(messageEl, ' - ');
-
-			const openInEditorTooltip = this.keybindingService.appendKeybinding(
-				nls.localize('openInEditor.tooltip', 'Copy current search results to an editor'),
-				Constants.SearchCommandIds.OpenInEditorCommandId
-			);
-			const openInEditorButton = this.messageDisposables.add(
-				new SearchLinkButton(
-					nls.localize('openInEditor.message', 'Open in editor'),
-					() =>
-						this.instantiationService.invokeFunction(
-							createEditorFromSearchResult,
-							this.searchResult,
-							this.searchIncludePattern.getValue(),
-							this.searchExcludePattern.getValue(),
-							this.searchIncludePattern.onlySearchInOpenEditors()
-						),
-					this.hoverService,
-					openInEditorTooltip
-				)
-			);
-			dom.append(messageEl, openInEditorButton.element);
 
 			if (this.shouldShowAIResults()) {
 				dom.append(messageEl, ' - ');

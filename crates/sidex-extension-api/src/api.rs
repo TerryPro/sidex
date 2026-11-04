@@ -12,7 +12,6 @@ use crate::commands_api::CommandRegistry;
 use crate::debug_api::DebugApi;
 use crate::env_api::EnvApi;
 use crate::languages_api::LanguagesApi;
-use crate::scm_api::ScmApi;
 use crate::tasks_api::TasksApi;
 use crate::test_api::TestApi;
 use crate::window::WindowApi;
@@ -28,7 +27,6 @@ pub struct ExtensionApiHandler {
     commands: Arc<CommandRegistry>,
     debug: Arc<DebugApi>,
     tasks: Arc<TasksApi>,
-    scm: Arc<ScmApi>,
     tests: Arc<TestApi>,
     env: Arc<EnvApi>,
 }
@@ -43,7 +41,6 @@ impl ExtensionApiHandler {
         commands: Arc<CommandRegistry>,
         debug: Arc<DebugApi>,
         tasks: Arc<TasksApi>,
-        scm: Arc<ScmApi>,
         tests: Arc<TestApi>,
         env: Arc<EnvApi>,
     ) -> Self {
@@ -54,7 +51,6 @@ impl ExtensionApiHandler {
             commands,
             debug,
             tasks,
-            scm,
             tests,
             env,
         }
@@ -74,7 +70,6 @@ impl ExtensionApiHandler {
             "commands" => self.dispatch_commands(action, params),
             "debug" => self.debug.handle(action, params),
             "tasks" => self.tasks.handle(action, params),
-            "scm" => self.scm.handle(action, params),
             "tests" | "testing" => self.tests.handle(action, params),
             "env" => self.env.handle(action, params),
             _ => bail!("unknown API namespace: {namespace}"),
@@ -104,7 +99,6 @@ mod tests {
     use crate::debug_api::DebugApi;
     use crate::env_api::EnvApi;
     use crate::languages_api::LanguagesApi;
-    use crate::scm_api::ScmApi;
     use crate::tasks_api::TasksApi;
     use crate::test_api::TestApi;
     use crate::window::WindowApi;
@@ -122,7 +116,6 @@ mod tests {
             commands,
             Arc::new(DebugApi::new()),
             Arc::new(TasksApi::new()),
-            Arc::new(ScmApi::new()),
             Arc::new(TestApi::new()),
             Arc::new(EnvApi::new()),
         )
@@ -174,18 +167,6 @@ mod tests {
         let handler = make_handler();
         let result = handler
             .dispatch("tasks/registerTaskProvider", &json!({ "type": "npm" }))
-            .unwrap();
-        assert!(result.is_number());
-    }
-
-    #[test]
-    fn dispatch_scm_action() {
-        let handler = make_handler();
-        let result = handler
-            .dispatch(
-                "scm/createSourceControl",
-                &json!({ "id": "git", "label": "Git" }),
-            )
             .unwrap();
         assert!(result.is_number());
     }

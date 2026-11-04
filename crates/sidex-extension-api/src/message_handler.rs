@@ -385,7 +385,6 @@ mod tests {
     use crate::debug_api::DebugApi;
     use crate::env_api::EnvApi;
     use crate::languages_api::LanguagesApi;
-    use crate::scm_api::ScmApi;
     use crate::tasks_api::TasksApi;
     use crate::test_api::TestApi;
     use crate::window::WindowApi;
@@ -402,7 +401,6 @@ mod tests {
             commands,
             Arc::new(DebugApi::new()),
             Arc::new(TasksApi::new()),
-            Arc::new(ScmApi::new()),
             Arc::new(TestApi::new()),
             Arc::new(EnvApi::new()),
         )
@@ -449,18 +447,6 @@ mod tests {
         let handler = make_handler();
         let result = handle_ext_host_message(&handler, "foobar/doThing", &Value::Null);
         assert!(result.is_err());
-    }
-
-    #[test]
-    fn handle_scm_create_source_control() {
-        let handler = make_handler();
-        let result = handle_ext_host_message(
-            &handler,
-            "scm/createSourceControl",
-            &json!({ "id": "git", "label": "Git" }),
-        )
-        .unwrap();
-        assert!(result.is_number());
     }
 
     #[test]

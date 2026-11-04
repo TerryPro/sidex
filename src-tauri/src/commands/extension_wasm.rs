@@ -659,8 +659,6 @@ struct WasmHostState {
     decoration_types: HashMap<u64, wit_types::DecorationRenderOptions>,
     decorations: HashMap<u64, HashMap<String, Vec<wit_types::DecorationInstance>>>,
     next_decoration_handle: u64,
-    scm_handles: HashMap<u64, ScmSourceControl>,
-    next_scm_handle: u64,
     active_editor_uri: Option<String>,
     active_editor_language_id: Option<String>,
     progress_tasks: HashMap<String, ProgressTask>,
@@ -693,15 +691,6 @@ struct WasmHostState {
     last_webview_handle: Option<u64>,
     /// Command ids this extension registered; used to route command execution.
     registered_commands: std::collections::HashSet<String>,
-}
-
-#[allow(dead_code)]
-struct ScmSourceControl {
-    id: String,
-    label: String,
-    root_uri: Option<String>,
-    input_box_value: String,
-    count: u32,
 }
 
 #[allow(dead_code)]
@@ -837,8 +826,6 @@ impl WasmHostState {
             decoration_types: HashMap::new(),
             decorations: HashMap::new(),
             next_decoration_handle: 1,
-            scm_handles: HashMap::new(),
-            next_scm_handle: 1,
             active_editor_uri: None,
             active_editor_language_id: None,
             progress_tasks: HashMap::new(),
@@ -1565,67 +1552,6 @@ impl wit_bindings::sidex::extension::host_api::Host for WasmHostState {
         }
         Ok(())
     }
-
-    // ── SCM ──────────────────────────────────────────────────────────────────
-
-    fn scm_create_source_control(
-        &mut self,
-        id: String,
-        label: String,
-        root_uri: Option<String>,
-    ) -> Result<u64, String> {
-        let h = self.next_scm_handle;
-        self.next_scm_handle += 1;
-        self.scm_handles.insert(
-            h,
-            ScmSourceControl {
-                id,
-                label,
-                root_uri,
-                input_box_value: String::new(),
-                count: 0,
-            },
-        );
-        Ok(h)
-    }
-    fn scm_dispose(&mut self, handle: u64) {
-        self.scm_handles.remove(&handle);
-    }
-    fn scm_set_count(&mut self, handle: u64, count: u32) {
-        if let Some(s) = self.scm_handles.get_mut(&handle) {
-            s.count = count;
-        }
-    }
-    fn scm_set_commit_template(&mut self, _handle: u64, _template: String) {}
-    fn scm_get_input_box_value(&mut self, handle: u64) -> String {
-        self.scm_handles
-            .get(&handle)
-            .map(|s| s.input_box_value.clone())
-            .unwrap_or_default()
-    }
-    fn scm_set_input_box_value(&mut self, handle: u64, value: String) {
-        if let Some(s) = self.scm_handles.get_mut(&handle) {
-            s.input_box_value = value;
-        }
-    }
-    fn scm_set_resource_groups(
-        &mut self,
-        _handle: u64,
-        _groups: Vec<(String, Vec<wit_types::ScmResource>)>,
-    ) -> Result<(), String> {
-        Ok(())
-    }
-    fn scm_create_resource_group(
-        &mut self,
-        _handle: u64,
-        _id: String,
-        _label: String,
-    ) -> Result<u64, String> {
-        let h = self.next_scm_handle;
-        self.next_scm_handle += 1;
-        Ok(h)
-    }
-    fn scm_dispose_resource_group(&mut self, _group_handle: u64) {}
 
     // ── Tasks ────────────────────────────────────────────────────────────────
 

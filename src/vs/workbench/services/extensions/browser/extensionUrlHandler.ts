@@ -381,39 +381,4 @@ class ExtensionUrlBootstrapHandler implements IWorkbenchContribution, IURLHandle
 
 registerWorkbenchContribution2(ExtensionUrlBootstrapHandler.ID, ExtensionUrlBootstrapHandler, WorkbenchPhase.BlockRestore /* registration only */);
 
-class ManageAuthorizedExtensionURIsAction extends Action2 {
 
-	constructor() {
-		super({
-			id: 'workbench.extensions.action.manageAuthorizedExtensionURIs',
-			title: localize2('manage', 'Manage Authorized Extension URIs...'),
-			category: localize2('extensions', 'Extensions'),
-			menu: {
-				id: MenuId.CommandPalette,
-				when: IsWebContext.toNegated()
-			}
-		});
-	}
-
-	async run(accessor: ServicesAccessor): Promise<void> {
-		const storageService = accessor.get(IStorageService);
-		const quickInputService = accessor.get(IQuickInputService);
-		const storage = new UserTrustedExtensionIdStorage(storageService);
-		const items = storage.extensions.map((label): IQuickPickItem => ({ label, picked: true }));
-
-		if (items.length === 0) {
-			await quickInputService.pick([{ label: localize('no', 'There are currently no authorized extension URIs.') }]);
-			return;
-		}
-
-		const result = await quickInputService.pick(items, { canPickMany: true });
-
-		if (!result) {
-			return;
-		}
-
-		storage.set(result.map(item => item.label));
-	}
-}
-
-registerAction2(ManageAuthorizedExtensionURIsAction);

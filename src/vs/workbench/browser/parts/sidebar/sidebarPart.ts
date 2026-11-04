@@ -109,7 +109,8 @@ export class SidebarPart extends AbstractPaneCompositePart {
 		super(
 			Parts.SIDEBAR_PART,
 			{
-				hasTitle: true,
+				// SideX：侧边栏标题已隐藏，不再为标题预留 35px 高度，避免底部出现空白区域。
+				hasTitle: !(globalThis as any).__SIDEX_TAURI__,
 				trailingSeparator: false,
 				borderWidth: () => (this.getColor(SIDE_BAR_BORDER) || this.getColor(contrastBorder) ? 1 : 0)
 			},

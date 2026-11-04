@@ -1489,9 +1489,6 @@ class TauriExtensionHostContribution extends Disposable implements IWorkbenchCon
 			case 'customEditorDispose':
 				this._onCustomEditorDispose(msg.webviewId);
 				break;
-			case 'scmSourceControlCreated':
-				this.logService.info(`[ExtHost] scmSourceControlCreated: ${msg.id}`);
-				break;
 			case 'registerChatParticipant':
 				this.logService.info(`[ExtHost] registerChatParticipant: ${msg.id}`);
 				break;

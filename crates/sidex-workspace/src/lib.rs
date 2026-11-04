@@ -14,7 +14,6 @@ pub mod multi_root;
 pub mod outline;
 pub mod path_util;
 pub mod search;
-pub mod timeline;
 pub mod trust;
 pub mod watcher;
 pub mod workspace;
@@ -26,8 +25,8 @@ pub use dirty_diff::{
 pub use error::{WorkspaceError, WorkspaceResult};
 pub use file_associations::{FileAssociations, LanguageAssociation};
 pub use file_decorations::{
-    compute_diagnostic_decorations, compute_git_decorations, propagate_decorations,
-    DecorationProvider, DiagnosticSummary, FileDecorationService, GitFileStatus, GitStatusInput,
+    compute_diagnostic_decorations, propagate_decorations,
+    DecorationProvider, DiagnosticSummary, FileDecorationService,
 };
 pub use file_operations::{
     DirEntryInfo, FileOperationEvent, FileOperationService, FileStatInfo,
@@ -55,7 +54,6 @@ pub use search::{
     SearchProgressCallback, SearchProgressInfo, SearchQuery, SearchResult, SearchResultCache,
     SearchResultGroup,
 };
-pub use timeline::{Timeline, TimelineEntry, TimelineIcon, TimelineSource};
 pub use trust::{
     ExtensionTrustCapability, RestrictedFeature, RestrictedMode, RestrictedModeBanner, TrustPrompt,
     TrustPromptResponse, TrustState, WorkspaceTrust,

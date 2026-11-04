@@ -36,12 +36,6 @@ export class SideXEditorBridge {
 		}
 	}
 
-	// --- Git status (sidex-git) ---
-
-	async getGitStatus(repoRoot: string): Promise<any> {
-		return invoke('git_status', { repoRoot });
-	}
-
 	// --- Search (sidex-workspace) ---
 
 	async searchInFiles(dir: string, query: string): Promise<any> {

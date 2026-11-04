@@ -316,22 +316,7 @@ export class DynamicWindowConfiguration extends Disposable implements IWorkbench
 		const registry = Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Configuration);
 		const configurationNode: IConfigurationNode = {
 			...windowConfigurationNodeBase,
-			properties: {
-				[CONFIG_NEW_WINDOW_PROFILE]: {
-					type: ['string', 'null'],
-					default: null,
-					enum: [...this.userDataProfilesService.profiles.map(profile => profile.name), null],
-					enumItemLabels: [
-						...this.userDataProfilesService.profiles.map(() => ''),
-						localize('active window', 'Active Window')
-					],
-					description: localize(
-						'newWindowProfile',
-						'Specifies the profile to use when opening a new window. If a profile name is provided, the new window will use that profile. If no profile name is provided, the new window will use the profile of the active window or the Default profile if no active window exists.'
-					),
-					scope: ConfigurationScope.APPLICATION
-				}
-			}
+			properties: {}
 		};
 		if (this.configurationNode) {
 			registry.updateConfigurations({ add: [configurationNode], remove: [this.configurationNode] });

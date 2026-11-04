@@ -405,9 +405,6 @@ registerAction2(SplitEditorRightAction);
 registerAction2(SplitEditorUpAction);
 registerAction2(SplitEditorDownAction);
 
-registerAction2(JoinTwoGroupsAction);
-registerAction2(JoinAllGroupsAction);
-
 registerAction2(NavigateBetweenGroupsAction);
 
 registerAction2(ResetGroupSizesAction);

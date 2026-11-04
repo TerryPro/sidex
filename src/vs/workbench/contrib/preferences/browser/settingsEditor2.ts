@@ -202,11 +202,8 @@ export class SettingsEditor2 extends EditorPane {
 
 	private static SUGGESTIONS: string[] = [
 		`@${MODIFIED_SETTING_TAG}`,
-		'@tag:notebookLayout',
-		'@tag:notebookOutputLayout',
 		`@tag:${REQUIRE_TRUSTED_WORKSPACE_SETTING_TAG}`,
 		`@tag:${WORKSPACE_TRUST_SETTING_TAG}`,
-		'@tag:sync',
 		'@tag:usesOnlineServices',
 		'@tag:telemetry',
 		'@tag:accessibility',
@@ -215,20 +212,12 @@ export class SettingsEditor2 extends EditorPane {
 		`@tag:${ADVANCED_SETTING_TAG}`,
 		`@${ID_SETTING_TAG}`,
 		`@${EXTENSION_SETTING_TAG}`,
-		`@${FEATURE_SETTING_TAG}scm`,
 		`@${FEATURE_SETTING_TAG}explorer`,
 		`@${FEATURE_SETTING_TAG}search`,
-		`@${FEATURE_SETTING_TAG}debug`,
 		`@${FEATURE_SETTING_TAG}extensions`,
 		`@${FEATURE_SETTING_TAG}terminal`,
-		`@${FEATURE_SETTING_TAG}task`,
 		`@${FEATURE_SETTING_TAG}problems`,
 		`@${FEATURE_SETTING_TAG}output`,
-		`@${FEATURE_SETTING_TAG}comments`,
-		`@${FEATURE_SETTING_TAG}remote`,
-		`@${FEATURE_SETTING_TAG}timeline`,
-		`@${FEATURE_SETTING_TAG}notebook`,
-		`@${FEATURE_SETTING_TAG}chat`,
 		`@${POLICY_SETTING_TAG}`
 	];
 
@@ -933,18 +922,6 @@ export class SettingsEditor2 extends EditorPane {
 
 		const headerControlsContainer = DOM.append(this.headerContainer, $('.settings-header-controls'));
 		headerControlsContainer.style.borderColor = asCssVariable(settingsHeaderBorder);
-
-		if (this.userDataSyncWorkbenchService.enabled && this.userDataSyncEnablementService.canToggleEnablement()) {
-			const syncControls = this._register(
-				this.instantiationService.createInstance(SyncControls, this.window, headerControlsContainer)
-			);
-			this._register(
-				syncControls.onDidChangeLastSyncedLabel(lastSyncedLabel => {
-					this.lastSyncedLabel = lastSyncedLabel;
-					this.updateInputAriaLabel();
-				})
-			);
-		}
 
 		this.controlsElement = DOM.append(this.searchContainer, DOM.$('.search-container-widgets'));
 

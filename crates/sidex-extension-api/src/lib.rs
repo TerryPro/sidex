@@ -15,8 +15,6 @@
 //! - [`debug_api`] — `vscode.debug` (full DAP support, adapter factories,
 //!   configuration providers, breakpoints, session events)
 //! - [`tasks_api`] — `vscode.tasks` (task providers, execution, lifecycle)
-//! - [`scm_api`] — `vscode.scm` (source control providers, resource groups,
-//!   decorations, input box, status bar integration)
 //! - [`test_api`] — `vscode.tests` (test controllers, items, runs, profiles,
 //!   results, messages)
 //! - [`env_api`] — `vscode.env` (app name, language, clipboard, shell, UI kind,
@@ -31,7 +29,6 @@ pub mod debug_api;
 pub mod env_api;
 pub mod languages_api;
 pub mod message_handler;
-pub mod scm_api;
 pub mod tasks_api;
 pub mod test_api;
 pub mod types;
@@ -54,7 +51,6 @@ pub use message_handler::{
     request_completions, request_definition, request_document_formatting, request_extension_host,
     request_hover, request_references, set_decorations, start_extension_host,
 };
-pub use scm_api::{ScmApi, SourceControlId, SourceControlResourceState};
 pub use tasks_api::{Task, TaskDefinition, TaskExecutionId, TasksApi};
 pub use test_api::{TestApi, TestControllerId, TestItem, TestMessage, TestRunId, TestRunResult};
 pub use types::{

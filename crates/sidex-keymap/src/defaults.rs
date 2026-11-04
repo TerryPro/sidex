@@ -286,7 +286,6 @@ pub fn default_keybindings() -> Vec<KeyBinding> {
         ),
         bind(ps, Key::E, "workbench.view.explorer"),
         bind(ps, Key::F, "workbench.view.search"),
-        bind(ps, Key::G, "workbench.view.scm"),
         bind(ps, Key::D, "workbench.view.debug"),
         bind(ps, Key::X, "workbench.view.extensions"),
         bind(n, Key::F11, "workbench.action.toggleFullScreen"),
@@ -372,7 +371,7 @@ pub fn default_keybindings() -> Vec<KeyBinding> {
             "workbench.action.editor.previousChange",
             "isInDiffEditor",
         ),
-        // ── Integrated SCM ──────────────────────────────────────────────
+        // ── Lists ───────────────────────────────────────────────────────
         bind_when(n, Key::Enter, "list.openItem", "listFocus"),
         bind_when(n, Key::Space, "list.toggleExpand", "listFocus"),
         // ── Breadcrumbs ─────────────────────────────────────────────────
@@ -526,8 +525,6 @@ pub fn default_keybindings() -> Vec<KeyBinding> {
         // ── Accessibility ─────────────────────────────────────────────────
         bind(n, Key::F1, "workbench.action.showAccessibilityHelp"),
         chord(p, Key::K, p, Key::H, "workbench.action.toggleHighContrast"),
-        // ── SCM / Git ─────────────────────────────────────────────────────
-        bind_when(p, Key::Enter, "git.commit", "scmInputIsFocused"),
         chord(
             p,
             Key::K,
@@ -621,13 +618,6 @@ pub fn default_keybindings() -> Vec<KeyBinding> {
         // ── Tasks ─────────────────────────────────────────────────────────
         bind(ps, Key::B, "workbench.action.tasks.build"),
         chord(p, Key::K, p, Key::T, "workbench.action.tasks.runTask"),
-        // ── Source control ────────────────────────────────────────────────
-        bind_when(
-            n,
-            Key::Escape,
-            "workbench.scm.action.discardAllChanges",
-            "scmInputIsFocused",
-        ),
         // ── Keybindings editor ────────────────────────────────────────────
         chord(
             p,

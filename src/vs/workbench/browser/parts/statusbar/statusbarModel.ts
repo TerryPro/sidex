@@ -56,8 +56,6 @@ export class StatusbarViewModel extends Disposable {
 		'status.editor.inputMode',
 		'status.editor.info',
 		'status.workbench.keyboardLayout',
-		'status.scm.0',
-		'status.scm.provider',
 	]);
 
 	private restoreState(): void {

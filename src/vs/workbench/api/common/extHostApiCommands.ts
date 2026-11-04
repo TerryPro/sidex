@@ -14,12 +14,8 @@ import { decodeSemanticTokensDto } from '../../../editor/common/services/semanti
 import { validateWhenClauses } from '../../../platform/contextkey/common/contextkey.js';
 import { ITextEditorOptions } from '../../../platform/editor/common/editor.js';
 import {
-	ICallHierarchyItemDto,
-	IIncomingCallDto,
 	IInlineValueContextDto,
-	IOutgoingCallDto,
 	IRawColorInfo,
-	ITypeHierarchyItemDto,
 	IWorkspaceEditDto
 } from './extHost.protocol.js';
 import { ApiCommand, ApiCommandArgument, ApiCommandResult, ExtHostCommands } from './extHostCommands.js';
@@ -304,37 +300,6 @@ const newCommands: ApiCommand[] = [
 			value => {
 				return value.map(typeConverters.WorkspaceSymbol.to);
 			}
-		)
-	),
-	// --- call hierarchy
-	new ApiCommand(
-		'vscode.prepareCallHierarchy',
-		'_executePrepareCallHierarchy',
-		'Prepare call hierarchy at a position inside a document',
-		[ApiCommandArgument.Uri, ApiCommandArgument.Position],
-		new ApiCommandResult<ICallHierarchyItemDto[], types.CallHierarchyItem[]>(
-			'A promise that resolves to an array of CallHierarchyItem-instances',
-			v => v.map(typeConverters.CallHierarchyItem.to)
-		)
-	),
-	new ApiCommand(
-		'vscode.provideIncomingCalls',
-		'_executeProvideIncomingCalls',
-		'Compute incoming calls for an item',
-		[ApiCommandArgument.CallHierarchyItem],
-		new ApiCommandResult<IIncomingCallDto[], types.CallHierarchyIncomingCall[]>(
-			'A promise that resolves to an array of CallHierarchyIncomingCall-instances',
-			v => v.map(typeConverters.CallHierarchyIncomingCall.to)
-		)
-	),
-	new ApiCommand(
-		'vscode.provideOutgoingCalls',
-		'_executeProvideOutgoingCalls',
-		'Compute outgoing calls for an item',
-		[ApiCommandArgument.CallHierarchyItem],
-		new ApiCommandResult<IOutgoingCallDto[], types.CallHierarchyOutgoingCall[]>(
-			'A promise that resolves to an array of CallHierarchyOutgoingCall-instances',
-			v => v.map(typeConverters.CallHierarchyOutgoingCall.to)
 		)
 	),
 	// --- rename
@@ -839,37 +804,6 @@ const newCommands: ApiCommand[] = [
 			)
 		],
 		ApiCommandResult.Void
-	),
-	// --- type hierarchy
-	new ApiCommand(
-		'vscode.prepareTypeHierarchy',
-		'_executePrepareTypeHierarchy',
-		'Prepare type hierarchy at a position inside a document',
-		[ApiCommandArgument.Uri, ApiCommandArgument.Position],
-		new ApiCommandResult<ITypeHierarchyItemDto[], types.TypeHierarchyItem[]>(
-			'A promise that resolves to an array of TypeHierarchyItem-instances',
-			v => v.map(typeConverters.TypeHierarchyItem.to)
-		)
-	),
-	new ApiCommand(
-		'vscode.provideSupertypes',
-		'_executeProvideSupertypes',
-		'Compute supertypes for an item',
-		[ApiCommandArgument.TypeHierarchyItem],
-		new ApiCommandResult<ITypeHierarchyItemDto[], types.TypeHierarchyItem[]>(
-			'A promise that resolves to an array of TypeHierarchyItem-instances',
-			v => v.map(typeConverters.TypeHierarchyItem.to)
-		)
-	),
-	new ApiCommand(
-		'vscode.provideSubtypes',
-		'_executeProvideSubtypes',
-		'Compute subtypes for an item',
-		[ApiCommandArgument.TypeHierarchyItem],
-		new ApiCommandResult<ITypeHierarchyItemDto[], types.TypeHierarchyItem[]>(
-			'A promise that resolves to an array of TypeHierarchyItem-instances',
-			v => v.map(typeConverters.TypeHierarchyItem.to)
-		)
 	),
 	// --- continue edit session
 	new ApiCommand(

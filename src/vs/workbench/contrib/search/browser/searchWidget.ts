@@ -38,7 +38,6 @@ import {
 	searchShowContextIcon,
 	searchShowReplaceIcon
 } from './searchIcons.js';
-import { ToggleSearchEditorContextLinesCommandId } from '../../searchEditor/browser/constants.js';
 import { showHistoryKeybindingHint } from '../../../../platform/history/browser/historyWidgetKeybindingHint.js';
 import { defaultInputBoxStyles, defaultToggleStyles } from '../../../../platform/theme/browser/defaultStyles.js';
 import { NotebookFindFilters } from '../../notebook/browser/contrib/find/findFilters.js';
@@ -562,10 +561,7 @@ export class SearchWidget extends Widget {
 
 		this.showContextToggle = new Toggle({
 			isChecked: false,
-			title: this.keybindingService.appendKeybinding(
-				nls.localize('showContext', 'Toggle Context Lines'),
-				ToggleSearchEditorContextLinesCommandId
-			),
+			title: nls.localize('showContext', 'Toggle Context Lines'),
 			icon: searchShowContextIcon,
 			hoverLifecycleOptions,
 			...defaultToggleStyles

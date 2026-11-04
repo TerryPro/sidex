@@ -1,5 +1,5 @@
 //! File decoration service for the explorer — badges, colors, and visual
-//! states from git status, diagnostics, and gitignore, with folder propagation.
+//! states from diagnostics and gitignore, with folder propagation.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -9,17 +9,6 @@ use sidex_theme::color::Color;
 use crate::file_tree::{FileDecoration, FileTree};
 
 // ── Input types ─────────────────────────────────────────────────────────────
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum GitFileStatus {
-    Modified,
-    Added,
-    Deleted,
-    Untracked,
-    Conflicted,
-    Renamed,
-    Ignored,
-}
 
 #[derive(Debug, Clone)]
 pub struct DiagnosticSummary {
@@ -77,18 +66,6 @@ impl FileDecorationService {
     }
 }
 
-const BLUE: Color = Color {
-    r: 30,
-    g: 136,
-    b: 229,
-    a: 255,
-};
-const GREEN: Color = Color {
-    r: 76,
-    g: 175,
-    b: 80,
-    a: 255,
-};
 const RED: Color = Color {
     r: 244,
     g: 67,
@@ -101,44 +78,6 @@ const YELLOW: Color = Color {
     b: 7,
     a: 255,
 };
-
-#[derive(Debug, Clone)]
-pub struct GitStatusInput {
-    pub path: PathBuf,
-    pub status: GitFileStatus,
-}
-
-fn git_dec(badge: &str, color: Color, tooltip: &str, strikethrough: bool) -> FileDecoration {
-    FileDecoration {
-        badge: Some(badge.into()),
-        badge_color: Some(color),
-        tooltip: Some(tooltip.into()),
-        color: Some(color),
-        strikethrough,
-        ..Default::default()
-    }
-}
-
-pub fn compute_git_decorations(statuses: &[GitStatusInput]) -> HashMap<PathBuf, FileDecoration> {
-    let mut map = HashMap::with_capacity(statuses.len());
-    for entry in statuses {
-        let dec = match entry.status {
-            GitFileStatus::Modified => git_dec("M", BLUE, "Modified", false),
-            GitFileStatus::Untracked => git_dec("U", GREEN, "Untracked", false),
-            GitFileStatus::Deleted => git_dec("D", RED, "Deleted", true),
-            GitFileStatus::Conflicted => git_dec("C", YELLOW, "Conflict", false),
-            GitFileStatus::Added => git_dec("A", GREEN, "Added", false),
-            GitFileStatus::Renamed => git_dec("R", BLUE, "Renamed", false),
-            GitFileStatus::Ignored => FileDecoration {
-                faded: true,
-                tooltip: Some("Ignored".into()),
-                ..Default::default()
-            },
-        };
-        map.insert(entry.path.clone(), dec);
-    }
-    map
-}
 
 pub fn compute_diagnostic_decorations<S: ::std::hash::BuildHasher>(
     diagnostics: &HashMap<PathBuf, DiagnosticSummary, S>,
@@ -246,18 +185,6 @@ fn merge_decoration(existing: &mut FileDecoration, other: &FileDecoration) {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn git_modified_produces_blue_badge() {
-        let input = vec![GitStatusInput {
-            path: PathBuf::from("/repo/src/main.rs"),
-            status: GitFileStatus::Modified,
-        }];
-        let decs = compute_git_decorations(&input);
-        let dec = decs.get(Path::new("/repo/src/main.rs")).unwrap();
-        assert_eq!(dec.badge.as_deref(), Some("M"));
-        assert_eq!(dec.badge_color, Some(BLUE));
-    }
 
     #[test]
     fn diagnostic_errors_produce_count_badge() {

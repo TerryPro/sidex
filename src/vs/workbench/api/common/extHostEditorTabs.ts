@@ -22,15 +22,10 @@ import { IExtHostRpcService } from './extHostRpcService.js';
 import * as typeConverters from './extHostTypeConverters.js';
 import {
 	CustomEditorTabInput,
-	InteractiveWindowInput,
-	NotebookDiffEditorTabInput,
-	NotebookEditorTabInput,
 	TerminalEditorTabInput,
 	TextDiffTabInput,
-	TextMergeTabInput,
 	TextTabInput,
-	WebviewEditorTabInput,
-	TextMultiDiffTabInput
+	WebviewEditorTabInput
 } from './extHostTypes.js';
 import type * as vscode from 'vscode';
 
@@ -44,13 +39,9 @@ export const IExtHostEditorTabs = createDecorator<IExtHostEditorTabs>('IExtHostE
 type AnyTabInput =
 	| TextTabInput
 	| TextDiffTabInput
-	| TextMultiDiffTabInput
 	| CustomEditorTabInput
-	| NotebookEditorTabInput
-	| NotebookDiffEditorTabInput
 	| WebviewEditorTabInput
-	| TerminalEditorTabInput
-	| InteractiveWindowInput;
+	| TerminalEditorTabInput;
 
 class ExtHostEditorTab {
 	private _apiObject: vscode.Tab | undefined;
@@ -113,35 +104,12 @@ class ExtHostEditorTab {
 				return new TextTabInput(URI.revive(this._dto.input.uri));
 			case TabInputKind.TextDiffInput:
 				return new TextDiffTabInput(URI.revive(this._dto.input.original), URI.revive(this._dto.input.modified));
-			case TabInputKind.TextMergeInput:
-				return new TextMergeTabInput(
-					URI.revive(this._dto.input.base),
-					URI.revive(this._dto.input.input1),
-					URI.revive(this._dto.input.input2),
-					URI.revive(this._dto.input.result)
-				);
 			case TabInputKind.CustomEditorInput:
 				return new CustomEditorTabInput(URI.revive(this._dto.input.uri), this._dto.input.viewType);
 			case TabInputKind.WebviewEditorInput:
 				return new WebviewEditorTabInput(this._dto.input.viewType);
-			case TabInputKind.NotebookInput:
-				return new NotebookEditorTabInput(URI.revive(this._dto.input.uri), this._dto.input.notebookType);
-			case TabInputKind.NotebookDiffInput:
-				return new NotebookDiffEditorTabInput(
-					URI.revive(this._dto.input.original),
-					URI.revive(this._dto.input.modified),
-					this._dto.input.notebookType
-				);
 			case TabInputKind.TerminalEditorInput:
 				return new TerminalEditorTabInput();
-			case TabInputKind.InteractiveEditorInput:
-				return new InteractiveWindowInput(URI.revive(this._dto.input.uri), URI.revive(this._dto.input.inputBoxUri));
-			case TabInputKind.MultiDiffEditorInput:
-				return new TextMultiDiffTabInput(
-					this._dto.input.diffEditors.map(
-						diff => new TextDiffTabInput(URI.revive(diff.original), URI.revive(diff.modified))
-					)
-				);
 			default:
 				return undefined;
 		}

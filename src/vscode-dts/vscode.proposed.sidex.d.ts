@@ -26,24 +26,6 @@ declare module 'vscode' {
 
 	// #endregion
 
-	// #region Comments
-
-	export enum CommentThreadApplicability {
-		Current = 0,
-		Outdated = 1
-	}
-
-	export interface CommentThreadRevealOptions {
-		preserveFocus?: boolean;
-		focusReply?: boolean;
-	}
-
-	export interface CommentReaction {
-		readonly reactors?: readonly string[];
-	}
-
-	// #endregion
-
 	// #region Remote / Tunnels
 
 	export interface RemoteAuthorityResolver {
@@ -487,17 +469,6 @@ declare module 'vscode' {
 				dispose(): void;
 			}
 		}
-	}
-
-	// #endregion
-
-	// #region CommentThread2
-
-	export interface CommentThread2 extends CommentThread {
-		readonly isTemplate?: boolean;
-		readonly applicability?: CommentThreadApplicability;
-		state?: CommentThreadState | { resolved?: CommentThreadState; applicability?: CommentThreadApplicability };
-		reveal?(options?: CommentThreadRevealOptions): Thenable<void>;
 	}
 
 	// #endregion

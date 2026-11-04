@@ -87,7 +87,6 @@ import { EditSessionIdentityMatch } from '../../../platform/workspace/common/edi
 import { WorkspaceTrustRequestOptions } from '../../../platform/workspace/common/workspaceTrust.js';
 import { SaveReason } from '../../common/editor.js';
 import { IRevealOptions, ITreeItem, IViewBadge } from '../../common/views.js';
-import { CallHierarchyItem } from '../../contrib/callHierarchy/common/callHierarchy.js';
 import * as notebookCommon from '../../contrib/notebook/common/notebookCommon.js';
 import { CellExecutionUpdateType } from '../../contrib/notebook/common/notebookExecutionService.js';
 import {
@@ -95,17 +94,8 @@ import {
 	ICellExecutionStateUpdate
 } from '../../contrib/notebook/common/notebookExecutionStateService.js';
 import { ICellRange } from '../../contrib/notebook/common/notebookRange.js';
-import { ISCMHistoryOptions } from '../../contrib/scm/common/history.js';
-import { InputValidationType } from '../../contrib/scm/common/scm.js';
 import { IWorkspaceSymbol, NotebookPriorityInfo } from '../../contrib/search/common/search.js';
 import { IRawClosedNotebookFileMatch } from '../../contrib/search/common/searchNotebookHelpers.js';
-import {
-	Timeline,
-	TimelineChangeEvent,
-	TimelineOptions,
-	TimelineProviderDescriptor
-} from '../../contrib/timeline/common/timeline.js';
-import { TypeHierarchyItem } from '../../contrib/typeHierarchy/common/typeHierarchy.js';
 import {
 	AuthenticationSession,
 	AuthenticationSessionAccount,
@@ -141,7 +131,6 @@ import { AISearchKeyword, TextSearchCompleteMessage } from '../../services/searc
 import { ISaveProfileResult } from '../../services/userDataProfile/common/userDataProfile.js';
 import { IExtHostDocumentSaveDelegate } from './extHostDocumentData.js';
 import { TerminalShellExecutionCommandLineConfidence } from './extHostTypes.js';
-import { CDPEvent, CDPRequest, CDPResponse } from '../../../platform/browserView/common/cdp/types.js';
 
 export type IconPathDto = UriComponents | { light: UriComponents; dark: UriComponents } | ThemeIcon;
 
@@ -172,70 +161,6 @@ export interface MainThreadCommandsShape extends IDisposable {
 		retry: boolean
 	): Promise<unknown | undefined>;
 	$getCommands(): Promise<string[]>;
-}
-
-export interface CommentProviderFeatures {
-	reactionGroup?: languages.CommentReaction[];
-	reactionHandler?: boolean;
-	options?: languages.CommentOptions;
-}
-
-export interface CommentChanges {
-	readonly uniqueIdInThread: number;
-	readonly body: string | IMarkdownString;
-	readonly userName: string;
-	readonly userIconPath?: UriComponents;
-	readonly contextValue?: string;
-	readonly commentReactions?: languages.CommentReaction[];
-	readonly label?: string;
-	readonly mode?: languages.CommentMode;
-	readonly state?: languages.CommentState;
-	readonly timestamp?: string;
-}
-
-export type CommentThreadChanges<T = IRange> = Partial<{
-	range: T | undefined;
-	label: string;
-	contextValue: string | null;
-	comments: CommentChanges[];
-	collapseState: languages.CommentThreadCollapsibleState;
-	canReply: boolean | languages.CommentAuthorInformation;
-	state: languages.CommentThreadState;
-	applicability: languages.CommentThreadApplicability;
-	isTemplate: boolean;
-}>;
-
-export interface MainThreadCommentsShape extends IDisposable {
-	$registerCommentController(handle: number, id: string, label: string, extensionId: string): void;
-	$unregisterCommentController(handle: number): void;
-	$updateCommentControllerFeatures(handle: number, features: CommentProviderFeatures): void;
-	$createCommentThread(
-		handle: number,
-		commentThreadHandle: number,
-		threadId: string,
-		resource: UriComponents,
-		range: IRange | ICellRange | undefined,
-		comments: languages.Comment[],
-		extensionId: ExtensionIdentifier,
-		isTemplate: boolean,
-		editorId?: string
-	): languages.CommentThread<IRange | ICellRange> | undefined;
-	$updateCommentThread(
-		handle: number,
-		commentThreadHandle: number,
-		threadId: string,
-		resource: UriComponents,
-		changes: CommentThreadChanges
-	): void;
-	$deleteCommentThread(handle: number, commentThreadHandle: number): void;
-	$updateCommentingRanges(handle: number, resourceHints?: languages.CommentingRangeResourceHint): void;
-	$revealCommentThread(
-		handle: number,
-		commentThreadHandle: number,
-		commentUniqueIdInThread: number,
-		options: languages.CommentThreadRevealOptions
-	): Promise<void>;
-	$hideCommentThread(handle: number, commentThreadHandle: number): void;
 }
 
 export interface AuthenticationForceNewSessionOptions {
@@ -762,8 +687,6 @@ export interface MainThreadLanguageFeaturesShape extends IDisposable {
 	): void;
 	$emitFoldingRangeEvent(eventHandle: number, event?: any): void;
 	$registerSelectionRangeProvider(handle: number, selector: IDocumentFilterDto[]): void;
-	$registerCallHierarchyProvider(handle: number, selector: IDocumentFilterDto[]): void;
-	$registerTypeHierarchyProvider(handle: number, selector: IDocumentFilterDto[]): void;
 	$registerDocumentOnDropEditProvider(
 		handle: number,
 		selector: IDocumentFilterDto[],
@@ -1096,14 +1019,9 @@ export const enum TabInputKind {
 	UnknownInput,
 	TextInput,
 	TextDiffInput,
-	TextMergeInput,
-	NotebookInput,
-	NotebookDiffInput,
 	CustomEditorInput,
 	WebviewEditorInput,
-	TerminalEditorInput,
-	InteractiveEditorInput,
-	MultiDiffEditorInput
+	TerminalEditorInput
 }
 
 export const enum TabModelOperationKind {
@@ -1128,27 +1046,6 @@ export interface TextDiffInputDto {
 	modified: UriComponents;
 }
 
-export interface TextMergeInputDto {
-	kind: TabInputKind.TextMergeInput;
-	base: UriComponents;
-	input1: UriComponents;
-	input2: UriComponents;
-	result: UriComponents;
-}
-
-export interface NotebookInputDto {
-	kind: TabInputKind.NotebookInput;
-	notebookType: string;
-	uri: UriComponents;
-}
-
-export interface NotebookDiffInputDto {
-	kind: TabInputKind.NotebookDiffInput;
-	notebookType: string;
-	original: UriComponents;
-	modified: UriComponents;
-}
-
 export interface CustomInputDto {
 	kind: TabInputKind.CustomEditorInput;
 	viewType: string;
@@ -1160,17 +1057,6 @@ export interface WebviewInputDto {
 	viewType: string;
 }
 
-export interface InteractiveEditorInputDto {
-	kind: TabInputKind.InteractiveEditorInput;
-	uri: UriComponents;
-	inputBoxUri: UriComponents;
-}
-
-export interface MultiDiffEditorInputDto {
-	kind: TabInputKind.MultiDiffEditorInput;
-	diffEditors: TextDiffInputDto[];
-}
-
 export interface TabInputDto {
 	kind: TabInputKind.TerminalEditorInput;
 }
@@ -1179,13 +1065,8 @@ export type AnyInputDto =
 	| UnknownInputDto
 	| TextInputDto
 	| TextDiffInputDto
-	| MultiDiffEditorInputDto
-	| TextMergeInputDto
-	| NotebookInputDto
-	| NotebookDiffInputDto
 	| CustomInputDto
 	| WebviewInputDto
-	| InteractiveEditorInputDto
 	| TabInputDto;
 
 export interface MainThreadEditorTabsShape extends IDisposable {
@@ -1637,32 +1518,6 @@ export interface MainThreadNotebookRenderersShape extends IDisposable {
 	$postMessage(editorId: string | undefined, rendererId: string, message: unknown): Promise<boolean>;
 }
 
-export interface MainThreadInteractiveShape extends IDisposable {}
-
-export interface BrowserTabDto {
-	id: string;
-	url: string;
-	title: string;
-	favicon: string | undefined;
-}
-
-export interface MainThreadBrowsersShape extends IDisposable {
-	$openBrowserTab(url: string, viewColumn?: EditorGroupColumn, options?: IEditorOptions): Promise<BrowserTabDto>;
-	$closeBrowserTab(browserId: string): Promise<void>;
-	$startCDPSession(sessionId: string, browserId: string): Promise<void>;
-	$closeCDPSession(sessionId: string): Promise<void>;
-	$sendCDPMessage(sessionId: string, message: CDPRequest): Promise<void>;
-}
-
-export interface ExtHostBrowsersShape {
-	$onDidOpenBrowserTab(browser: BrowserTabDto): void;
-	$onDidCloseBrowserTab(browserId: string): void;
-	$onDidChangeActiveBrowserTab(browserId: string | undefined): void;
-	$onDidChangeBrowserTabState(browser: BrowserTabDto): void;
-	$onCDPSessionMessage(sessionId: string, message: CDPResponse | CDPEvent): void;
-	$onCDPSessionClosed(sessionId: string): void;
-}
-
 export interface MainThreadUrlsShape extends IDisposable {
 	$registerUriHandler(handle: number, extensionId: ExtensionIdentifier, extensionDisplayName: string): Promise<void>;
 	$unregisterUriHandler(handle: number): Promise<void>;
@@ -1862,162 +1717,6 @@ export interface MainThreadExtensionServiceShape extends IDisposable {
 	$asBrowserUri(uri: UriComponents): Promise<UriComponents>;
 }
 
-export interface SCMProviderFeatures {
-	hasArtifactProvider?: boolean;
-	hasHistoryProvider?: boolean;
-	hasQuickDiffProvider?: boolean;
-	quickDiffLabel?: string;
-	hasSecondaryQuickDiffProvider?: boolean;
-	secondaryQuickDiffLabel?: string;
-	count?: number;
-	commitTemplate?: string;
-	acceptInputCommand?: languages.Command;
-	actionButton?: SCMActionButtonDto | null;
-	statusBarCommands?: ICommandDto[];
-	contextValue?: string;
-}
-
-export interface SCMActionButtonDto {
-	command: ICommandDto & { shortTitle?: string };
-	secondaryCommands?: ICommandDto[][];
-	enabled: boolean;
-}
-
-export interface SCMGroupFeatures {
-	hideWhenEmpty?: boolean;
-	contextValue?: string;
-}
-
-export type SCMRawResource = [
-	number /*handle*/,
-	UriComponents /*resourceUri*/,
-	[UriComponents | ThemeIcon | undefined, UriComponents | ThemeIcon | undefined] /*icons: light, dark*/,
-	string /*tooltip*/,
-	boolean /*strike through*/,
-	boolean /*faded*/,
-	string /*context value*/,
-	ICommandDto | undefined /*command*/,
-	UriComponents | undefined /* multiFileDiffEditorOriginalUri */,
-	UriComponents | undefined /* multiFileDiffEditorModifiedUri */
-];
-
-export type SCMRawResourceSplice = [number /* start */, number /* delete count */, SCMRawResource[]];
-
-export type SCMRawResourceSplices = [number /*handle*/, SCMRawResourceSplice[]];
-
-export interface SCMHistoryItemRefDto {
-	readonly id: string;
-	readonly name: string;
-	readonly revision?: string;
-	readonly category?: string;
-	readonly description?: string;
-	readonly icon?: IconPathDto;
-}
-
-export interface SCMHistoryItemRefsChangeEventDto {
-	readonly added: readonly SCMHistoryItemRefDto[];
-	readonly modified: readonly SCMHistoryItemRefDto[];
-	readonly removed: readonly SCMHistoryItemRefDto[];
-	readonly silent: boolean;
-}
-
-export interface SCMHistoryItemDto {
-	readonly id: string;
-	readonly parentIds: string[];
-	readonly subject: string;
-	readonly message: string;
-	readonly displayId?: string;
-	readonly author?: string;
-	readonly authorIcon?: IconPathDto;
-	readonly authorEmail?: string;
-	readonly timestamp?: number;
-	readonly statistics?: {
-		readonly files: number;
-		readonly insertions: number;
-		readonly deletions: number;
-	};
-	readonly references?: SCMHistoryItemRefDto[];
-	readonly tooltip?: IMarkdownString | Array<IMarkdownString> | undefined;
-}
-
-export interface SCMHistoryItemChangeDto {
-	readonly uri: UriComponents;
-	readonly originalUri: UriComponents | undefined;
-	readonly modifiedUri: UriComponents | undefined;
-}
-
-export interface SCMArtifactGroupDto {
-	readonly id: string;
-	readonly name: string;
-	readonly icon?: UriComponents | { light: UriComponents; dark: UriComponents } | ThemeIcon;
-	readonly supportsFolders?: boolean;
-}
-
-export interface SCMArtifactDto {
-	readonly id: string;
-	readonly name: string;
-	readonly description?: string;
-	readonly icon?: UriComponents | { light: UriComponents; dark: UriComponents } | ThemeIcon;
-	readonly timestamp?: number;
-	readonly command?: ICommandDto;
-}
-
-export interface MainThreadSCMShape extends IDisposable {
-	$registerSourceControl(
-		handle: number,
-		parentHandle: number | undefined,
-		id: string,
-		label: string,
-		rootUri: UriComponents | undefined,
-		iconPath: IconPathDto | undefined,
-		isHidden: boolean | undefined,
-		inputBoxDocumentUri: UriComponents
-	): Promise<void>;
-	$updateSourceControl(handle: number, features: SCMProviderFeatures): Promise<void>;
-	$unregisterSourceControl(handle: number): Promise<void>;
-
-	$registerGroups(
-		sourceControlHandle: number,
-		groups: [
-			number /*handle*/,
-			string /*id*/,
-			string /*label*/,
-			SCMGroupFeatures,
-			/* multiDiffEditorEnableViewChanges */ boolean
-		][],
-		splices: SCMRawResourceSplices[]
-	): Promise<void>;
-	$updateGroup(sourceControlHandle: number, handle: number, features: SCMGroupFeatures): Promise<void>;
-	$updateGroupLabel(sourceControlHandle: number, handle: number, label: string): Promise<void>;
-	$unregisterGroup(sourceControlHandle: number, handle: number): Promise<void>;
-
-	$spliceResourceStates(sourceControlHandle: number, splices: SCMRawResourceSplices[]): Promise<void>;
-
-	$setInputBoxValue(sourceControlHandle: number, value: string): Promise<void>;
-	$setInputBoxPlaceholder(sourceControlHandle: number, placeholder: string): Promise<void>;
-	$setInputBoxEnablement(sourceControlHandle: number, enabled: boolean): Promise<void>;
-	$setInputBoxVisibility(sourceControlHandle: number, visible: boolean): Promise<void>;
-	$showValidationMessage(
-		sourceControlHandle: number,
-		message: string | IMarkdownString,
-		type: InputValidationType
-	): Promise<void>;
-	$setValidationProviderIsEnabled(sourceControlHandle: number, enabled: boolean): Promise<void>;
-
-	$onDidChangeHistoryProviderCurrentHistoryItemRefs(
-		sourceControlHandle: number,
-		historyItemRef?: SCMHistoryItemRefDto,
-		historyItemRemoteRef?: SCMHistoryItemRefDto,
-		historyItemBaseRef?: SCMHistoryItemRefDto
-	): Promise<void>;
-	$onDidChangeHistoryProviderHistoryItemRefs(
-		sourceControlHandle: number,
-		historyItemRefs: SCMHistoryItemRefsChangeEventDto
-	): Promise<void>;
-
-	$onDidChangeArtifacts(sourceControlHandle: number, groups: string[]): Promise<void>;
-}
-
 export interface MainThreadQuickDiffShape extends IDisposable {
 	$registerQuickDiffProvider(
 		handle: number,
@@ -2065,12 +1764,6 @@ export interface MainThreadTunnelServiceShape extends IDisposable {
 	$setCandidatePortSource(source: CandidatePortSource): Promise<void>;
 	$registerPortsAttributesProvider(selector: PortAttributesSelector, providerHandle: number): Promise<void>;
 	$unregisterPortsAttributesProvider(providerHandle: number): Promise<void>;
-}
-
-export interface MainThreadTimelineShape extends IDisposable {
-	$registerTimelineProvider(provider: TimelineProviderDescriptor): void;
-	$unregisterTimelineProvider(source: string): void;
-	$emitTimelineChangeEvent(e: TimelineChangeEvent | undefined): void;
 }
 
 export interface HoverWithId extends languages.Hover {
@@ -2594,18 +2287,6 @@ export type ILinkDto = CachedSessionItem<Dto<languages.ILink>>;
 export type ICodeLensListDto = CachedSession<{ lenses: ICodeLensDto[] }>;
 export type ICodeLensDto = CachedSessionItem<Dto<languages.CodeLens>>;
 
-export type ICallHierarchyItemDto = Dto<CallHierarchyItem>;
-
-export interface IIncomingCallDto {
-	from: ICallHierarchyItemDto;
-	fromRanges: IRange[];
-}
-
-export interface IOutgoingCallDto {
-	fromRanges: IRange[];
-	to: ICallHierarchyItemDto;
-}
-
 export interface ILanguageWordDefinitionDto {
 	languageId: string;
 	regexSource: string;
@@ -2621,8 +2302,6 @@ export interface IInlineValueContextDto {
 	frameId: number;
 	stoppedLocation: IRange;
 }
-
-export type ITypeHierarchyItemDto = Dto<TypeHierarchyItem>;
 
 export interface IPasteEditProviderMetadataDto {
 	readonly supportsCopy: boolean;
@@ -2932,45 +2611,7 @@ export interface ExtHostLanguageFeaturesShape {
 		positions: IPosition[],
 		token: CancellationToken
 	): Promise<languages.SelectionRange[][]>;
-	$prepareCallHierarchy(
-		handle: number,
-		resource: UriComponents,
-		position: IPosition,
-		token: CancellationToken
-	): Promise<ICallHierarchyItemDto[] | undefined>;
-	$provideCallHierarchyIncomingCalls(
-		handle: number,
-		sessionId: string,
-		itemId: string,
-		token: CancellationToken
-	): Promise<IIncomingCallDto[] | undefined>;
-	$provideCallHierarchyOutgoingCalls(
-		handle: number,
-		sessionId: string,
-		itemId: string,
-		token: CancellationToken
-	): Promise<IOutgoingCallDto[] | undefined>;
-	$releaseCallHierarchy(handle: number, sessionId: string): void;
 	$setWordDefinitions(wordDefinitions: ILanguageWordDefinitionDto[]): void;
-	$prepareTypeHierarchy(
-		handle: number,
-		resource: UriComponents,
-		position: IPosition,
-		token: CancellationToken
-	): Promise<ITypeHierarchyItemDto[] | undefined>;
-	$provideTypeHierarchySupertypes(
-		handle: number,
-		sessionId: string,
-		itemId: string,
-		token: CancellationToken
-	): Promise<ITypeHierarchyItemDto[] | undefined>;
-	$provideTypeHierarchySubtypes(
-		handle: number,
-		sessionId: string,
-		itemId: string,
-		token: CancellationToken
-	): Promise<ITypeHierarchyItemDto[] | undefined>;
-	$releaseTypeHierarchy(handle: number, sessionId: string): void;
 	$provideDocumentOnDropEdits(
 		handle: number,
 		requestId: number,
@@ -3187,68 +2828,6 @@ export interface ExtHostTerminalShellIntegrationShape {
 	$closeTerminal(instanceId: number): void;
 }
 
-export interface ExtHostSCMShape {
-	$provideOriginalResource(
-		sourceControlHandle: number,
-		uri: UriComponents,
-		token: CancellationToken
-	): Promise<UriComponents | null>;
-	$provideSecondaryOriginalResource(
-		sourceControlHandle: number,
-		uri: UriComponents,
-		token: CancellationToken
-	): Promise<UriComponents | null>;
-	$onInputBoxValueChange(sourceControlHandle: number, value: string): void;
-	$executeResourceCommand(
-		sourceControlHandle: number,
-		groupHandle: number,
-		handle: number,
-		preserveFocus: boolean
-	): Promise<void>;
-	$validateInput(
-		sourceControlHandle: number,
-		value: string,
-		cursorPosition: number
-	): Promise<[string | IMarkdownString, number] | undefined>;
-	$setSelectedSourceControl(selectedSourceControlHandle: number | undefined): Promise<void>;
-	$provideHistoryItemRefs(
-		sourceControlHandle: number,
-		historyItemRefs: string[] | undefined,
-		token: CancellationToken
-	): Promise<SCMHistoryItemRefDto[] | undefined>;
-	$provideHistoryItems(
-		sourceControlHandle: number,
-		options: ISCMHistoryOptions,
-		token: CancellationToken
-	): Promise<SCMHistoryItemDto[] | undefined>;
-	$provideHistoryItemChanges(
-		sourceControlHandle: number,
-		historyItemId: string,
-		historyItemParentId: string | undefined,
-		token: CancellationToken
-	): Promise<SCMHistoryItemChangeDto[] | undefined>;
-	$resolveHistoryItem(
-		sourceControlHandle: number,
-		historyItemId: string,
-		token: CancellationToken
-	): Promise<SCMHistoryItemDto | undefined>;
-	$resolveHistoryItemRefsCommonAncestor(
-		sourceControlHandle: number,
-		historyItemRefs: string[],
-		token: CancellationToken
-	): Promise<string | undefined>;
-
-	$provideArtifactGroups(
-		sourceControlHandle: number,
-		token: CancellationToken
-	): Promise<SCMArtifactGroupDto[] | undefined>;
-	$provideArtifacts(
-		sourceControlHandle: number,
-		group: string,
-		token: CancellationToken
-	): Promise<SCMArtifactDto[] | undefined>;
-}
-
 export interface ExtHostQuickDiffShape {
 	$provideOriginalResource(
 		sourceControlHandle: number,
@@ -3331,38 +2910,6 @@ export interface ExtHostOutputServiceShape {
 
 export interface ExtHostProgressShape {
 	$acceptProgressCanceled(handle: number): void;
-}
-
-export interface ExtHostCommentsShape {
-	$createCommentThreadTemplate(
-		commentControllerHandle: number,
-		uriComponents: UriComponents,
-		range: IRange | undefined,
-		editorId?: string
-	): Promise<void>;
-	$updateCommentThreadTemplate(commentControllerHandle: number, threadHandle: number, range: IRange): Promise<void>;
-	$updateCommentThread(
-		commentControllerHandle: number,
-		threadHandle: number,
-		changes: CommentThreadChanges
-	): Promise<void>;
-	$deleteCommentThread(commentControllerHandle: number, commentThreadHandle: number): void;
-	$provideCommentingRanges(
-		commentControllerHandle: number,
-		uriComponents: UriComponents,
-		token: CancellationToken
-	): Promise<{ ranges: IRange[]; fileComments: boolean } | undefined>;
-	$toggleReaction(
-		commentControllerHandle: number,
-		threadHandle: number,
-		uri: UriComponents,
-		comment: languages.Comment,
-		reaction: languages.CommentReaction
-	): Promise<void>;
-	$setActiveComment(
-		controllerHandle: number,
-		commentInfo: { commentThreadHandle: number; uniqueIdInThread?: number } | undefined
-	): Promise<void>;
 }
 
 export interface INotebookSelectionChangeEvent {
@@ -3572,11 +3119,6 @@ export interface ExtHostNotebookKernelsShape {
 	): Promise<void>;
 }
 
-export interface ExtHostInteractiveShape {
-	$willAddInteractiveDocument(uri: UriComponents, eol: string, languageId: string, notebookUri: UriComponents): void;
-	$willRemoveInteractiveDocument(uri: UriComponents, notebookUri: UriComponents): void;
-}
-
 export interface ExtHostStorageShape {
 	$acceptValue(shared: boolean, extensionId: string, value: string): void;
 }
@@ -3618,15 +3160,6 @@ export interface ExtHostTunnelServiceShape {
 	): Promise<ProvidedPortAttributes[]>;
 }
 
-export interface ExtHostTimelineShape {
-	$getTimeline(
-		source: string,
-		uri: UriComponents,
-		options: TimelineOptions,
-		token: CancellationToken
-	): Promise<Dto<Timeline> | undefined>;
-}
-
 export interface MainThreadDataChannelsShape extends IDisposable {}
 
 export interface ExtHostDataChannelsShape {
@@ -3653,7 +3186,6 @@ export const MainContext = {
 	MainThreadBulkEdits: createProxyIdentifier<MainThreadBulkEditsShape>('MainThreadBulkEdits'),
 	MainThreadClipboard: createProxyIdentifier<MainThreadClipboardShape>('MainThreadClipboard'),
 	MainThreadCommands: createProxyIdentifier<MainThreadCommandsShape>('MainThreadCommands'),
-	MainThreadComments: createProxyIdentifier<MainThreadCommentsShape>('MainThreadComments'),
 	MainThreadConfiguration: createProxyIdentifier<MainThreadConfigurationShape>('MainThreadConfiguration'),
 	MainThreadConsole: createProxyIdentifier<MainThreadConsoleShape>('MainThreadConsole'),
 	MainThreadDecorations: createProxyIdentifier<MainThreadDecorationsShape>('MainThreadDecorations'),
@@ -3701,7 +3233,6 @@ export const MainContext = {
 		'MainThreadFileSystemEventService'
 	),
 	MainThreadExtensionService: createProxyIdentifier<MainThreadExtensionServiceShape>('MainThreadExtensionService'),
-	MainThreadSCM: createProxyIdentifier<MainThreadSCMShape>('MainThreadSCM'),
 	MainThreadSearch: createProxyIdentifier<MainThreadSearchShape>('MainThreadSearch'),
 	MainThreadShare: createProxyIdentifier<MainThreadShareShape>('MainThreadShare'),
 	MainThreadWindow: createProxyIdentifier<MainThreadWindowShape>('MainThreadWindow'),
@@ -3714,14 +3245,11 @@ export const MainContext = {
 	MainThreadNotebookEditors: createProxyIdentifier<MainThreadNotebookEditorsShape>('MainThreadNotebookEditorsShape'),
 	MainThreadNotebookKernels: createProxyIdentifier<MainThreadNotebookKernelsShape>('MainThreadNotebookKernels'),
 	MainThreadNotebookRenderers: createProxyIdentifier<MainThreadNotebookRenderersShape>('MainThreadNotebookRenderers'),
-	MainThreadInteractive: createProxyIdentifier<MainThreadInteractiveShape>('MainThreadInteractive'),
 	MainThreadTheming: createProxyIdentifier<MainThreadThemingShape>('MainThreadTheming'),
 	MainThreadTunnelService: createProxyIdentifier<MainThreadTunnelServiceShape>('MainThreadTunnelService'),
 	MainThreadManagedSockets: createProxyIdentifier<MainThreadManagedSocketsShape>('MainThreadManagedSockets'),
-	MainThreadTimeline: createProxyIdentifier<MainThreadTimelineShape>('MainThreadTimeline'),
 	MainThreadLocalization: createProxyIdentifier<MainThreadLocalizationShape>('MainThreadLocalizationShape'),
-	MainThreadDataChannels: createProxyIdentifier<MainThreadDataChannelsShape>('MainThreadDataChannels'),
-	MainThreadBrowsers: createProxyIdentifier<MainThreadBrowsersShape>('MainThreadBrowsers')
+	MainThreadDataChannels: createProxyIdentifier<MainThreadDataChannelsShape>('MainThreadDataChannels')
 };
 
 export const ExtHostContext = {
@@ -3756,7 +3284,6 @@ export const ExtHostContext = {
 	ExtHostTerminalShellIntegration: createProxyIdentifier<ExtHostTerminalShellIntegrationShape>(
 		'ExtHostTerminalShellIntegration'
 	),
-	ExtHostSCM: createProxyIdentifier<ExtHostSCMShape>('ExtHostSCM'),
 	ExtHostSearch: createProxyIdentifier<ExtHostSearchShape>('ExtHostSearch'),
 	ExtHostWorkspace: createProxyIdentifier<ExtHostWorkspaceShape>('ExtHostWorkspace'),
 	ExtHostWindow: createProxyIdentifier<ExtHostWindowShape>('ExtHostWindow'),
@@ -3768,7 +3295,6 @@ export const ExtHostContext = {
 	ExtHostEditorInsets: createProxyIdentifier<ExtHostEditorInsetsShape>('ExtHostEditorInsets'),
 	ExtHostEditorTabs: createProxyIdentifier<IExtHostEditorTabsShape>('ExtHostEditorTabs'),
 	ExtHostProgress: createProxyIdentifier<ExtHostProgressShape>('ExtHostProgress'),
-	ExtHostComments: createProxyIdentifier<ExtHostCommentsShape>('ExtHostComments'),
 	ExtHostSecretState: createProxyIdentifier<ExtHostSecretStateShape>('ExtHostSecretState'),
 	ExtHostStorage: createProxyIdentifier<ExtHostStorageShape>('ExtHostStorage'),
 	ExtHostUrls: createProxyIdentifier<ExtHostUrlsShape>('ExtHostUrls'),
@@ -3786,15 +3312,12 @@ export const ExtHostContext = {
 	ExtHostNotebookDocumentSaveParticipant: createProxyIdentifier<ExtHostNotebookDocumentSaveParticipantShape>(
 		'ExtHostNotebookDocumentSaveParticipant'
 	),
-	ExtHostInteractive: createProxyIdentifier<ExtHostInteractiveShape>('ExtHostInteractive'),
 	ExtHostTheming: createProxyIdentifier<ExtHostThemingShape>('ExtHostTheming'),
 	ExtHostTunnelService: createProxyIdentifier<ExtHostTunnelServiceShape>('ExtHostTunnelService'),
 	ExtHostManagedSockets: createProxyIdentifier<ExtHostManagedSocketsShape>('ExtHostManagedSockets'),
 	ExtHostAuthentication: createProxyIdentifier<ExtHostAuthenticationShape>('ExtHostAuthentication'),
-	ExtHostTimeline: createProxyIdentifier<ExtHostTimelineShape>('ExtHostTimeline'),
 	ExtHostTelemetry: createProxyIdentifier<ExtHostTelemetryShape>('ExtHostTelemetry'),
 	ExtHostMeteredConnection: createProxyIdentifier<ExtHostMeteredConnectionShape>('ExtHostMeteredConnection'),
 	ExtHostLocalization: createProxyIdentifier<ExtHostLocalizationShape>('ExtHostLocalization'),
-	ExtHostDataChannels: createProxyIdentifier<ExtHostDataChannelsShape>('ExtHostDataChannels'),
-	ExtHostBrowsers: createProxyIdentifier<ExtHostBrowsersShape>('ExtHostBrowsers')
+	ExtHostDataChannels: createProxyIdentifier<ExtHostDataChannelsShape>('ExtHostDataChannels')
 };

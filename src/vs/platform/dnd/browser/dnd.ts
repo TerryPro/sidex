@@ -30,8 +30,7 @@ export const CodeDataTransfers = {
 	FILES: 'CodeFiles',
 	SYMBOLS: 'application/vnd.code.symbols',
 	MARKERS: 'application/vnd.code.diagnostics',
-	NOTEBOOK_CELL_OUTPUT: 'notebook-cell-output',
-	SCM_HISTORY_ITEM: 'scm-history-item'
+	NOTEBOOK_CELL_OUTPUT: 'notebook-cell-output'
 };
 
 export interface IDraggedResourceEditorInput extends IBaseTextResourceEditorInput {

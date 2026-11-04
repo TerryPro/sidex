@@ -37,15 +37,12 @@ import { IUriIdentityService } from '../../../platform/uriIdentity/common/uriIde
 import { reviveWorkspaceEditDto } from './mainThreadBulkEdits.js';
 import * as typeConvert from '../common/extHostTypeConverters.js';
 import { DataTransferFileCache } from '../common/shared/dataTransferCache.js';
-import * as callh from '../../contrib/callHierarchy/common/callHierarchy.js';
 import * as search from '../../contrib/search/common/search.js';
-import * as typeh from '../../contrib/typeHierarchy/common/typeHierarchy.js';
 import { extHostNamedCustomer, IExtHostContext } from '../../services/extensions/common/extHostCustomers.js';
 import {
 	ExtHostContext,
 	ExtHostLanguageFeaturesShape,
 	HoverWithId,
-	ICallHierarchyItemDto,
 	ICodeActionDto,
 	ICodeActionProviderMetadataDto,
 	IdentifiableInlineCompletion,
@@ -71,7 +68,6 @@ import {
 	ISuggestDataDto,
 	ISuggestDataDtoField,
 	ISuggestResultDtoField,
-	ITypeHierarchyItemDto,
 	IWorkspaceSymbolDto,
 	MainContext,
 	MainThreadLanguageFeaturesShape
@@ -201,20 +197,6 @@ export class MainThreadLanguageFeatures extends Disposable implements MainThread
 			data.url = URI.revive(data.url);
 		}
 		return <languages.ILink>data;
-	}
-
-	private static _reviveCallHierarchyItemDto(data: ICallHierarchyItemDto | undefined): callh.CallHierarchyItem {
-		if (data) {
-			data.uri = URI.revive(data.uri);
-		}
-		return data as callh.CallHierarchyItem;
-	}
-
-	private static _reviveTypeHierarchyItemDto(data: ITypeHierarchyItemDto | undefined): typeh.TypeHierarchyItem {
-		if (data) {
-			data.uri = URI.revive(data.uri);
-		}
-		return data as typeh.TypeHierarchyItem;
 	}
 
 	//#endregion
@@ -1198,61 +1180,6 @@ export class MainThreadLanguageFeatures extends Disposable implements MainThread
 		);
 	}
 
-	// --- call hierarchy
-
-	$registerCallHierarchyProvider(handle: number, selector: IDocumentFilterDto[]): void {
-		this._registrations.set(
-			handle,
-			callh.CallHierarchyProviderRegistry.register(selector, {
-				prepareCallHierarchy: async (document, position, token) => {
-					const items = await this._proxy.$prepareCallHierarchy(handle, document.uri, position, token);
-					if (!items || items.length === 0) {
-						return undefined;
-					}
-					return {
-						dispose: () => {
-							for (const item of items) {
-								this._proxy.$releaseCallHierarchy(handle, item._sessionId);
-							}
-						},
-						roots: items.map(MainThreadLanguageFeatures._reviveCallHierarchyItemDto)
-					};
-				},
-
-				provideOutgoingCalls: async (item, token) => {
-					const outgoing = await this._proxy.$provideCallHierarchyOutgoingCalls(
-						handle,
-						item._sessionId,
-						item._itemId,
-						token
-					);
-					if (!outgoing) {
-						return outgoing;
-					}
-					outgoing.forEach(value => {
-						value.to = MainThreadLanguageFeatures._reviveCallHierarchyItemDto(value.to);
-					});
-					return <any>outgoing;
-				},
-				provideIncomingCalls: async (item, token) => {
-					const incoming = await this._proxy.$provideCallHierarchyIncomingCalls(
-						handle,
-						item._sessionId,
-						item._itemId,
-						token
-					);
-					if (!incoming) {
-						return incoming;
-					}
-					incoming.forEach(value => {
-						value.from = MainThreadLanguageFeatures._reviveCallHierarchyItemDto(value.from);
-					});
-					return <any>incoming;
-				}
-			})
-		);
-	}
-
 	// --- configuration
 
 	private static _reviveRegExp(regExp: IRegExpDto): RegExp {
@@ -1325,55 +1252,6 @@ export class MainThreadLanguageFeatures extends Disposable implements MainThread
 		if (this._languageService.isRegisteredLanguageId(languageId)) {
 			this._registrations.set(handle, this._languageConfigurationService.register(languageId, configuration, 100));
 		}
-	}
-
-	// --- type hierarchy
-
-	$registerTypeHierarchyProvider(handle: number, selector: IDocumentFilterDto[]): void {
-		this._registrations.set(
-			handle,
-			typeh.TypeHierarchyProviderRegistry.register(selector, {
-				prepareTypeHierarchy: async (document, position, token) => {
-					const items = await this._proxy.$prepareTypeHierarchy(handle, document.uri, position, token);
-					if (!items) {
-						return undefined;
-					}
-					return {
-						dispose: () => {
-							for (const item of items) {
-								this._proxy.$releaseTypeHierarchy(handle, item._sessionId);
-							}
-						},
-						roots: items.map(MainThreadLanguageFeatures._reviveTypeHierarchyItemDto)
-					};
-				},
-
-				provideSupertypes: async (item, token) => {
-					const supertypes = await this._proxy.$provideTypeHierarchySupertypes(
-						handle,
-						item._sessionId,
-						item._itemId,
-						token
-					);
-					if (!supertypes) {
-						return supertypes;
-					}
-					return supertypes.map(MainThreadLanguageFeatures._reviveTypeHierarchyItemDto);
-				},
-				provideSubtypes: async (item, token) => {
-					const subtypes = await this._proxy.$provideTypeHierarchySubtypes(
-						handle,
-						item._sessionId,
-						item._itemId,
-						token
-					);
-					if (!subtypes) {
-						return subtypes;
-					}
-					return subtypes.map(MainThreadLanguageFeatures._reviveTypeHierarchyItemDto);
-				}
-			})
-		);
 	}
 
 	// --- document drop Edits

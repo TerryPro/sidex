@@ -55,6 +55,25 @@
 			};
 		</script>
 		<script>
+			// Forward frontend errors to the Rust log so issues are visible in tauri dev output.
+			(function () {
+				function report(message) {
+					try {
+						var internals = window.__TAURI_INTERNALS__;
+						if (internals && internals.invoke) {
+							internals.invoke('log_frontend_error', { message: String(message) });
+						}
+					} catch (_) { /* ignore */ }
+				}
+				window.addEventListener('error', function (event) {
+					var stack = event.error && event.error.stack ? '\n' + event.error.stack : '';
+					report((event.message || 'error') + ' @ ' + (event.filename || '') + ':' + (event.lineno || 0) + ':' + (event.colno || 0) + stack);
+				});
+				window.addEventListener('unhandledrejection', function (event) {
+					var reason = event.reason;
+					report('Unhandled rejection: ' + (reason && reason.stack ? reason.stack : String(reason)));
+				});
+			})();
 		</script>
 		<script src="/builtin-extensions.js"></script>
 		<script type="module" src="/src/main.ts" defer></script>

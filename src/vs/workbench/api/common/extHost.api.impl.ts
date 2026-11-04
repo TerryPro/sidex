@@ -45,7 +45,6 @@ import { ExtHostBulkEdits } from './extHostBulkEdits.js';
 import { ExtHostClipboard } from './extHostClipboard.js';
 import { ExtHostEditorInsets } from './extHostCodeInsets.js';
 import { IExtHostCommands } from './extHostCommands.js';
-import { createExtHostComments } from './extHostComments.js';
 import { ExtHostConfigProvider, IExtHostConfiguration } from './extHostConfiguration.js';
 import { ExtHostCustomEditors } from './extHostCustomEditors.js';
 import { IExtHostDataChannels } from './extHostDataChannels.js';
@@ -74,10 +73,8 @@ import { IExtHostProgress } from './extHostProgress.js';
 import { ExtHostQuickDiff } from './extHostQuickDiff.js';
 import { createExtHostQuickOpen } from './extHostQuickOpen.js';
 import { IExtHostRpcService } from './extHostRpcService.js';
-import { ExtHostSCM } from './extHostSCM.js';
 import { IExtHostSearch } from './extHostSearch.js';
 import { IExtHostSecretState } from './extHostSecretState.js';
-import { ExtHostBrowsers } from './extHostBrowsers.js';
 import { ExtHostStatusBar } from './extHostStatusBar.js';
 import { IExtHostStorage } from './extHostStorage.js';
 import { IExtensionStoragePaths } from './extHostStoragePaths.js';
@@ -86,7 +83,6 @@ import { IExtHostTerminalService } from './extHostTerminalService.js';
 import { IExtHostTerminalShellIntegration } from './extHostTerminalShellIntegration.js';
 import { ExtHostEditors } from './extHostTextEditors.js';
 import { ExtHostTheming } from './extHostTheming.js';
-import { ExtHostTimeline } from './extHostTimeline.js';
 import { ExtHostTreeViews } from './extHostTreeViews.js';
 import { IExtHostTunnelService } from './extHostTunnelService.js';
 import * as typeConverters from './extHostTypeConverters.js';
@@ -253,24 +249,12 @@ export function createApiFactoryAndRegisterActors(accessor: ServicesAccessor): I
 		ExtHostContext.ExtHostQuickOpen,
 		createExtHostQuickOpen(rpcProtocol, extHostWorkspace, extHostCommands)
 	);
-	const extHostSCM = rpcProtocol.set(
-		ExtHostContext.ExtHostSCM,
-		new ExtHostSCM(rpcProtocol, extHostCommands, extHostDocuments, extHostLogService)
-	);
 	const extHostQuickDiff = rpcProtocol.set(
 		ExtHostContext.ExtHostQuickDiff,
 		new ExtHostQuickDiff(rpcProtocol, uriTransformer)
 	);
-	const extHostComment = rpcProtocol.set(
-		ExtHostContext.ExtHostComments,
-		createExtHostComments(rpcProtocol, extHostCommands, extHostDocuments)
-	);
 	const extHostLabelService = rpcProtocol.set(ExtHostContext.ExtHostLabelService, new ExtHostLabelService(rpcProtocol));
 	const extHostTheming = rpcProtocol.set(ExtHostContext.ExtHostTheming, new ExtHostTheming(rpcProtocol));
-	const extHostTimeline = rpcProtocol.set(
-		ExtHostContext.ExtHostTimeline,
-		new ExtHostTimeline(rpcProtocol, extHostCommands)
-	);
 	const extHostWebviews = rpcProtocol.set(
 		ExtHostContext.ExtHostWebviews,
 		new ExtHostWebviews(rpcProtocol, initData.remote, extHostWorkspace, extHostLogService, extHostApiDeprecation)
@@ -298,7 +282,6 @@ export function createApiFactoryAndRegisterActors(accessor: ServicesAccessor): I
 		ExtHostContext.ExtHostStatusBar,
 		new ExtHostStatusBar(rpcProtocol, extHostCommands.converter)
 	);
-	const extHostBrowsers = rpcProtocol.set(ExtHostContext.ExtHostBrowsers, new ExtHostBrowsers(rpcProtocol));
 
 	// Check that no named customers are missing
 	const expected = Object.values<ProxyIdentifier<any>>(ExtHostContext);
@@ -1033,18 +1016,6 @@ export function createApiFactoryAndRegisterActors(accessor: ServicesAccessor): I
 			): vscode.Disposable {
 				return extHostLanguageFeatures.registerSelectionRangeProvider(extension, selector, provider);
 			},
-			registerCallHierarchyProvider(
-				selector: vscode.DocumentSelector,
-				provider: vscode.CallHierarchyProvider
-			): vscode.Disposable {
-				return extHostLanguageFeatures.registerCallHierarchyProvider(extension, selector, provider);
-			},
-			registerTypeHierarchyProvider(
-				selector: vscode.DocumentSelector,
-				provider: vscode.TypeHierarchyProvider
-			): vscode.Disposable {
-				return extHostLanguageFeatures.registerTypeHierarchyProvider(extension, selector, provider);
-			},
 			setLanguageConfiguration: (language: string, configuration: vscode.LanguageConfiguration): vscode.Disposable => {
 				return extHostLanguageFeatures.setLanguageConfiguration(extension, language, configuration);
 			},
@@ -1261,20 +1232,6 @@ export function createApiFactoryAndRegisterActors(accessor: ServicesAccessor): I
 			setStatusBarMessage(text: string, timeoutOrThenable?: number | Thenable<any>): vscode.Disposable {
 				return extHostStatusBar.setStatusBarMessage(text, timeoutOrThenable);
 			},
-			withScmProgress<R>(task: (progress: vscode.Progress<number>) => Thenable<R>) {
-				extHostApiDeprecation.report('window.withScmProgress', extension, `Use 'withProgress' instead.`);
-
-				return extHostProgress.withProgress(
-					extension,
-					{ location: extHostTypes.ProgressLocation.SourceControl },
-					(_progress, _token) =>
-						task({
-							report(_n: number) {
-								/*noop*/
-							}
-						})
-				);
-			},
 			withProgress<R>(
 				options: vscode.ProgressOptions,
 				task: (
@@ -1424,34 +1381,6 @@ export function createApiFactoryAndRegisterActors(accessor: ServicesAccessor): I
 			get nativeHandle(): Uint8Array | undefined {
 				checkProposedApiEnabled(extension, 'nativeWindowHandle');
 				return extHostWindow.nativeHandle;
-			},
-			get browserTabs() {
-				checkProposedApiEnabled(extension, 'browser');
-				return extHostBrowsers.browserTabs;
-			},
-			onDidOpenBrowserTab(listener, thisArg?, disposables?) {
-				checkProposedApiEnabled(extension, 'browser');
-				return _asExtensionEvent(extHostBrowsers.onDidOpenBrowserTab)(listener, thisArg, disposables);
-			},
-			onDidCloseBrowserTab(listener, thisArg?, disposables?) {
-				checkProposedApiEnabled(extension, 'browser');
-				return _asExtensionEvent(extHostBrowsers.onDidCloseBrowserTab)(listener, thisArg, disposables);
-			},
-			get activeBrowserTab() {
-				checkProposedApiEnabled(extension, 'browser');
-				return extHostBrowsers.activeBrowserTab;
-			},
-			onDidChangeActiveBrowserTab(listener, thisArg?, disposables?) {
-				checkProposedApiEnabled(extension, 'browser');
-				return _asExtensionEvent(extHostBrowsers.onDidChangeActiveBrowserTab)(listener, thisArg, disposables);
-			},
-			onDidChangeBrowserTabState(listener, thisArg?, disposables?) {
-				checkProposedApiEnabled(extension, 'browser');
-				return _asExtensionEvent(extHostBrowsers.onDidChangeBrowserTabState)(listener, thisArg, disposables);
-			},
-			openBrowserTab(url: string, options?: vscode.BrowserTabShowOptions) {
-				checkProposedApiEnabled(extension, 'browser');
-				return extHostBrowsers.openBrowserTab(url, options);
 			}
 		} as any;
 
@@ -1761,15 +1690,6 @@ export function createApiFactoryAndRegisterActors(accessor: ServicesAccessor): I
 				checkProposedApiEnabled(extension, 'tunnelFactory');
 				return extHostTunnelService.registerTunnelProvider(tunnelProvider, information);
 			},
-			registerTimelineProvider: (scheme: string | string[], provider: vscode.TimelineProvider) => {
-				checkProposedApiEnabled(extension, 'timeline');
-				return extHostTimeline.registerTimelineProvider(
-					scheme,
-					provider,
-					extension.identifier,
-					extHostCommands.converter
-				);
-			},
 			get isTrusted() {
 				return extHostWorkspace.trusted;
 			},
@@ -1824,35 +1744,6 @@ export function createApiFactoryAndRegisterActors(accessor: ServicesAccessor): I
 			}
 		} as any;
 
-		// namespace: scm
-		const scm: typeof vscode.scm = {
-			get inputBox() {
-				extHostApiDeprecation.report('scm.inputBox', extension, `Use 'SourceControl.inputBox' instead`);
-
-				return extHostSCM.getLastInputBox(extension)!; // Strict null override - Deprecated api
-			},
-			createSourceControl(
-				id: string,
-				label: string,
-				rootUri?: vscode.Uri,
-				iconPath?: vscode.IconPath,
-				isHidden?: boolean,
-				parent?: vscode.SourceControl
-			): vscode.SourceControl {
-				if (iconPath || isHidden || parent) {
-					checkProposedApiEnabled(extension, 'scmProviderOptions');
-				}
-				return extHostSCM.createSourceControl(extension, id, label, rootUri, iconPath, isHidden, parent);
-			}
-		};
-
-		// namespace: comments
-		const comments: typeof vscode.comments = {
-			createCommentController(id: string, label: string) {
-				return extHostComment.createCommentController(extension, id, label);
-			}
-		};
-
 		// namespace: l10n
 		const l10n: typeof vscode.l10n = {
 			t(
@@ -1894,19 +1785,14 @@ export function createApiFactoryAndRegisterActors(accessor: ServicesAccessor): I
 			// namespaces
 			authentication,
 			commands,
-			comments,
 			env,
 			extensions,
 			l10n,
 			languages,
-			scm,
 			window,
 			workspace,
 			// types
 			TerminalOutputAnchor: extHostTypes.TerminalOutputAnchor,
-			CallHierarchyIncomingCall: extHostTypes.CallHierarchyIncomingCall,
-			CallHierarchyItem: extHostTypes.CallHierarchyItem,
-			CallHierarchyOutgoingCall: extHostTypes.CallHierarchyOutgoingCall,
 			CancellationError: errors.CancellationError,
 			CancellationTokenSource: CancellationTokenSource,
 			CandidatePortSource: CandidatePortSource,
@@ -1918,12 +1804,6 @@ export function createApiFactoryAndRegisterActors(accessor: ServicesAccessor): I
 			ColorInformation: extHostTypes.ColorInformation,
 			ColorPresentation: extHostTypes.ColorPresentation,
 			ColorThemeKind: extHostTypes.ColorThemeKind,
-			CommentMode: extHostTypes.CommentMode,
-			CommentState: extHostTypes.CommentState,
-			CommentThreadCollapsibleState: extHostTypes.CommentThreadCollapsibleState,
-			CommentThreadState: extHostTypes.CommentThreadState,
-			CommentThreadApplicability: extHostTypes.CommentThreadApplicability,
-			CommentThreadFocus: extHostTypes.CommentThreadFocus,
 			CompletionItem: extHostTypes.CompletionItem,
 			CompletionItemKind: extHostTypes.CompletionItemKind,
 			CompletionItemTag: extHostTypes.CompletionItemTag,
@@ -2020,7 +1900,6 @@ export function createApiFactoryAndRegisterActors(accessor: ServicesAccessor): I
 			TreeItem: extHostTypes.TreeItem,
 			TreeItemCheckboxState: extHostTypes.TreeItemCheckboxState,
 			TreeItemCollapsibleState: extHostTypes.TreeItemCollapsibleState,
-			TypeHierarchyItem: extHostTypes.TypeHierarchyItem,
 			UIKind: UIKind,
 			Uri: URI,
 			ViewColumn: extHostTypes.ViewColumn,
@@ -2036,9 +1915,7 @@ export function createApiFactoryAndRegisterActors(accessor: ServicesAccessor): I
 			RemoteAuthorityResolverError: extHostTypes.RemoteAuthorityResolverError,
 			ResolvedAuthority: extHostTypes.ResolvedAuthority,
 			ManagedResolvedAuthority: extHostTypes.ManagedResolvedAuthority,
-			SourceControlInputBoxValidationType: extHostTypes.SourceControlInputBoxValidationType,
 			ExtensionRuntime: extHostTypes.ExtensionRuntime,
-			TimelineItem: extHostTypes.TimelineItem,
 			PortAttributes: extHostTypes.PortAttributes,
 			LinkedEditingRanges: extHostTypes.LinkedEditingRanges,
 			TextSearchCompleteMessageType: TextSearchCompleteMessageType,
@@ -2050,11 +1927,9 @@ export function createApiFactoryAndRegisterActors(accessor: ServicesAccessor): I
 			InputBoxValidationSeverity: extHostTypes.InputBoxValidationSeverity,
 			TabInputText: extHostTypes.TextTabInput,
 			TabInputTextDiff: extHostTypes.TextDiffTabInput,
-			TabInputTextMerge: extHostTypes.TextMergeTabInput,
 			TabInputCustom: extHostTypes.CustomEditorTabInput,
 			TabInputWebview: extHostTypes.WebviewEditorTabInput,
 			TabInputTerminal: extHostTypes.TerminalEditorTabInput,
-			TabInputTextMultiDiff: extHostTypes.TextMultiDiffTabInput,
 			TelemetryTrustedValue: TelemetryTrustedValue,
 			LogLevel: LogLevel,
 			EditSessionIdentityMatch: EditSessionIdentityMatch,

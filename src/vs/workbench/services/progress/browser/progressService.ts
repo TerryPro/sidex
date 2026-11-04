@@ -147,8 +147,6 @@ export class ProgressService extends Disposable implements IProgressService {
 					...options,
 					location
 				});
-			case ProgressLocation.Scm:
-				return handleStringLocation('workbench.scm');
 			case ProgressLocation.Extensions:
 				return this.withPaneCompositeProgress('workbench.view.extensions', ViewContainerLocation.Sidebar, task, {
 					...options,

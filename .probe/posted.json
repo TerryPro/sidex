@@ -1,6 +1,0 @@
-{
-  "at": "2026-10-27T12:00:41.449Z",
-  "method": "POST",
-  "url": "/probe",
-  "body": "{\"stage\":\"done\",\"origin\":\"http://localhost:1420\",\"at\":\"2026-10-27T12:00:40.958Z\",\"cases\":[{\"name\":\"control-exact-https\",\"url\":\"https://sidex-asset.localhost/__probe_missing__\",\"outcome\":\"resolved\",\"status\":404,\"type\":\"cors\"},{\"name\":\"subdomain-after\",\"url\":\"https://sidex-asset.probe.localhost/__probe_missing__\",\"outcome\":\"resolved\",\"status\":404,\"type\":\"cors\"},{\"name\":\"subdomain-before\",\"url\":\"https://probe.sidex-asset.localhost/__probe_missing__\",\"outcome\":\"rejected\",\"error\":\"TypeError: Failed to fetch\"},{\"name\":\"control-exact-http\",\"url\":\"http://sidex-asset.localhost/__probe_missing__\",\"outcome\":\"rejected\",\"error\":\"TypeError: Failed to fetch\"}]}"
-}

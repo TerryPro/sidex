@@ -53,7 +53,7 @@ import {
 import { RunOnceScheduler } from '../../../../base/common/async.js';
 import { URI } from '../../../../base/common/uri.js';
 import { ILabelService, Verbosity } from '../../../../platform/label/common/label.js';
-import { IUpdateService, StateType } from '../../../../platform/update/common/update.js';
+import { IUpdateService } from '../../../../platform/update/common/update.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
 import { INotificationService, Severity } from '../../../../platform/notification/common/notification.js';
 import { IPreferencesService } from '../../../services/preferences/common/preferences.js';
@@ -542,74 +542,6 @@ export class CustomMenubarControl extends MenubarControl {
 		}
 	}
 
-	private getUpdateAction(): IAction | null {
-		const state = this.updateService.state;
-
-		switch (state.type) {
-			case StateType.Idle:
-				return toAction({
-					id: 'update.check',
-					label: localize({ key: 'checkForUpdates', comment: ['&& denotes a mnemonic'] }, 'Check for &&Updates...'),
-					enabled: true,
-					run: () => this.updateService.checkForUpdates(true)
-				});
-
-			case StateType.CheckingForUpdates:
-				return toAction({
-					id: 'update.checking',
-					label: localize('checkingForUpdates', 'Checking for Updates...'),
-					enabled: false,
-					run: () => {}
-				});
-
-			case StateType.AvailableForDownload:
-				return toAction({
-					id: 'update.downloadNow',
-					label: localize({ key: 'download now', comment: ['&& denotes a mnemonic'] }, 'D&&ownload Update'),
-					enabled: true,
-					run: () => this.updateService.downloadUpdate(true)
-				});
-
-			case StateType.Downloading:
-			case StateType.Overwriting:
-				return toAction({
-					id: 'update.downloading',
-					label: localize('DownloadingUpdate', 'Downloading Update...'),
-					enabled: false,
-					run: () => {}
-				});
-
-			case StateType.Downloaded:
-				return isMacintosh
-					? null
-					: toAction({
-							id: 'update.install',
-							label: localize({ key: 'installUpdate...', comment: ['&& denotes a mnemonic'] }, 'Install &&Update...'),
-							enabled: true,
-							run: () => this.updateService.applyUpdate()
-						});
-
-			case StateType.Updating:
-				return toAction({
-					id: 'update.updating',
-					label: localize('installingUpdate', 'Installing Update...'),
-					enabled: false,
-					run: () => {}
-				});
-
-			case StateType.Ready:
-				return toAction({
-					id: 'update.restart',
-					label: localize({ key: 'restartToUpdate', comment: ['&& denotes a mnemonic'] }, 'Restart to &&Update'),
-					enabled: true,
-					run: () => this.updateService.quitAndInstall()
-				});
-
-			default:
-				return null;
-		}
-	}
-
 	private get currentMenubarVisibility(): MenuBarVisibility {
 		return getMenuBarVisibility(this.configurationService);
 	}
@@ -629,18 +561,6 @@ export class CustomMenubarControl extends MenubarControl {
 		switch (nextAction.id) {
 			case OpenRecentAction.ID:
 				target.push(...this.getOpenRecentActions());
-				break;
-
-			case 'workbench.action.showAboutDialog':
-				if (!isMacintosh && !isWeb) {
-					const updateAction = this.getUpdateAction();
-					if (updateAction) {
-						updateAction.label = mnemonicMenuLabel(updateAction.label);
-						target.push(updateAction);
-						target.push(new Separator());
-					}
-				}
-
 				break;
 
 			default:

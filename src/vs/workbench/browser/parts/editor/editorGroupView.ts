@@ -2495,13 +2495,16 @@ export class EditorGroupView extends Themable implements IEditorGroupView {
 		this.element.classList.toggle('max-height-478px', height <= 478);
 
 		// Layout the title control first to receive the size it occupies
-		const titleControlSize = this.titleControl.layout({
-			container: new Dimension(width, height),
-			available: new Dimension(width, height - this.editorPane.minimumHeight)
-		});
+		// SideX：目录模式下标题栏被隐藏，不再为其预留高度。
+		const titleControlSize = this.element.classList.contains('sidex-directory-mode')
+			? new Dimension(width, 0)
+			: this.titleControl.layout({
+				container: new Dimension(width, height),
+				available: new Dimension(width, height - this.editorPane.minimumHeight)
+			});
 
 		// Update progress bar location
-		this.progressBar.getContainer().style.top = `${Math.max(this.titleHeight.offset - 2, 0)}px`;
+		this.progressBar.getContainer().style.top = `${Math.max(titleControlSize.height - 2, 0)}px`;
 
 		// Pass the container width and remaining height to the editor layout
 		const editorHeight = Math.max(0, height - titleControlSize.height);

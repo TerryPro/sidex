@@ -386,6 +386,11 @@ export function shouldShowCustomTitleBar(
 		return false;
 	}
 
+	// SideX：标题栏承载目录标签与地址栏，始终显示，避免因菜单栏隐藏而整条消失。
+	if ((globalThis as any).__SIDEX_TAURI__) {
+		return true;
+	}
+
 	const inFullscreen = isFullscreen(window);
 	const nativeTitleBarEnabled = hasNativeTitlebar(configurationService);
 

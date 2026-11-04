@@ -23,14 +23,12 @@ export const enum AccessibilityVerbositySettingId {
 	DiffEditorActive = 'accessibility.verbosity.diffEditorActive',
 	Debug = 'accessibility.verbosity.debug',
 	Walkthrough = 'accessibility.verbosity.walkthrough',
-	Scm = 'accessibility.verbosity.scm',
 	Search = 'accessibility.verbosity.search',
 	Markers = 'accessibility.verbosity.markers',
 	Output = 'accessibility.verbosity.output',
 	Webview = 'accessibility.verbosity.webview',
 	PanelChat = 'accessibility.verbosity.panelChat',
-	Find = 'accessibility.verbosity.find',
-	SourceControl = 'accessibility.verbosity.sourceControl'
+	Find = 'accessibility.verbosity.find'
 }
 
 export const accessibleViewIsShown = new RawContextKey<boolean>('accessibleViewIsShown', false);

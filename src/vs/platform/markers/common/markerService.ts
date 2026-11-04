@@ -23,7 +23,6 @@ import {
 
 export const unsupportedSchemas = new Set([
 	Schemas.inMemory,
-	Schemas.vscodeSourceControl,
 	Schemas.walkThrough,
 	Schemas.walkThroughSnippet,
 	Schemas.vscodeChatCodeBlock,

@@ -63,8 +63,6 @@ import {
 	ResourceSelectedForCompareContext,
 	OpenEditorsDirtyEditorContext,
 	COMPARE_SELECTED_COMMAND_ID,
-	REMOVE_ROOT_FOLDER_COMMAND_ID,
-	REMOVE_ROOT_FOLDER_LABEL,
 	SAVE_FILES_COMMAND_ID,
 	COPY_RELATIVE_PATH_COMMAND_ID,
 	SAVE_FILE_WITHOUT_FORMATTING_COMMAND_ID,
@@ -89,7 +87,6 @@ import {
 	ExplorerResourceAvailableEditorIdsContext,
 	FoldersViewVisibleContext
 } from '../common/files.js';
-import { ADD_ROOT_FOLDER_COMMAND_ID, ADD_ROOT_FOLDER_LABEL } from '../../../browser/actions/workspaceCommands.js';
 import {
 	CLOSE_SAVED_EDITORS_COMMAND_ID,
 	CLOSE_EDITORS_IN_GROUP_COMMAND_ID,
@@ -102,9 +99,7 @@ import { WorkbenchListDoubleSelection } from '../../../../platform/list/browser/
 import { Schemas } from '../../../../base/common/network.js';
 import {
 	DirtyWorkingCopiesContext,
-	EnterMultiRootWorkspaceSupportContext,
 	HasWebFileSystemAccess,
-	WorkbenchStateContext,
 	WorkspaceFolderCountContext,
 	SidebarFocusContext,
 	ActiveEditorCanRevertContext,
@@ -804,36 +799,6 @@ MenuRegistry.appendMenuItem(MenuId.ExplorerContext, {
 	order: 20,
 	command: copyRelativePathCommand,
 	when: ResourceContextKey.IsFileSystemResource
-});
-
-MenuRegistry.appendMenuItem(MenuId.ExplorerContext, {
-	group: '2_workspace',
-	order: 10,
-	command: {
-		id: ADD_ROOT_FOLDER_COMMAND_ID,
-		title: ADD_ROOT_FOLDER_LABEL
-	},
-	when: ContextKeyExpr.and(
-		ExplorerRootContext,
-		ContextKeyExpr.or(EnterMultiRootWorkspaceSupportContext, WorkbenchStateContext.isEqualTo('workspace'))
-	)
-});
-
-MenuRegistry.appendMenuItem(MenuId.ExplorerContext, {
-	group: '2_workspace',
-	order: 30,
-	command: {
-		id: REMOVE_ROOT_FOLDER_COMMAND_ID,
-		title: REMOVE_ROOT_FOLDER_LABEL
-	},
-	when: ContextKeyExpr.and(
-		ExplorerRootContext,
-		ExplorerFolderContext,
-		ContextKeyExpr.and(
-			WorkspaceFolderCountContext.notEqualsTo('0'),
-			ContextKeyExpr.or(EnterMultiRootWorkspaceSupportContext, WorkbenchStateContext.isEqualTo('workspace'))
-		)
-	)
 });
 
 MenuRegistry.appendMenuItem(MenuId.ExplorerContext, {

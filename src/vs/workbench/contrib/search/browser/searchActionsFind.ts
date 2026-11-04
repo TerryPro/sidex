@@ -11,8 +11,6 @@ import { IListService, WorkbenchCompressibleAsyncDataTree } from '../../../../pl
 import { ViewContainerLocation } from '../../../common/views.js';
 import { IViewsService } from '../../../services/views/common/viewsService.js';
 import * as Constants from '../common/constants.js';
-import * as SearchEditorConstants from '../../searchEditor/browser/constants.js';
-import { OpenSearchEditorArgs } from '../../searchEditor/browser/searchEditor.contribution.js';
 import { ISearchConfiguration, ISearchConfigurationProperties } from '../../../services/search/common/search.js';
 import { URI } from '../../../../base/common/uri.js';
 import { ContextKeyExpr } from '../../../../platform/contextkey/common/contextkey.js';
@@ -347,18 +345,8 @@ registerAction2(
 			});
 		}
 		async run(accessor: ServicesAccessor) {
-			const searchConfig = accessor.get(IConfigurationService).getValue<ISearchConfiguration>().search;
-			const mode = searchConfig.mode;
-
-			if (mode === 'view') {
-				const searchView = await openSearchView(accessor.get(IViewsService), true);
-				searchView?.searchInFolders();
-			} else {
-				await accessor.get(ICommandService).executeCommand(SearchEditorConstants.OpenEditorCommandId, {
-					location: mode === 'newEditor' ? 'new' : 'reuse',
-					filesToInclude: ''
-				});
-			}
+			const searchView = await openSearchView(accessor.get(IViewsService), true);
+			searchView?.searchInFolders();
 		}
 	}
 );
@@ -454,20 +442,6 @@ async function searchWithFolderCommand(
 			}
 		}
 		return undefined;
-	} else {
-		if (isIncludes) {
-			return commandService.executeCommand(SearchEditorConstants.OpenEditorCommandId, {
-				filesToInclude: (await resolvedResources).join(', '),
-				showIncludesExcludes: true,
-				location: mode === 'newEditor' ? 'new' : 'reuse'
-			});
-		} else {
-			return commandService.executeCommand(SearchEditorConstants.OpenEditorCommandId, {
-				filesToExclude: (await resolvedResources).join(', '),
-				showIncludesExcludes: true,
-				location: mode === 'newEditor' ? 'new' : 'reuse'
-			});
-		}
 	}
 }
 
@@ -487,8 +461,7 @@ export async function findInFilesCommand(accessor: ServicesAccessor, _args: IFin
 	const commandService = accessor.get(ICommandService);
 	const args: IFindInFilesArgs = {};
 	if (Object.keys(_args).length !== 0) {
-		// resolve variables in the same way as in
-		// https://github.com/microsoft/vscode/blob/8b76efe9d317d50cb5b57a7658e09ce6ebffaf36/src/vs/workbench/contrib/searchEditor/browser/searchEditorActions.ts#L152-L158
+		// 解析搜索参数中的变量
 		const configurationResolverService = accessor.get(IConfigurationResolverService);
 		const historyService = accessor.get(IHistoryService);
 		const workspaceContextService = accessor.get(IWorkspaceContextService);
@@ -533,20 +506,6 @@ export async function findInFilesCommand(accessor: ServicesAccessor, _args: IFin
 				openedView.searchAndReplaceWidget.focus(undefined, updatedText, updatedText);
 			}
 		});
-	} else {
-		const convertArgs = (args: IFindInFilesArgs): OpenSearchEditorArgs => ({
-			location: mode === 'newEditor' ? 'new' : 'reuse',
-			query: args.query,
-			filesToInclude: args.filesToInclude,
-			filesToExclude: args.filesToExclude,
-			matchWholeWord: args.matchWholeWord,
-			isCaseSensitive: args.isCaseSensitive,
-			isRegexp: args.isRegex,
-			useExcludeSettingsAndIgnoreFiles: args.useExcludeSettingsAndIgnoreFiles,
-			onlyOpenEditors: args.onlyOpenEditors,
-			showIncludesExcludes: !!(args.filesToExclude || args.filesToExclude || !args.useExcludeSettingsAndIgnoreFiles)
-		});
-		commandService.executeCommand(SearchEditorConstants.OpenEditorCommandId, convertArgs(args));
 	}
 }
 

@@ -46,7 +46,6 @@ import {
 } from '../../../common/contextkeys.js';
 import { IsWebContext } from '../../../../platform/contextkey/common/contextkeys.js';
 import {
-	AddRootFolderAction,
 	OpenFolderAction,
 	OpenFolderViaWorkspaceAction
 } from '../../../browser/actions/workspaceActions.js';
@@ -88,6 +87,17 @@ export class ExplorerViewletViewsContribution extends Disposable implements IWor
 
 	private registerViews(): void {
 		mark('code/willRegisterExplorerViews');
+
+		// SideX：资源管理器容器只保留「此电脑」导航树，其余内置视图（文件树、空视图、大纲、时间线等）不再展示。
+		if ((globalThis as any).__SIDEX_TAURI__) {
+			const keepId = 'sidex.view.navigation';
+			const existing = viewsRegistry.getViews(VIEW_CONTAINER);
+			const extra = existing.filter(view => view.id !== keepId);
+			if (extra.length) {
+				viewsRegistry.deregisterViews(extra, VIEW_CONTAINER);
+			}
+			return;
+		}
 
 		const viewDescriptors = viewsRegistry.getViews(VIEW_CONTAINER);
 
@@ -322,8 +332,8 @@ const openFolder = localize('openFolder', 'Open Folder');
 const addAFolder = localize('addAFolder', 'add a folder');
 const openRecent = localize('openRecent', 'Open Recent');
 
-const addRootFolderButton = `[${openFolder}](command:${AddRootFolderAction.ID})`;
-const addAFolderButton = `[${addAFolder}](command:${AddRootFolderAction.ID})`;
+const addRootFolderButton = `[${openFolder}](command:${OpenFolderAction.ID})`;
+const addAFolderButton = `[${addAFolder}](command:${OpenFolderAction.ID})`;
 const openFolderButton = `[${openFolder}](command:${OpenFolderAction.ID})`;
 const openFolderViaWorkspaceButton = `[${openFolder}](command:${OpenFolderViaWorkspaceAction.ID})`;
 const openRecentButton = `[${openRecent}](command:${OpenRecentAction.ID})`;

@@ -1430,7 +1430,13 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 	}
 
 	private async openViewContainer(location: ViewContainerLocation, id: string, focus?: boolean): Promise<void> {
-		let viewContainer = await this.paneCompositeService.openPaneComposite(id, location, focus);
+		// SideX: 存储的容器可能已被删除（例如旧版本自定义面板），此时直接走默认容器回退，
+		// 否则 openPaneComposite 会一直等待扩展注册，导致工作台恢复流程卡死。
+		const knownId = id && this.viewDescriptorService.getViewContainerById(id) ? id : undefined;
+
+		let viewContainer = knownId
+			? await this.paneCompositeService.openPaneComposite(knownId, location, focus)
+			: undefined;
 		if (viewContainer) {
 			return;
 		}
@@ -2664,6 +2670,8 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 				return this.setAuxiliaryBarHidden(hidden);
 			case Parts.PANEL_PART:
 				return this.setPanelHidden(hidden);
+			case Parts.STATUSBAR_PART:
+				return this.setStatusBarHidden(hidden);
 		}
 	}
 

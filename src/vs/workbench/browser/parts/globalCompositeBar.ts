@@ -723,11 +723,7 @@ export class GlobalActivityActionViewItem extends AbstractGlobalActivityActionVi
 		const action = instantiationService.createInstance(CompositeBarAction, {
 			id: GLOBAL_ACTIVITY_ID,
 			name: localize('manage', 'Manage'),
-			classNames: ThemeIcon.asClassNameArray(
-				userDataProfileService.currentProfile.icon
-					? ThemeIcon.fromId(userDataProfileService.currentProfile.icon)
-					: DEFAULT_ICON
-			)
+			classNames: ThemeIcon.asClassNameArray(DEFAULT_ICON)
 		});
 		super(
 			MenuId.GlobalActivity,
@@ -800,12 +796,6 @@ export class GlobalActivityActionViewItem extends AbstractGlobalActivityActionVi
 	protected override updateActivity(): void {
 		super.updateActivity();
 		this.updateProfileBadge();
-	}
-
-	protected override computeTitle(): string {
-		return this.userDataProfileService.currentProfile.isDefault
-			? super.computeTitle()
-			: localize('manage profile', 'Manage {0} (Profile)', this.userDataProfileService.currentProfile.name);
 	}
 }
 

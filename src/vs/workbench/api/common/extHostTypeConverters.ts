@@ -48,7 +48,6 @@ import { IViewBadge } from '../../common/views.js';
 import * as notebooks from '../../contrib/notebook/common/notebookCommon.js';
 import { CellEditType } from '../../contrib/notebook/common/notebookCommon.js';
 import { ICellRange } from '../../contrib/notebook/common/notebookRange.js';
-import { InputValidationType } from '../../contrib/scm/common/scm.js';
 import * as search from '../../contrib/search/common/search.js';
 import { EditorGroupColumn } from '../../services/editor/common/editorGroupColumn.js';
 import { ACTIVE_GROUP, SIDE_GROUP } from '../../services/editor/common/editorService.js';
@@ -868,67 +867,6 @@ export namespace DocumentSymbol {
 	}
 }
 
-export namespace CallHierarchyItem {
-	export function to(item: extHostProtocol.ICallHierarchyItemDto): types.CallHierarchyItem {
-		const result = new types.CallHierarchyItem(
-			SymbolKind.to(item.kind),
-			item.name,
-			item.detail || '',
-			URI.revive(item.uri),
-			Range.to(item.range),
-			Range.to(item.selectionRange)
-		);
-
-		result._sessionId = item._sessionId;
-		result._itemId = item._itemId;
-
-		return result;
-	}
-
-	export function from(
-		item: vscode.CallHierarchyItem,
-		sessionId?: string,
-		itemId?: string
-	): extHostProtocol.ICallHierarchyItemDto {
-		sessionId = sessionId ?? (<types.CallHierarchyItem>item)._sessionId;
-		itemId = itemId ?? (<types.CallHierarchyItem>item)._itemId;
-
-		if (sessionId === undefined || itemId === undefined) {
-			throw new Error('invalid item');
-		}
-
-		return {
-			_sessionId: sessionId,
-			_itemId: itemId,
-			name: item.name,
-			detail: item.detail,
-			kind: SymbolKind.from(item.kind),
-			uri: item.uri,
-			range: Range.from(item.range),
-			selectionRange: Range.from(item.selectionRange),
-			tags: item.tags?.map(SymbolTag.from)
-		};
-	}
-}
-
-export namespace CallHierarchyIncomingCall {
-	export function to(item: extHostProtocol.IIncomingCallDto): types.CallHierarchyIncomingCall {
-		return new types.CallHierarchyIncomingCall(
-			CallHierarchyItem.to(item.from),
-			item.fromRanges.map(r => Range.to(r))
-		);
-	}
-}
-
-export namespace CallHierarchyOutgoingCall {
-	export function to(item: extHostProtocol.IOutgoingCallDto): types.CallHierarchyOutgoingCall {
-		return new types.CallHierarchyOutgoingCall(
-			CallHierarchyItem.to(item.to),
-			item.fromRanges.map(r => Range.to(r))
-		);
-	}
-}
-
 export namespace location {
 	export function from(value: vscode.Location): languages.Location {
 		return {
@@ -1501,8 +1439,6 @@ export namespace ProgressLocation {
 		}
 
 		switch (loc) {
-			case types.ProgressLocation.SourceControl:
-				return MainProgressLocation.Scm;
 			case types.ProgressLocation.Window:
 				return MainProgressLocation.Window;
 			case types.ProgressLocation.Notification:
@@ -1934,49 +1870,6 @@ export namespace CodeActionTriggerKind {
 	}
 }
 
-export namespace TypeHierarchyItem {
-	export function to(item: extHostProtocol.ITypeHierarchyItemDto): types.TypeHierarchyItem {
-		const result = new types.TypeHierarchyItem(
-			SymbolKind.to(item.kind),
-			item.name,
-			item.detail || '',
-			URI.revive(item.uri),
-			Range.to(item.range),
-			Range.to(item.selectionRange)
-		);
-
-		result._sessionId = item._sessionId;
-		result._itemId = item._itemId;
-
-		return result;
-	}
-
-	export function from(
-		item: vscode.TypeHierarchyItem,
-		sessionId?: string,
-		itemId?: string
-	): extHostProtocol.ITypeHierarchyItemDto {
-		sessionId = sessionId ?? (<types.TypeHierarchyItem>item)._sessionId;
-		itemId = itemId ?? (<types.TypeHierarchyItem>item)._itemId;
-
-		if (sessionId === undefined || itemId === undefined) {
-			throw new Error('invalid item');
-		}
-
-		return {
-			_sessionId: sessionId,
-			_itemId: itemId,
-			kind: SymbolKind.from(item.kind),
-			name: item.name,
-			detail: item.detail ?? '',
-			uri: item.uri,
-			range: Range.from(item.range),
-			selectionRange: Range.from(item.selectionRange),
-			tags: item.tags?.map(SymbolTag.from)
-		};
-	}
-}
-
 export namespace ViewBadge {
 	export function from(badge: vscode.ViewBadge | undefined): IViewBadge | undefined {
 		if (!badge) {
@@ -2312,17 +2205,3 @@ export namespace IconPath {
 	}
 }
 
-export namespace SourceControlInputBoxValidationType {
-	export function from(type: number): InputValidationType {
-		switch (type) {
-			case types.SourceControlInputBoxValidationType.Error:
-				return InputValidationType.Error;
-			case types.SourceControlInputBoxValidationType.Warning:
-				return InputValidationType.Warning;
-			case types.SourceControlInputBoxValidationType.Information:
-				return InputValidationType.Information;
-			default:
-				throw new Error('Unknown SourceControlInputBoxValidationType');
-		}
-	}
-}

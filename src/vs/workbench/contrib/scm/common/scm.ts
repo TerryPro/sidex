@@ -8,20 +8,13 @@ import { createDecorator } from '../../../../platform/instantiation/common/insta
 import { Event } from '../../../../base/common/event.js';
 import { IDisposable } from '../../../../base/common/lifecycle.js';
 import { Command } from '../../../../editor/common/languages.js';
-import { IAction } from '../../../../base/common/actions.js';
-import { IMenu } from '../../../../platform/actions/common/actions.js';
 import { ThemeIcon } from '../../../../base/common/themables.js';
 import { IMarkdownString } from '../../../../base/common/htmlContent.js';
 import { ResourceTree } from '../../../../base/common/resourceTree.js';
 import { ISCMHistoryProvider } from './history.js';
 import { ITextModel } from '../../../../editor/common/model.js';
 import { IObservable } from '../../../../base/common/observable.js';
-import { ISCMArtifact, ISCMArtifactGroup, ISCMArtifactProvider } from './artifact.js';
-
-export const VIEWLET_ID = 'workbench.view.scm';
-export const VIEW_PANE_ID = 'workbench.scm';
-export const REPOSITORIES_VIEW_PANE_ID = 'workbench.scm.repositories';
-export const HISTORY_VIEW_PANE_ID = 'workbench.scm.history';
+import { ISCMArtifactProvider } from './artifact.js';
 
 export const enum ViewMode {
 	List = 'list',
@@ -187,79 +180,4 @@ export interface ISCMService {
 
 	getRepository(id: string): ISCMRepository | undefined;
 	getRepository(resource: URI): ISCMRepository | undefined;
-}
-
-export interface ISCMTitleMenu {
-	readonly actions: IAction[];
-	readonly secondaryActions: IAction[];
-	readonly onDidChangeTitle: Event<void>;
-	readonly menu: IMenu;
-}
-
-export interface ISCMRepositoryMenus {
-	readonly titleMenu: ISCMTitleMenu;
-	getRepositoryMenu(repository: ISCMRepository): IMenu;
-	getRepositoryContextMenu(repository: ISCMRepository): IMenu;
-	getResourceGroupMenu(group: ISCMResourceGroup): IMenu;
-	getResourceMenu(resource: ISCMResource): IMenu;
-	getResourceFolderMenu(group: ISCMResourceGroup): IMenu;
-	getArtifactGroupMenu(artifactGroup: ISCMArtifactGroup): IMenu;
-	getArtifactMenu(artifactGroup: ISCMArtifactGroup, artifact: ISCMArtifact): IMenu;
-}
-
-export interface ISCMMenus {
-	getRepositoryMenus(provider: ISCMProvider): ISCMRepositoryMenus;
-}
-
-export const enum ISCMRepositorySortKey {
-	DiscoveryTime = 'discoveryTime',
-	Name = 'name',
-	Path = 'path'
-}
-
-export const enum ISCMRepositorySelectionMode {
-	Single = 'single',
-	Multiple = 'multiple'
-}
-
-export const ISCMViewService = createDecorator<ISCMViewService>('scmView');
-
-export interface ISCMViewVisibleRepositoryChangeEvent {
-	readonly added: Iterable<ISCMRepository>;
-	readonly removed: Iterable<ISCMRepository>;
-}
-
-export interface ISCMViewService {
-	readonly _serviceBrand: undefined;
-
-	readonly menus: ISCMMenus;
-	readonly selectionModeConfig: IObservable<ISCMRepositorySelectionMode>;
-	readonly explorerEnabledConfig: IObservable<boolean>;
-	readonly graphShowIncomingChangesConfig: IObservable<boolean>;
-	readonly graphShowOutgoingChangesConfig: IObservable<boolean>;
-
-	repositories: ISCMRepository[];
-	readonly onDidChangeRepositories: Event<ISCMViewVisibleRepositoryChangeEvent>;
-	readonly didFinishLoadingRepositories: IObservable<boolean>;
-
-	visibleRepositories: readonly ISCMRepository[];
-	readonly onDidChangeVisibleRepositories: Event<ISCMViewVisibleRepositoryChangeEvent>;
-
-	isVisible(repository: ISCMRepository): boolean;
-	toggleVisibility(repository: ISCMRepository, visible?: boolean): void;
-
-	toggleSortKey(sortKey: ISCMRepositorySortKey): void;
-	toggleSelectionMode(selectionMode: ISCMRepositorySelectionMode): void;
-
-	readonly focusedRepository: ISCMRepository | undefined;
-	readonly onDidFocusRepository: Event<ISCMRepository | undefined>;
-	focus(repository: ISCMRepository): void;
-
-	/**
-	 * The active repository is the repository selected in the Source Control Repositories view
-	 * or the repository associated with the active editor. The active repository is shown in the
-	 * Source Control Repository status bar item.
-	 */
-	readonly activeRepository: IObservable<{ repository: ISCMRepository; pinned: boolean } | undefined>;
-	pinActiveRepository(repository: ISCMRepository | undefined): void;
 }

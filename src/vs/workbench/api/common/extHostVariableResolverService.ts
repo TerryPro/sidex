@@ -14,8 +14,6 @@ import { IExtHostEditorTabs } from './extHostEditorTabs.js';
 import { IExtHostExtensionService } from './extHostExtensionService.js';
 import {
 	CustomEditorTabInput,
-	NotebookDiffEditorTabInput,
-	NotebookEditorTabInput,
 	TextDiffTabInput,
 	TextTabInput
 } from './extHostTypes.js';
@@ -57,13 +55,9 @@ class ExtHostVariableResolverService extends AbstractVariableResolverService {
 				const activeTab = editorTabs.tabGroups.all.find(group => group.isActive)?.activeTab;
 				if (activeTab !== undefined) {
 					// Resolve a resource from the tab
-					if (activeTab.input instanceof TextDiffTabInput || activeTab.input instanceof NotebookDiffEditorTabInput) {
+					if (activeTab.input instanceof TextDiffTabInput) {
 						return activeTab.input.modified;
-					} else if (
-						activeTab.input instanceof TextTabInput ||
-						activeTab.input instanceof NotebookEditorTabInput ||
-						activeTab.input instanceof CustomEditorTabInput
-					) {
+					} else if (activeTab.input instanceof TextTabInput || activeTab.input instanceof CustomEditorTabInput) {
 						return activeTab.input.uri;
 					}
 				}

@@ -5,10 +5,10 @@
 //! expanded on demand via [`FileTree::expand`].
 //!
 //! Extended features:
-//! - File decorations (badges, colors, strikethrough for git status)
+//! - File decorations (badges and colors)
 //! - Drag-and-drop move, multi-select, inline rename, new file/folder
 //! - Cut/copy/paste, file nesting, sort modes, compact folders
-//! - Open editors section, timeline integration
+//! - Open editors section
 
 use std::collections::HashMap;
 use std::ffi::OsStr;

@@ -22,6 +22,7 @@ import { IKeybindingService } from '../../../../platform/keybinding/common/keybi
 import { IOpenerService } from '../../../../platform/opener/common/opener.js';
 import { IThemeService } from '../../../../platform/theme/common/themeService.js';
 import { ViewPane, IViewPaneOptions } from '../../../browser/parts/views/viewPane.js';
+import { ViewPaneContainer } from '../../../browser/parts/views/viewPaneContainer.js';
 import {
 	Extensions as ViewExtensions,
 	IViewContainersRegistry,
@@ -337,19 +338,36 @@ class OutlineView extends ViewPane {
 const viewsRegistry = Registry.as<IViewsRegistry>(ViewExtensions.ViewsRegistry);
 const containersRegistry = Registry.as<IViewContainersRegistry>(ViewExtensions.ViewContainersRegistry);
 
-const explorerContainer = containersRegistry.get('workbench.view.explorer')
-	?? containersRegistry.getViewContainers(ViewContainerLocation.Sidebar)[0];
+const OUTLINE_CONTAINER_ID = 'sidex.outline';
+const isSidex = !!(globalThis as any).__SIDEX_TAURI__;
 
-if (explorerContainer) {
+const container = isSidex
+	? (containersRegistry.get(OUTLINE_CONTAINER_ID) ?? containersRegistry.registerViewContainer(
+		{
+			id: OUTLINE_CONTAINER_ID,
+			title: localize2('outline.container', '大纲'),
+			ctorDescriptor: new SyncDescriptor(ViewPaneContainer, [OUTLINE_CONTAINER_ID, { mergeViewWithContainerWhenSingleView: true }]),
+			storageId: 'sidex.outline.state',
+			icon: Codicon.symbolClass,
+			hideIfEmpty: false,
+			order: 2
+		},
+		ViewContainerLocation.Sidebar,
+		{ isDefault: false }
+	))
+	: (containersRegistry.get('workbench.view.explorer')
+		?? containersRegistry.getViewContainers(ViewContainerLocation.Sidebar)[0]);
+
+if (container) {
 	viewsRegistry.registerViews([{
 		id: VIEW_ID,
 		name: localize2('outline.title', '大纲'),
 		containerIcon: Codicon.symbolClass,
 		ctorDescriptor: new SyncDescriptor(OutlineView),
-		canToggleVisibility: true,
+		canToggleVisibility: !isSidex,
 		canMoveView: true,
-		// Like VS Code, the outline sits below the file tree and starts collapsed.
-		order: 99,
-		collapsed: true
-	}], explorerContainer);
+		// SideX 下大纲是独立面板；其余情况仍作为资源管理器的折叠分区。
+		order: isSidex ? 0 : 99,
+		collapsed: !isSidex
+	}], container);
 }

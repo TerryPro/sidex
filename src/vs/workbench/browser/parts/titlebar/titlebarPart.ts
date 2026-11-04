@@ -114,6 +114,8 @@ import { safeIntl } from '../../../../base/common/date.js';
 import { IsCompactTitleBarContext, TitleBarVisibleContext } from '../../../common/contextkeys.js';
 import { ServiceCollection } from '../../../../platform/instantiation/common/serviceCollection.js';
 import { ILabelService } from '../../../../platform/label/common/label.js';
+import { DirectoryTabsControl } from '../../../contrib/sidexExplorer/browser/directoryTabsControl.js';
+import { DirectoryNavBarControl } from '../../../contrib/sidexExplorer/browser/directoryNavBarControl.js';
 
 export interface ITitleVariable {
 	readonly name: string;
@@ -313,7 +315,7 @@ export class BrowserTitlebarPart extends Part implements ITitlebarPart {
 		const wcoEnabled = isWeb && isWCOEnabled();
 		let value: number;
 		if ((globalThis as any).__SIDEX_TAURI__) {
-			value = 32;
+			value = 88;
 		} else {
 			value = this.isCommandCenterVisible || wcoEnabled ? DEFAULT_CUSTOM_TITLEBAR_HEIGHT : 28;
 		}
@@ -364,6 +366,8 @@ export class BrowserTitlebarPart extends Part implements ITitlebarPart {
 
 	private globalToolbarMenu: IMenu | undefined;
 	private layoutToolbarMenu: IMenu | undefined;
+	private sidexTabsControl: DirectoryTabsControl | undefined;
+	private sidexNavControl: DirectoryNavBarControl | undefined;
 
 	private readonly globalToolbarMenuDisposables = this._register(new DisposableStore());
 	private readonly editorToolbarMenuDisposables = this._register(new DisposableStore());
@@ -558,6 +562,7 @@ export class BrowserTitlebarPart extends Part implements ITitlebarPart {
 
 	protected override createContentArea(parent: HTMLElement): HTMLElement {
 		this.element = parent;
+		const isSidex = !!(globalThis as any).__SIDEX_TAURI__;
 		this.rootContainer = append(parent, $('.titlebar-container'));
 
 		this.leftContent = append(this.rootContainer, $('.titlebar-left'));
@@ -601,33 +606,38 @@ export class BrowserTitlebarPart extends Part implements ITitlebarPart {
 		}
 
 		// Menubar: install a custom menu bar depending on configuration
-		if (
+		const shouldInstallMenubar = isSidex || (
 			!this.isAuxiliary &&
 			!hasNativeMenu(this.configurationService, this.titleBarStyle) &&
 			(!isMacintosh || isWeb) &&
 			this.currentMenubarVisibility !== 'compact' &&
 			this.currentMenubarVisibility !== 'hidden'
-		) {
+		);
+		if (shouldInstallMenubar) {
 			this.installMenubar();
 		}
 
 		// --- Sidex Titlebar Customizations ---
-		try {
-			this._register(this.editorService.onDidActiveEditorChange(() => this.updateBreadcrumbs()));
+		if (isSidex) {
+			this.createSidexExplorerChrome();
+		} else {
+			try {
+				this._register(this.editorService.onDidActiveEditorChange(() => this.updateBreadcrumbs()));
 
-			const centerBar = append(this.centerContent, $('div.sidex-center-bar'));
-			const centerSearchIcon = append(centerBar, $('span.codicon.codicon-search.sidex-center-icon'));
-			centerSearchIcon.setAttribute('aria-hidden', 'true');
-			this.breadcrumbsElement = append(centerBar, $('div.sidex-breadcrumbs'));
-			const centerPlaceholder = append(centerBar, $('span.sidex-center-placeholder'));
-			centerPlaceholder.textContent = 'Search...';
-			this.updateBreadcrumbs();
+				const centerBar = append(this.centerContent, $('div.sidex-center-bar'));
+				const centerSearchIcon = append(centerBar, $('span.codicon.codicon-search.sidex-center-icon'));
+				centerSearchIcon.setAttribute('aria-hidden', 'true');
+				this.breadcrumbsElement = append(centerBar, $('div.sidex-breadcrumbs'));
+				const centerPlaceholder = append(centerBar, $('span.sidex-center-placeholder'));
+				centerPlaceholder.textContent = 'Search...';
+				this.updateBreadcrumbs();
 
-			this._register(addDisposableListener(centerBar, EventType.CLICK, () => {
-				this.commandService.executeCommand('workbench.action.quickOpen');
-			}));
-		} catch {
-			// Sidex customizations failed — titlebar still works with default VSCode behavior
+				this._register(addDisposableListener(centerBar, EventType.CLICK, () => {
+					this.commandService.executeCommand('workbench.action.quickOpen');
+				}));
+			} catch {
+				// Sidex customizations failed — titlebar still works with default VSCode behavior
+			}
 		}
 
 		// Title (hidden, kept for compatibility with window title updates)
@@ -658,7 +668,7 @@ export class BrowserTitlebarPart extends Part implements ITitlebarPart {
 		}
 
 		// Create Toolbar Actions — includes the layout controls (side bar, panel, secondary side bar)
-		if (hasCustomTitlebar(this.configurationService, this.titleBarStyle)) {
+		if (!isSidex && hasCustomTitlebar(this.configurationService, this.titleBarStyle)) {
 			this.actionToolBarElement = append(this.rightContent, $('div.action-toolbar-container'));
 			this.createActionToolBar();
 			this.createActionToolBarMenus();
@@ -778,6 +788,19 @@ export class BrowserTitlebarPart extends Part implements ITitlebarPart {
 		this.updateStyles();
 
 		return this.element;
+	}
+
+	/**
+	 * SideX：把标题栏改造成资源管理器样式——第一行目录标签，第二行地址导航。
+	 */
+	private createSidexExplorerChrome(): void {
+		this.element?.classList.add('sidex-explorer-titlebar');
+
+		const tabsHost = append(this.leftContent, $('.sidex-directory-tabs-host'));
+		this.sidexTabsControl = this._register(this.instantiationService.createInstance(DirectoryTabsControl, tabsHost));
+
+		const navHost = append(this.element!, $('.sidex-explorer-navbar-host'));
+		this.sidexNavControl = this._register(this.instantiationService.createInstance(DirectoryNavBarControl, navHost));
 	}
 
 	private updateBreadcrumbs(): void {

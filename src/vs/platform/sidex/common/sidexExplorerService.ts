@@ -1,0 +1,35 @@
+/*---------------------------------------------------------------------------------------------
+ *  SideX — 资源管理器桥接服务：驱动器与目录读取。
+ *--------------------------------------------------------------------------------------------*/
+
+import { createDecorator } from '../../instantiation/common/instantiation.js';
+
+export interface SideXDriveInfo {
+	/** 驱动器根路径，例如 `C:\\` */
+	readonly path: string;
+	/** 盘符，例如 `C:` */
+	readonly letter: string;
+	/** 卷标，可能为空 */
+	readonly label: string;
+	/** fixed / removable / network / cdrom / ramdisk / unknown */
+	readonly kind: string;
+	readonly totalBytes: number;
+	readonly freeBytes: number;
+}
+
+export interface SideXExplorerEntry {
+	readonly name: string;
+	readonly path: string;
+	readonly isDir: boolean;
+	readonly size: number;
+	readonly modified: number;
+}
+
+export const ISideXExplorerService = createDecorator<ISideXExplorerService>('sidexExplorerService');
+
+export interface ISideXExplorerService {
+	readonly _serviceBrand: undefined;
+
+	listDrives(): Promise<SideXDriveInfo[]>;
+	readDirectory(path: string): Promise<SideXExplorerEntry[]>;
+}

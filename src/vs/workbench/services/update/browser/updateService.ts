@@ -63,30 +63,9 @@ export class SidexUpdateService implements IUpdateService {
 		this._onStateChange.fire(next);
 	}
 
-	private async _bootstrap(): Promise<void> {
-		const tauri = await this._tauriReady;
-		if (!tauri) {
-			this.setState(State.Idle(UpdateType.Archive));
-			return;
-		}
-
-		try {
-			await tauri.event.listen(STATE_EVENT, ({ payload }) => {
-				if (isState(payload)) {
-					this._state = payload;
-					this._onStateChange.fire(payload);
-				}
-			});
-			const current = await tauri.core.invoke<unknown>('update_state');
-			if (isState(current)) {
-				this.setState(current);
-			} else {
-				this.setState(State.Idle(UpdateType.Archive));
-			}
-		} catch (err) {
-			console.error('[sidex-update] bootstrap failed:', err);
-			this.setState(State.Idle(UpdateType.Archive));
-		}
+	private _bootstrap(): void {
+		// SideX 不提供自动更新：直接进入空闲状态，不轮询 Rust 更新命令。
+		this.setState(State.Idle(UpdateType.Archive));
 	}
 
 	async isLatestVersion(): Promise<boolean | undefined> {

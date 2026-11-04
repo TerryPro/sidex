@@ -349,47 +349,6 @@ export class SelectionRange {
 	}
 }
 
-export class CallHierarchyItem {
-	_sessionId?: string;
-	_itemId?: string;
-
-	kind: SymbolKind;
-	tags?: SymbolTag[];
-	name: string;
-	detail?: string;
-	uri: URI;
-	range: Range;
-	selectionRange: Range;
-
-	constructor(kind: SymbolKind, name: string, detail: string, uri: URI, range: Range, selectionRange: Range) {
-		this.kind = kind;
-		this.name = name;
-		this.detail = detail;
-		this.uri = uri;
-		this.range = range;
-		this.selectionRange = selectionRange;
-	}
-}
-
-export class CallHierarchyIncomingCall {
-	from: vscode.CallHierarchyItem;
-	fromRanges: vscode.Range[];
-
-	constructor(item: vscode.CallHierarchyItem, fromRanges: vscode.Range[]) {
-		this.fromRanges = fromRanges;
-		this.from = item;
-	}
-}
-export class CallHierarchyOutgoingCall {
-	to: vscode.CallHierarchyItem;
-	fromRanges: vscode.Range[];
-
-	constructor(item: vscode.CallHierarchyItem, fromRanges: vscode.Range[]) {
-		this.fromRanges = fromRanges;
-		this.to = item;
-	}
-}
-
 export enum LanguageStatusSeverity {
 	Information = 0,
 	Warning = 1,
@@ -833,12 +792,6 @@ export enum ColorFormat {
 	HSL = 2
 }
 
-export enum SourceControlInputBoxValidationType {
-	Error = 0,
-	Warning = 1,
-	Information = 2
-}
-
 export enum TerminalExitReason {
 	Unknown = 0,
 	Shutdown = 1,
@@ -1001,7 +954,6 @@ export interface TerminalCompletionResourceOptions {
 }
 
 export enum ProgressLocation {
-	SourceControl = 1,
 	Window = 10,
 	Notification = 15
 }
@@ -1599,45 +1551,6 @@ export enum FoldingRangeKind {
 
 //#endregion
 
-//#region Comment
-export enum CommentThreadCollapsibleState {
-	/**
-	 * Determines an item is collapsed
-	 */
-	Collapsed = 0,
-	/**
-	 * Determines an item is expanded
-	 */
-	Expanded = 1
-}
-
-export enum CommentMode {
-	Editing = 0,
-	Preview = 1
-}
-
-export enum CommentState {
-	Published = 0,
-	Draft = 1
-}
-
-export enum CommentThreadState {
-	Unresolved = 0,
-	Resolved = 1
-}
-
-export enum CommentThreadApplicability {
-	Current = 0,
-	Outdated = 1
-}
-
-export enum CommentThreadFocus {
-	Reply = 1,
-	Comment = 2
-}
-
-//#endregion
-
 //#region Semantic Coloring
 
 export class SemanticTokensLegend {
@@ -2026,18 +1939,6 @@ export enum NotebookVariablesRequestKind {
 
 //#endregion
 
-//#region Timeline
-
-@es5ClassCompat
-export class TimelineItem implements vscode.TimelineItem {
-	constructor(
-		public label: string,
-		public timestamp: number
-	) {}
-}
-
-//#endregion Timeline
-
 //#region ExtensionContext
 
 export enum ExtensionMode {
@@ -2124,28 +2025,6 @@ export enum PortAutoForwardAction {
 	OpenBrowserOnce = 6
 }
 
-export class TypeHierarchyItem {
-	_sessionId?: string;
-	_itemId?: string;
-
-	kind: SymbolKind;
-	tags?: SymbolTag[];
-	name: string;
-	detail?: string;
-	uri: URI;
-	range: Range;
-	selectionRange: Range;
-
-	constructor(kind: SymbolKind, name: string, detail: string, uri: URI, range: Range, selectionRange: Range) {
-		this.kind = kind;
-		this.name = name;
-		this.detail = detail;
-		this.uri = uri;
-		this.range = range;
-		this.selectionRange = selectionRange;
-	}
-}
-
 //#region Tab Inputs
 
 export class TextTabInput {
@@ -2156,15 +2035,6 @@ export class TextDiffTabInput {
 	constructor(
 		readonly original: URI,
 		readonly modified: URI
-	) {}
-}
-
-export class TextMergeTabInput {
-	constructor(
-		readonly base: URI,
-		readonly input1: URI,
-		readonly input2: URI,
-		readonly result: URI
 	) {}
 }
 
@@ -2179,33 +2049,8 @@ export class WebviewEditorTabInput {
 	constructor(readonly viewType: string) {}
 }
 
-export class NotebookEditorTabInput {
-	constructor(
-		readonly uri: URI,
-		readonly notebookType: string
-	) {}
-}
-
-export class NotebookDiffEditorTabInput {
-	constructor(
-		readonly original: URI,
-		readonly modified: URI,
-		readonly notebookType: string
-	) {}
-}
-
 export class TerminalEditorTabInput {
 	constructor() {}
-}
-export class InteractiveWindowInput {
-	constructor(
-		readonly uri: URI,
-		readonly inputBoxUri: URI
-	) {}
-}
-
-export class TextMultiDiffTabInput {
-	constructor(readonly textDiffs: TextDiffTabInput[]) {}
 }
 //#endregion
 

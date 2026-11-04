@@ -909,8 +909,6 @@ pub mod keys {
     pub const FILES_EXPLORER_FOCUS: &str = "filesExplorerFocus";
     pub const SEARCH_VIEWLET_VISIBLE: &str = "searchViewletVisible";
     pub const SEARCH_VIEW_FOCUS: &str = "searchViewletFocus";
-    pub const SCM_VIEWLET_VISIBLE: &str = "scmViewletVisible";
-    pub const SCM_VIEW_FOCUS: &str = "view.scm.visible";
     pub const DEBUG_VIEWLET_VISIBLE: &str = "debugViewletVisible";
     pub const EXTENSIONS_VIEWLET_VISIBLE: &str = "extensionsViewletVisible";
 
@@ -981,10 +979,6 @@ pub mod keys {
     pub const IS_WINDOWS: &str = "isWindows";
     pub const IS_WEB: &str = "isWeb";
 
-    // ── SCM ─────────────────────────────────────────────────────────────
-    pub const SCM_PROVIDER_COUNT: &str = "scmProviderCount";
-    pub const SCM_RESOURCE_GROUP_COUNT: &str = "scmResourceGroupCount";
-
     // ── Testing ─────────────────────────────────────────────────────────
     pub const TESTING_IS_RUNNING: &str = "testing.isRunning";
     pub const TESTING_CAN_RUN: &str = "testing.canRun";
@@ -997,11 +991,6 @@ pub mod keys {
 
     // ── Markdown ────────────────────────────────────────────────────────
     pub const MARKDOWN_PREVIEW_FOCUS: &str = "markdownPreviewFocus";
-
-    // ── Git ─────────────────────────────────────────────────────────────
-    pub const GIT_OPEN_REPOSITORY_COUNT: &str = "gitOpenRepositoryCount";
-    pub const GIT_HAS_REMOTES: &str = "gitHasRemotes";
-    pub const GIT_STATE: &str = "gitState";
 
     // ── Settings ────────────────────────────────────────────────────────
     pub const IN_SETTINGS_EDITOR: &str = "inSettingsEditor";
@@ -1234,8 +1223,8 @@ mod tests {
     #[test]
     fn dotted_identifiers() {
         let mut ctx = ContextKeys::new();
-        ctx.set_bool("view.scm.visible", true);
-        assert!(evaluate("view.scm.visible", &ctx));
+        ctx.set_bool("view.explorer.visible", true);
+        assert!(evaluate("view.explorer.visible", &ctx));
     }
 
     #[test]
@@ -1396,8 +1385,6 @@ mod tests {
             keys::FILES_EXPLORER_FOCUS,
             keys::SEARCH_VIEWLET_VISIBLE,
             keys::SEARCH_VIEW_FOCUS,
-            keys::SCM_VIEWLET_VISIBLE,
-            keys::SCM_VIEW_FOCUS,
             keys::DEBUG_VIEWLET_VISIBLE,
             keys::EXTENSIONS_VIEWLET_VISIBLE,
             keys::IN_DEBUG_MODE,
@@ -1445,8 +1432,6 @@ mod tests {
             keys::IS_MAC,
             keys::IS_WINDOWS,
             keys::IS_WEB,
-            keys::SCM_PROVIDER_COUNT,
-            keys::SCM_RESOURCE_GROUP_COUNT,
             keys::TESTING_IS_RUNNING,
             keys::TESTING_CAN_RUN,
             keys::TESTING_CAN_DEBUG,
@@ -1454,9 +1439,6 @@ mod tests {
             keys::NOTEBOOK_EDITOR_FOCUSED,
             keys::NOTEBOOK_KERNEL_COUNT,
             keys::MARKDOWN_PREVIEW_FOCUS,
-            keys::GIT_OPEN_REPOSITORY_COUNT,
-            keys::GIT_HAS_REMOTES,
-            keys::GIT_STATE,
             keys::IN_SETTINGS_EDITOR,
             keys::IN_SETTINGS_JSON_EDITOR,
             keys::IN_KEYBINDINGS_EDITOR,

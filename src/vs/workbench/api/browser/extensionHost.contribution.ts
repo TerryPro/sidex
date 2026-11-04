@@ -49,7 +49,6 @@ import './mainThreadQuickOpen.js';
 import './mainThreadRemoteConnectionData.js';
 import './mainThreadSaveParticipant.js';
 import './mainThreadEditSessionIdentityParticipant.js';
-import './mainThreadSCM.js';
 import './mainThreadSearch.js';
 import './mainThreadStatusBar.js';
 import './mainThreadStorage.js';
@@ -65,17 +64,14 @@ import './mainThreadWindow.js';
 import './mainThreadPower.js';
 import './mainThreadWebviewManager.js';
 import './mainThreadWorkspace.js';
-import './mainThreadComments.js';
 import './mainThreadLabelService.js';
 import './mainThreadTunnelService.js';
 import './mainThreadAuthentication.js';
-import './mainThreadTimeline.js';
 import './mainThreadSecretState.js';
 // Share — removed: SideX uses sidex-extension-api
 // ProfileContentHandlers — removed: SideX uses sidex-extension-api
 import './mainThreadDataChannels.js';
 import './mainThreadMeteredConnection.js';
-import './mainThreadBrowsers.js';
 import '../../contrib/extensions/browser/tauriExtensionHost.contribution.js';
 
 export class ExtensionPoints implements IWorkbenchContribution {

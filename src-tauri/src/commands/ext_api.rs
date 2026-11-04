@@ -19,7 +19,6 @@ pub fn ext_api_get_namespaces() -> Vec<String> {
         "languages",
         "debug",
         "tasks",
-        "scm",
         "tests",
         "env",
     ]
