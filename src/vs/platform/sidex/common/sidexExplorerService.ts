@@ -25,6 +25,16 @@ export interface SideXExplorerEntry {
 	readonly modified: number;
 }
 
+export interface SideXFileStat {
+	readonly size: number;
+	readonly isDir: boolean;
+	readonly isFile: boolean;
+	readonly isSymlink: boolean;
+	readonly modified: number;
+	readonly created: number;
+	readonly readOnly: boolean;
+}
+
 export const ISideXExplorerService = createDecorator<ISideXExplorerService>('sidexExplorerService');
 
 export interface ISideXExplorerService {
@@ -32,4 +42,5 @@ export interface ISideXExplorerService {
 
 	listDrives(): Promise<SideXDriveInfo[]>;
 	readDirectory(path: string): Promise<SideXExplorerEntry[]>;
+	stat(path: string): Promise<SideXFileStat>;
 }

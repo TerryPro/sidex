@@ -1,10 +1,16 @@
 # SideX Architecture
 
-A technical reference for how SideX maps to VSCode's architecture.
+A technical reference for how SideX maps to VS Code's architecture.
 
-The VSCode source (MIT License) is the architectural reference. No proprietary code is used.
+SideX is a Windows file manager with a built-in editor. It keeps VS Code's
+workbench shell because that shell is what makes the editor feel familiar,
+but the feature surface is deliberately narrow: file browsing, editing,
+previewing and a terminal. No Git, no extension marketplace, no language
+servers.
 
-可视化版本：[SideX 架构：WASM 扩展与语言能力](.archify/architecture-sidex-wasm-20261026-130123/sidex-architecture.html)
+The VS Code source (MIT License) is the architectural reference. No proprietary code is used.
+
+可视化版本：[SideX 架构：WASM 扩展与语言能力](.archify/architecture-sidex-20261104-151740/sidex-architecture.html)
 
 ## Process Model
 
@@ -15,7 +21,7 @@ Electron Main Process        →       Tauri Rust Backend
   ├─ BrowserWindow           →       WebviewWindow
   ├─ ipcMain                 →       Tauri Commands + Events
   ├─ Menu/Dialog/Shell       →       Tauri Plugins
-  └─ UtilityProcess          →       Rust async tasks / sidecars
+  └─ UtilityProcess          →       Rust async tasks
 
 Renderer Process             →       Tauri Webview (frontend TS)
   ├─ Workbench               →       Workbench (same TS)
@@ -23,7 +29,7 @@ Renderer Process             →       Tauri Webview (frontend TS)
   └─ Extension Host API      →       Extension Host API (ported)
 
 Shared Process               →       Rust service layer
-Extension Host               →       WASM runtime in-process (Node sidecar optional, off by default)
+Extension Host               →       WASM runtime in-process
 ```
 
 ## VSCode Layering (Preserved)
@@ -71,7 +77,7 @@ Extension Host               →       WASM runtime in-process (Node sidecar opt
 | `os.*` | `sysinfo` (Rust) | Ported |
 | `@vscode/sqlite3` | `rusqlite` | Ported |
 | `@vscode/spdlog` | `tracing` + `tracing-subscriber` | Partial |
-| `autoUpdater` | `sidex-update` (native Rust) | Complete |
+| `autoUpdater` | — | Removed (no auto-update) |
 | `powerMonitor` | Rust system-info crates | Not started |
 | `contentTracing` | Rust tracing crate | Not started |
 | `native-keymap` | Rust keyboard crate | Not started |
@@ -122,7 +128,7 @@ Extension Host               →       WASM runtime in-process (Node sidecar opt
 | `browser/parts` (8 Parts) | Reuse with mods | Done |
 | `contrib/` (92 features) | Incremental port | Partial |
 | `services/` (90 services) | Incremental port | Partial |
-| `api/` (Extension host) | Port | In progress |
+| `api/` (Extension host) | WASM-only subset | Done |
 
 ### code/ (Application Entry)
 | Sublayer | Strategy | Status |
@@ -134,21 +140,24 @@ Extension Host               →       WASM runtime in-process (Node sidecar opt
 
 All Tauri commands are registered in `src-tauri/src/lib.rs`. The table below
 covers the modules most central to this doc's architecture story — the
-command surface has grown well past what fits here (WASM extensions, remote
-development, and more all live in `src-tauri/src/commands/` too). `lib.rs` is
+command surface has grown well past what fits here (WASM extensions, syntax
+analysis, and more all live in `src-tauri/src/commands/` too). `lib.rs` is
 the source of truth for the full, current list.
 
 | Module | Commands |
 |---|---|
-| **fs** | `read_file`, `read_file_bytes`, `write_file`, `write_file_bytes`, `read_dir`, `stat`, `mkdir`, `remove`, `rename`, `exists` |
+| **fs** | `read_file`, `read_file_bytes`, `write_file`, `write_file_bytes`, `read_dir`, `list_drives`, `stat`, `mkdir`, `remove`, `rename`, `exists` |
 | **terminal** | `terminal_spawn`, `terminal_write`, `terminal_resize`, `terminal_kill`, `terminal_get_pid`, `get_default_shell`, `check_shell_exists`, `get_available_shells` |
-| **search** | `search_files`, `search_text` |
+| **search** | `search_files`, `search_text`, `search_workspace`, `search_workspace_grouped`, `search_workspace_replace_preview`, `search_workspace_replace_apply` |
 | **window** | `create_window`, `close_window`, `set_window_title`, `get_monitors` |
 | **os** | `get_os_info`, `get_env`, `get_all_env`, `get_shell` |
-| **storage** | `storage_get`, `storage_set`, `storage_delete` |
-| **git** | `git_status`, `git_diff`, `git_log`, `git_log_graph`, `git_add`, `git_commit`, `git_checkout`, `git_branches`, `git_create_branch`, `git_delete_branch`, `git_push`, `git_pull`, `git_fetch`, `git_stash`, `git_reset`, `git_show`, `git_init`, `git_is_repo`, `git_clone`, `git_remote_list`, `git_run` |
+| **storage** | `storage_get`, `storage_set`, `storage_list`, `storage_delete` |
+| **syntax** | `syntax_get_document_symbols`, `syntax_get_folding_ranges` |
 | **extension_platform** | `extension_platform_bootstrap`, `extension_platform_status`, `extension_platform_restart`, `extension_platform_stop`, `extension_platform_init_data` |
 | **network** | `proxy_request`, `proxy_request_full` |
+
+There is no Git module. Source control was removed along with the rest of the
+VS Code feature surface that a file manager does not need.
 
 ## Extension Host
 
@@ -167,7 +176,7 @@ brace/Markdown ranges, and the outline from regex-based symbol extraction in
 `commands/syntax.rs` (`syntax_get_document_symbols`,
 `syntax_get_folding_ranges`).
 
-The Node sidecar in `commands/ext_host.rs` still exists, but it only starts when
-`SIDEX_NODE_EXTENSIONS=on`. With it off, the bundled `extensions/` tree holds
-declarative extensions only — grammars, themes and language configuration.
+The bundled `extensions/` tree holds declarative extensions only — grammars,
+themes and language configuration. There is no Node extension host and no
+marketplace client.
 

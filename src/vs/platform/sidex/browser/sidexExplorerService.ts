@@ -8,7 +8,8 @@ import { InstantiationType, registerSingleton } from '../../instantiation/common
 import {
 	ISideXExplorerService,
 	SideXDriveInfo,
-	SideXExplorerEntry
+	SideXExplorerEntry,
+	SideXFileStat
 } from '../common/sidexExplorerService.js';
 
 export class SideXExplorerService implements ISideXExplorerService {
@@ -47,6 +48,27 @@ export class SideXExplorerService implements ISideXExplorerService {
 			size: Number(entry.size ?? 0),
 			modified: Number(entry.modified ?? 0)
 		}));
+	}
+
+	async stat(path: string): Promise<SideXFileStat> {
+		const stat = await invoke<{
+			size: number;
+			is_dir: boolean;
+			is_file: boolean;
+			is_symlink: boolean;
+			modified: number;
+			created: number;
+			readonly: boolean;
+		}>('stat', { path });
+		return {
+			size: Number(stat.size ?? 0),
+			isDir: !!stat.is_dir,
+			isFile: !!stat.is_file,
+			isSymlink: !!stat.is_symlink,
+			modified: Number(stat.modified ?? 0),
+			created: Number(stat.created ?? 0),
+			readOnly: !!stat.readonly
+		};
 	}
 }
 

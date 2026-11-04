@@ -10,11 +10,17 @@
 import { $, addDisposableListener, append, Dimension, EventType, reset } from '../../../../base/browser/dom.js';
 import { DomScrollableElement } from '../../../../base/browser/ui/scrollbar/scrollableElement.js';
 import { CancellationToken } from '../../../../base/common/cancellation.js';
+import { Codicon } from '../../../../base/common/codicons.js';
 import { DisposableStore } from '../../../../base/common/lifecycle.js';
 import { ScrollbarVisibility } from '../../../../base/common/scrollable.js';
+import { ThemeIcon } from '../../../../base/common/themables.js';
 import { URI } from '../../../../base/common/uri.js';
+import { ILanguageService } from '../../../../editor/common/languages/language.js';
+import { getIconClasses } from '../../../../editor/common/services/getIconClasses.js';
+import { IModelService } from '../../../../editor/common/services/model.js';
 import { localize } from '../../../../nls.js';
 import { IEditorOptions } from '../../../../platform/editor/common/editor.js';
+import { FileKind } from '../../../../platform/files/common/files.js';
 import { ITelemetryService } from '../../../../platform/telemetry/common/telemetry.js';
 import { IThemeService } from '../../../../platform/theme/common/themeService.js';
 import { IStorageService } from '../../../../platform/storage/common/storage.js';
@@ -25,7 +31,7 @@ import { IEditorGroup } from '../../../services/editor/common/editorGroupsServic
 import { IEditorService } from '../../../services/editor/common/editorService.js';
 import { IDirectoryService } from './directoryService.js';
 import { DirectoryViewEditorInput } from './directoryViewEditorInput.js';
-import { driveIconSvg, fileIconSvg, folderIconSvg } from './explorerIcons.js';
+import { driveIconSvg } from './explorerIcons.js';
 
 /** 一个目录标签对应的独立视图，切换标签时保留内容与滚动位置。 */
 interface DirectoryTabView {
@@ -56,12 +62,16 @@ export class DirectoryViewEditor extends EditorPane {
 		@IStorageService storageService: IStorageService,
 		@IDirectoryService private readonly directoryService: IDirectoryService,
 		@ISideXExplorerService private readonly explorerService: ISideXExplorerService,
-		@IEditorService private readonly editorService: IEditorService
+		@IEditorService private readonly editorService: IEditorService,
+		@IModelService private readonly modelService: IModelService,
+		@ILanguageService private readonly languageService: ILanguageService
 	) {
 		super(DirectoryViewEditor.ID, group, telemetryService, themeService, storageService);
 
 		this.viewDisposables.add(this.directoryService.onDidChange(() => this.onDirectoryChange()));
 		this.viewDisposables.add(this.directoryService.onDidChangeDrives(() => this.onDrivesChange()));
+		// 文件图标主题切换后重新按新主题渲染列表。
+		this.viewDisposables.add(this.themeService.onDidFileIconThemeChange(() => this.onFileIconThemeChange()));
 	}
 
 	private get activeView(): DirectoryTabView | undefined {
@@ -69,7 +79,8 @@ export class DirectoryViewEditor extends EditorPane {
 	}
 
 	protected createEditor(parent: HTMLElement): void {
-		this.viewsRoot = $('.sidex-directory-views');
+		// show-file-icons 是文件图标主题样式的生效前提。
+		this.viewsRoot = $('.sidex-directory-views.show-file-icons');
 		parent.appendChild(this.viewsRoot);
 	}
 
@@ -83,28 +94,9 @@ export class DirectoryViewEditor extends EditorPane {
 		context: IEditorOpenContext,
 		token: CancellationToken
 	): Promise<void> {
-		this.activeTabId = input.tabId;
+		this.activeTabId = this.directoryService.activeTab?.id;
 		await super.setInput(input, options, context, token);
-
-		const view = this.ensureView(input.tabId);
-		for (const [tabId, other] of this.views) {
-			other.container.style.display = tabId === input.tabId ? '' : 'none';
-		}
-		view.scrollable.scanDomNode();
-
-		const tab = this.directoryService.getTab(view.tabId);
-		if (tab && tab.location === view.renderedLocation && tab.refreshToken === view.renderedRefreshToken) {
-			// 内容已是最新，复用已有 DOM，并恢复被其他编辑器遮挡时记录的滚动位置。
-			const scrollTop = this.savedScrollTops.get(view.tabId);
-			this.savedScrollTops.delete(view.tabId);
-			if (scrollTop) {
-				view.scrollable.setScrollPosition({ scrollTop });
-			}
-			return;
-		}
-
-		this.savedScrollTops.delete(view.tabId);
-		await this.reload(view);
+		await this.activateView(this.activeTabId, true);
 	}
 
 	protected override setEditorVisible(visible: boolean): void {
@@ -112,12 +104,6 @@ export class DirectoryViewEditor extends EditorPane {
 		if (!visible) {
 			this.captureScrollPositions();
 		}
-		// 目录视图激活时隐藏内层编辑器标签栏，避免和顶部目录标签重复。
-		const groupContainer = this.viewsRoot?.closest('.editor-group-container');
-		groupContainer?.classList.toggle('sidex-directory-mode', visible);
-
-		// 标签栏显隐会改变编辑器区域高度，需要重新布局以免底部留下空白。
-		(this.group as unknown as { relayout?: () => void }).relayout?.();
 	}
 
 	override clearInput(): void {
@@ -188,6 +174,36 @@ export class DirectoryViewEditor extends EditorPane {
 		return view;
 	}
 
+	/** 切换当前显示的目录视图；同一编辑器标签内完成，不新建编辑器标签。 */
+	private async activateView(tabId: string | undefined, restoreScroll: boolean): Promise<void> {
+		this.activeTabId = tabId;
+		for (const [otherTabId, view] of this.views) {
+			view.container.style.display = otherTabId === tabId ? '' : 'none';
+		}
+		if (!tabId) {
+			return;
+		}
+
+		const view = this.ensureView(tabId);
+		view.scrollable.scanDomNode();
+
+		const tab = this.directoryService.getTab(tabId);
+		if (tab && tab.location === view.renderedLocation && tab.refreshToken === view.renderedRefreshToken) {
+			// 内容已是最新，复用已有 DOM，并恢复被其他编辑器遮挡时记录的滚动位置。
+			if (restoreScroll) {
+				const scrollTop = this.savedScrollTops.get(tabId);
+				this.savedScrollTops.delete(tabId);
+				if (scrollTop) {
+					view.scrollable.setScrollPosition({ scrollTop });
+				}
+			}
+			return;
+		}
+
+		this.savedScrollTops.delete(tabId);
+		await this.reload(view);
+	}
+
 	private onDirectoryChange(): void {
 		const tabIds = new Set(this.directoryService.tabs.map(tab => tab.id));
 		for (const [tabId, view] of [...this.views]) {
@@ -198,6 +214,18 @@ export class DirectoryViewEditor extends EditorPane {
 				view.scrollable.dispose();
 				view.container.remove();
 			}
+		}
+
+		// 目录标签切换时，同一个文件列表编辑器切换到对应标签的缓存视图。
+		const nextTabId = this.directoryService.activeTab?.id;
+		if (this.activeTabId !== nextTabId) {
+			// 编辑器面板已被文件编辑器替换时，等重新 setInput 再切换视图。
+			if (!this.input) {
+				return;
+			}
+			this.captureScrollPositions();
+			void this.activateView(nextTabId, true);
+			return;
 		}
 
 		const view = this.activeView;
@@ -218,6 +246,16 @@ export class DirectoryViewEditor extends EditorPane {
 	}
 
 	private onDrivesChange(): void {
+		for (const view of this.views.values()) {
+			view.renderedRefreshToken = -1;
+		}
+		const view = this.activeView;
+		if (view) {
+			void this.reload(view);
+		}
+	}
+
+	private onFileIconThemeChange(): void {
 		for (const view of this.views.values()) {
 			view.renderedRefreshToken = -1;
 		}
@@ -347,20 +385,28 @@ export class DirectoryViewEditor extends EditorPane {
 			return;
 		}
 
+		const rows = new Map<string, HTMLElement>();
 		for (const entry of sorted) {
-			this.renderFileRow(view, list, entry);
+			rows.set(entry.path, this.renderFileRow(view, list, entry));
+		}
+
+		// 重绘后恢复该标签上次的选中项，右侧预览与列表高亮保持一致。
+		const selection = this.directoryService.getSelection(view.tabId);
+		if (selection) {
+			rows.get(selection.path)?.classList.add('selected');
 		}
 
 		view.content.setAttribute('data-location', location);
 	}
 
-	private renderFileRow(view: DirectoryTabView, list: HTMLElement, entry: SideXExplorerEntry): void {
+	private renderFileRow(view: DirectoryTabView, list: HTMLElement, entry: SideXExplorerEntry): HTMLElement {
 		const row = append(list, $('div.sidex-file-row'));
 		row.tabIndex = 0;
+		row.setAttribute('data-path', entry.path);
 
 		const nameCell = append(row, $('span.sidex-file-name'));
 		const icon = append(nameCell, $('span.sidex-file-icon'));
-		icon.innerHTML = entry.isDir ? folderIconSvg() : fileIconSvg();
+		this.applyFileIcon(icon, entry);
 		const text = append(nameCell, $('span.sidex-file-name-text'));
 		text.textContent = entry.name;
 
@@ -379,13 +425,24 @@ export class DirectoryViewEditor extends EditorPane {
 			if (entry.isDir) {
 				this.directoryService.navigate(entry.path);
 			} else {
-				void this.editorService.openEditor({ resource: URI.file(entry.path) });
+				// 双击打开的文件固定为常驻标签，避免被下一次预览替换。
+				void this.editorService.openEditor({
+					resource: URI.file(entry.path),
+					options: { pinned: true }
+				});
 			}
 		};
 
 		view.renderDisposables.add(addDisposableListener(row, EventType.CLICK, () => {
 			view.content.querySelectorAll('.sidex-file-row.selected').forEach(element => element.classList.remove('selected'));
 			row.classList.add('selected');
+			this.directoryService.select({
+				path: entry.path,
+				name: entry.name,
+				isDir: entry.isDir,
+				size: entry.size,
+				modified: entry.modified
+			});
 		}));
 
 		view.renderDisposables.add(addDisposableListener(row, EventType.DBLCLICK, open));
@@ -395,6 +452,29 @@ export class DirectoryViewEditor extends EditorPane {
 				open();
 			}
 		}));
+
+		return row;
+	}
+
+	/** 优先使用文件图标主题；没有配置图标主题时回退到 codicon。 */
+	private applyFileIcon(element: HTMLElement, entry: SideXExplorerEntry): void {
+		const fileIconTheme = this.themeService.getFileIconTheme();
+		const hasThemeIcon = entry.isDir ? fileIconTheme.hasFolderIcons : fileIconTheme.hasFileIcons;
+		if (hasThemeIcon) {
+			for (const className of getIconClasses(
+				this.modelService,
+				this.languageService,
+				URI.file(entry.path),
+				entry.isDir ? FileKind.FOLDER : FileKind.FILE
+			)) {
+				element.classList.add(className);
+			}
+			return;
+		}
+
+		for (const className of ThemeIcon.asClassName(entry.isDir ? Codicon.folder : Codicon.file).split(' ')) {
+			element.classList.add(className);
+		}
 	}
 
 	private defaultDriveLabel(kind: string): string {

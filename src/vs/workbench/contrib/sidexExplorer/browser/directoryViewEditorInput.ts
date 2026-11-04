@@ -1,8 +1,8 @@
 /*---------------------------------------------------------------------------------------------
  *  SideX — 主区域「文件列表」编辑器输入
  *
- *  每个目录标签对应一个独立输入实例；工作台的编辑器面板在内部按标签维护独立视图，
- *  各自的 DOM、滚动位置互不影响。
+ *  全局只有一个实例：内容跟随当前活动的目录标签，内部视图缓存由
+ *  DirectoryViewEditor 按 tabId 维护，切换标签不会创建新的编辑器标签。
  *--------------------------------------------------------------------------------------------*/
 
 import { URI } from '../../../../base/common/uri.js';
@@ -16,9 +16,7 @@ export class DirectoryViewEditorInput extends EditorInput {
 
 	static readonly TYPE_ID = 'workbench.editors.sidexDirectoryViewInput';
 
-	constructor(readonly tabId: string) {
-		super();
-	}
+	private label = localize('sidex.directory.fileList', '文件列表');
 
 	override get resource(): URI | undefined {
 		return undefined;
@@ -37,11 +35,20 @@ export class DirectoryViewEditorInput extends EditorInput {
 	}
 
 	override getName(): string {
-		return localize('sidex.directory.fileList', '文件列表');
+		return this.label;
+	}
+
+	/** 标签栏显示的标题跟随当前目录标签。 */
+	setLabel(label: string): void {
+		if (this.label === label) {
+			return;
+		}
+		this.label = label;
+		this._onDidChangeLabel.fire();
 	}
 
 	override matches(other: EditorInput | IUntypedEditorInput): boolean {
-		return other instanceof DirectoryViewEditorInput && other.tabId === this.tabId;
+		return other instanceof DirectoryViewEditorInput;
 	}
 
 	override async resolve(): Promise<EditorModel> {

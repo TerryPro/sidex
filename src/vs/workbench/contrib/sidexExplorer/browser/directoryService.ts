@@ -23,6 +23,15 @@ export interface DirectoryTab {
 	readonly refreshToken: number;
 }
 
+/** 文件列表中被单击选中的项，用于右侧预览与属性栏。每个目录标签各存一份。 */
+export interface DirectorySelection {
+	readonly path: string;
+	readonly name: string;
+	readonly isDir: boolean;
+	readonly size: number;
+	readonly modified: number;
+}
+
 export const IDirectoryService = createDecorator<IDirectoryService>('sidexDirectoryService');
 
 export interface IDirectoryService {
@@ -30,8 +39,7 @@ export interface IDirectoryService {
 
 	readonly onDidChange: Event<void>;
 	readonly onDidChangeDrives: Event<void>;
-	/** 用户点击某个目录标签（包括已经处于激活状态的标签），用于把主区域切回该标签的文件列表。 */
-	readonly onDidActivateTab: Event<string>;
+	readonly onDidChangeSelection: Event<void>;
 
 	readonly tabs: readonly DirectoryTab[];
 	readonly activeTab: DirectoryTab | undefined;
@@ -40,6 +48,11 @@ export interface IDirectoryService {
 	readonly activeLocation: string;
 
 	getTab(id: string): DirectoryTab | undefined;
+
+	/** 当前目录标签（或指定标签）的选中项。 */
+	getSelection(tabId?: string): DirectorySelection | undefined;
+	/** 单击文件列表项时调用；导航或刷新会清空选中项。 */
+	select(entry: DirectorySelection): void;
 
 	initialize(): Promise<void>;
 
@@ -120,9 +133,10 @@ export class DirectoryService extends Disposable implements IDirectoryService {
 	private readonly _onDidChangeDrives = this._register(new Emitter<void>());
 	readonly onDidChangeDrives = this._onDidChangeDrives.event;
 
-	private readonly _onDidActivateTab = this._register(new Emitter<string>());
-	readonly onDidActivateTab = this._onDidActivateTab.event;
+	private readonly _onDidChangeSelection = this._register(new Emitter<void>());
+	readonly onDidChangeSelection = this._onDidChangeSelection.event;
 
+	private readonly _selectionByTab = new Map<string, DirectorySelection>();
 	private _tabs: DirectoryTab[] = [];
 	private _activeTabId: string | undefined;
 	private _drives: SideXDriveInfo[] = [];
@@ -146,6 +160,19 @@ export class DirectoryService extends Disposable implements IDirectoryService {
 
 	getTab(id: string): DirectoryTab | undefined {
 		return this._tabs.find(tab => tab.id === id);
+	}
+
+	getSelection(tabId = this._activeTabId): DirectorySelection | undefined {
+		return tabId ? this._selectionByTab.get(tabId) : undefined;
+	}
+
+	select(entry: DirectorySelection): void {
+		const tabId = this._activeTabId;
+		if (!tabId) {
+			return;
+		}
+		this._selectionByTab.set(tabId, entry);
+		this._onDidChangeSelection.fire();
 	}
 
 	get drives(): readonly SideXDriveInfo[] {
@@ -196,7 +223,6 @@ export class DirectoryService extends Disposable implements IDirectoryService {
 		};
 		this._tabs = [...this._tabs, tab];
 		this._activeTabId = tab.id;
-		this._onDidActivateTab.fire(tab.id);
 		this._onDidChange.fire();
 		return tab;
 	}
@@ -209,6 +235,7 @@ export class DirectoryService extends Disposable implements IDirectoryService {
 
 		const wasActive = this._activeTabId === id;
 		this._tabs = this._tabs.filter(tab => tab.id !== id);
+		this._selectionByTab.delete(id);
 
 		if (!this._tabs.length) {
 			this._activeTabId = undefined;
@@ -226,13 +253,12 @@ export class DirectoryService extends Disposable implements IDirectoryService {
 		if (!this._tabs.some(tab => tab.id === id)) {
 			return;
 		}
-		const changed = this._activeTabId !== id;
-		this._activeTabId = id;
-		// 即使点击的是当前标签，也要通知界面把主区域切回该标签的文件列表。
-		this._onDidActivateTab.fire(id);
-		if (changed) {
-			this._onDidChange.fire();
+		// 点击已激活的标签不应改变主区域内容，因此只在真正切换时通知界面。
+		if (this._activeTabId === id) {
+			return;
 		}
+		this._activeTabId = id;
+		this._onDidChange.fire();
 	}
 
 	navigate(location: string): void {
@@ -248,6 +274,7 @@ export class DirectoryService extends Disposable implements IDirectoryService {
 			return;
 		}
 
+		this._selectionByTab.delete(tab.id);
 		const history = tab.history.slice(0, tab.historyIndex + 1);
 		history.push(normalized);
 		this._updateTab(tab.id, {
@@ -265,6 +292,7 @@ export class DirectoryService extends Disposable implements IDirectoryService {
 		}
 		const historyIndex = tab.historyIndex - 1;
 		const location = tab.history[historyIndex];
+		this._selectionByTab.delete(tab.id);
 		this._updateTab(tab.id, {
 			location,
 			title: this.titleForLocation(location),
@@ -279,6 +307,7 @@ export class DirectoryService extends Disposable implements IDirectoryService {
 		}
 		const historyIndex = tab.historyIndex + 1;
 		const location = tab.history[historyIndex];
+		this._selectionByTab.delete(tab.id);
 		this._updateTab(tab.id, {
 			location,
 			title: this.titleForLocation(location),
@@ -300,6 +329,8 @@ export class DirectoryService extends Disposable implements IDirectoryService {
 			return;
 		}
 		this._updateTab(tab.id, { refreshToken: tab.refreshToken + 1 });
+		// 刷新后文件可能已变化，让预览面板重新读取。
+		this._onDidChangeSelection.fire();
 	}
 
 	canGoBack(): boolean {

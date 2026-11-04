@@ -647,3 +647,24 @@ pub fn syntax_get_folding_ranges(
     }
     Ok(brace_folding_ranges(&source))
 }
+
+#[cfg(test)]
+mod outline_tests {
+    use super::*;
+
+    #[test]
+    fn rust_outline_extracts_struct_and_fn() {
+        let source = "use serde::Serialize;\n\n#[derive(Debug, Serialize)]\npub struct ColorInfo {\n    pub line: u32,\n}\n\npub fn helper() {}\n";
+        let symbols = extract_symbols("rust", source);
+        let names: Vec<_> = symbols.iter().map(|s| s.name.as_str()).collect();
+        assert_eq!(names, vec!["ColorInfo", "helper"]);
+    }
+
+    #[test]
+    fn typescript_outline_covers_common_declarations() {
+        let source = "export function foo(): void {}\nexport const bar = 1;\nexport declare function baz(): void;\n";
+        let symbols = extract_symbols("typescript", source);
+        let names: Vec<_> = symbols.iter().map(|s| s.name.as_str()).collect();
+        assert_eq!(names, vec!["foo", "bar"]);
+    }
+}
