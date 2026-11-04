@@ -47,7 +47,7 @@ Check [Issues](https://github.com/Sidenai/sidex/issues) for open tasks. If you d
 
 - `src/vs/` — The VSCode workbench (TypeScript)
 - `src-tauri/src/` — Rust backend replacing Electron
-- `crates/` — Rust support crates: git, LSP, DAP, terminal, extensions, text, syntax, and more
+- `crates/` — Rust support crates: workspace, text, syntax, theme, settings, keymap, terminal, extensions
 - `ARCHITECTURE.md` — How VSCode's architecture maps to Tauri
 
 ## Questions?

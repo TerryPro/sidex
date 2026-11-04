@@ -134,10 +134,9 @@ Extension Host               →       WASM runtime in-process (Node sidecar opt
 
 All Tauri commands are registered in `src-tauri/src/lib.rs`. The table below
 covers the modules most central to this doc's architecture story — the
-command surface has grown well past what fits here (LSP management, WASM
-extensions, remote development, and more all live in
-`src-tauri/src/commands/` too). `lib.rs` is the source of truth for the full,
-current list.
+command surface has grown well past what fits here (WASM extensions, remote
+development, and more all live in `src-tauri/src/commands/` too). `lib.rs` is
+the source of truth for the full, current list.
 
 | Module | Commands |
 |---|---|
@@ -155,22 +154,18 @@ current list.
 
 The extension host is WASM-first. `src-tauri/src/commands/extension_wasm.rs`
 loads `.wasm` components through the wasmtime component model against the WIT
-contract in `src-tauri/wit/world.wit`. Seven Rust extensions ship in
-`extensions-rust/` and activate lazily on `onLanguage:<id>` events, so opening a
-TypeScript or Rust file instantiates only the extensions that declare it.
+contract in `src-tauri/wit/world.wit`. A Rust extension (`csv-editor`) ships in
+`extensions-rust/` and provides a custom editor.
 
 The workbench side lives in
 `src/vs/workbench/contrib/extensions/browser/tauriExtensionHost.contribution.ts`.
-It registers the WASM provider results as ordinary language features
-(completion, hover, references, rename, code actions, folding, inlay hints and
-more) and mirrors diagnostics into the marker service, which is what feeds the
-Problems panel.
+It registers the WASM symbol and folding providers and custom editors.
 
-Language servers run per extension, not through `commands/lsp.rs`: an extension
-calls `__sidex.lsp`, the host spawns `rust-analyzer` or `tsserver`, and a
-background reader thread keeps the JSON-RPC stream open. Server-pushed
-`textDocument/publishDiagnostics` notifications are queued and handed back to
-the workbench through `wasm_get_diagnostics`.
+SideX has no language server layer. Keyword colouring comes from TextMate
+grammars (`commands/textmate.rs`), folding from Monaco indentation plus native
+brace/Markdown ranges, and the outline from regex-based symbol extraction in
+`commands/syntax.rs` (`syntax_get_document_symbols`,
+`syntax_get_folding_ranges`).
 
 The Node sidecar in `commands/ext_host.rs` still exists, but it only starts when
 `SIDEX_NODE_EXTENSIONS=on`. With it off, the bundled `extensions/` tree holds

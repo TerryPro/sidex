@@ -116,7 +116,7 @@ sidex/
 │       ├── commands/       # fs, terminal, git, search, extensions, etc.
 │       ├── lib.rs          # App setup and command registration
 │       └── main.rs         # Entry point
-├── crates/                 # Rust support crates — git, LSP, terminal, extensions, and more
+├── crates/                 # Rust support crates — text, syntax, theme, settings, workspace, terminal, extensions
 ├── index.html
 ├── vite.config.ts
 └── package.json

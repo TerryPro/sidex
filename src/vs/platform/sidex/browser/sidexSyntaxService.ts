@@ -41,6 +41,28 @@ export interface SyntaxToken {
 	scope: string;
 }
 
+export interface SideXLineRange {
+	startLine: number;
+	startColumn: number;
+	endLine: number;
+	endColumn: number;
+}
+
+export interface SideXOutlineSymbol {
+	name: string;
+	detail: string;
+	kind: number;
+	range: SideXLineRange;
+	selectionRange: SideXLineRange;
+	children: SideXOutlineSymbol[];
+}
+
+export interface SideXFoldingRange {
+	start: number;
+	end: number;
+	kind?: string;
+}
+
 export const ISideXSyntaxBrowserService = createDecorator<ISideXSyntaxBrowserService>('sidexSyntaxBrowserService');
 
 export interface ISideXSyntaxBrowserService extends SideXSyntaxBrowserService {
@@ -92,6 +114,24 @@ export class SideXSyntaxBrowserService {
 			return (await invoke<SyntaxToken[]>('syntax_tokenize', { language, source })) ?? [];
 		} catch (e) {
 			console.warn('[SideX] syntax_tokenize failed:', e);
+			return [];
+		}
+	}
+
+	async getDocumentSymbols(language: string, source: string): Promise<SideXOutlineSymbol[]> {
+		try {
+			return (await invoke<SideXOutlineSymbol[]>('syntax_get_document_symbols', { language, source })) ?? [];
+		} catch (e) {
+			console.warn('[SideX] syntax_get_document_symbols failed:', e);
+			return [];
+		}
+	}
+
+	async getFoldingRanges(language: string, source: string): Promise<SideXFoldingRange[]> {
+		try {
+			return (await invoke<SideXFoldingRange[]>('syntax_get_folding_ranges', { language, source })) ?? [];
+		} catch (e) {
+			console.warn('[SideX] syntax_get_folding_ranges failed:', e);
 			return [];
 		}
 	}

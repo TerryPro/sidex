@@ -1,20 +1,11 @@
 [workspace]
 resolver = "2"
 members = [
-  "cpp-language-extension",
   "csv-editor-extension",
-  "go-language-extension",
-  "markdown-language-extension",
-  "merge-conflict-extension",
-  "python-language-extension",
-  "rust-language-extension",
-  "sidex-language-client",
-  "typescript-language-extension",
 ]
 
 [workspace.dependencies]
 sidex-extension-sdk = { path = "../sidex-extension-sdk" }
-sidex-language-client = { path = "sidex-language-client" }
 wit-bindgen = "0.41"
 
 [profile.release]

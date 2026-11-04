@@ -3,7 +3,6 @@ resolver = "2"
 members = [
   "crates/sidex-text",
   "crates/sidex-syntax",
-  "crates/sidex-lsp",
   "crates/sidex-workspace",
   "crates/sidex-terminal",
   "crates/sidex-extensions",

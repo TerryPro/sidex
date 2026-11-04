@@ -110,7 +110,6 @@ sidex-syntax = { path = "../crates/sidex-syntax" }
 sidex-extensions = { path = "../crates/sidex-extensions" }
 sidex-extension-api = { path = "../crates/sidex-extension-api" }
 sidex-keymap = { path = "../crates/sidex-keymap" }
-sidex-lsp = { path = "../crates/sidex-lsp" }
 sidex-profiles = { path = "../crates/sidex-profiles" }
 sidex-auth = { path = "../crates/sidex-auth" }
 sidex-textmate = { path = "../crates/sidex-textmate" }

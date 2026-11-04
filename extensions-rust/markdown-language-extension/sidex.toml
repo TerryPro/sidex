@@ -1,9 +1,0 @@
-[extension]
-id = "sidex.markdown-language"
-name = "markdown-language"
-version = "0.1.0"
-description = "Markdown outline, heading folding and link navigation"
-wasm = "../target/wasm32-wasip2/release/markdown_language_extension.wasm"
-
-[activation]
-events = ["onLanguage:markdown"]

@@ -14,7 +14,6 @@ import './sidexNullServices.js';
 import '../platform/sidex/browser/sidexFileSystemProvider.js';
 import '../platform/sidex/browser/sidexSearchProvider.js';
 import '../platform/sidex/browser/sidexSyntaxService.js';
-import '../platform/sidex/browser/sidexLspService.js';
 import '../platform/sidex/browser/sidexRemoteService.js';
 import '../platform/sidex/browser/sidexExplorerService.js';
 import '../platform/sidex/common/sidexThemeService.js';
@@ -238,6 +237,7 @@ import './contrib/pdfPreview/browser/pdfPreview.contribution.js';
 
 // SideX Explorer (directory tabs / navigation / file list)
 import './contrib/sidexExplorer/browser/sidexExplorer.contribution.js';
+import './contrib/sidexExplorer/browser/sidexLanguageFeatures.contribution.js';
 
 // Custom Editors
 import './contrib/customEditor/browser/customEditor.contribution.js';

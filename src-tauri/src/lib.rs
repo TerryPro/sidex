@@ -4,7 +4,6 @@ mod commands;
 use commands::db_state::SidexDbState;
 use commands::extension_diagnostics::ExtensionDiagnosticsStore;
 use commands::extension_wasm::WasmExtensionRuntime;
-use commands::lsp::LspState;
 use commands::settings::SettingsStore;
 use commands::storage::StorageDb;
 use commands::terminal::TerminalStore;
@@ -384,7 +383,6 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .manage(Arc::new(TerminalStore::new()))
-        .manage(Arc::new(LspState::new()))
         .manage(Arc::new(WatchStore::new()))
         .manage(ExtensionDiagnosticsStore::new())
         .manage(Arc::new(SettingsStore::new()))
@@ -773,32 +771,9 @@ pub fn run() {
             commands::wasm_sync_document,
             commands::wasm_close_document,
             commands::wasm_sync_workspace_folders,
-            commands::wasm_provide_completion,
-            commands::wasm_provide_hover,
-            commands::wasm_provide_definition,
-            commands::wasm_provide_references,
             commands::wasm_provide_document_symbols,
-            commands::wasm_provide_formatting,
-            commands::wasm_provide_completion_all,
-            commands::wasm_provide_hover_all,
-            commands::wasm_provide_definition_all,
             commands::wasm_provide_document_symbols_all,
-            commands::wasm_provide_document_links_all,
-            commands::wasm_provide_formatting_all,
-            commands::wasm_provide_references_all,
-            commands::wasm_provide_type_definition_all,
-            commands::wasm_provide_implementation_all,
-            commands::wasm_provide_declaration_all,
-            commands::wasm_provide_code_actions_all,
-            commands::wasm_provide_signature_help_all,
-            commands::wasm_provide_document_highlights_all,
-            commands::wasm_provide_rename_all,
             commands::wasm_provide_folding_ranges_all,
-            commands::wasm_provide_selection_ranges_all,
-            commands::wasm_provide_inlay_hints_all,
-            commands::wasm_provide_range_formatting_all,
-            commands::wasm_provide_workspace_symbols_all,
-            commands::wasm_get_diagnostics,
             commands::wasm_take_custom_editor_actions,
             commands::wasm_activate_custom_editor,
             commands::wasm_custom_editor_message,
@@ -820,19 +795,15 @@ pub fn run() {
             commands::extension_bisect_bad,
             commands::extension_bisect_reset,
             commands::extension_bisect_state,
-            // LSP management
-            commands::lsp_get_server_registry,
-            commands::lsp_get_supported_languages,
-            commands::lsp_start_server,
-            commands::lsp_send_request,
-            commands::lsp_stop_server,
-            commands::lsp_list_servers,
+            // LSP management removed: SideX keeps syntax highlighting, folding and outline only.
             // Syntax / language info
             commands::syntax_get_languages,
             commands::syntax_detect_language,
             commands::syntax_detect_from_content,
             commands::syntax_get_language_config,
             commands::syntax_tokenize,
+            commands::syntax_get_document_symbols,
+            commands::syntax_get_folding_ranges,
             // Theme management
             commands::theme_list,
             commands::theme_get,

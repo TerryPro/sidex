@@ -1,3 +1,4 @@
+use regex::Regex;
 use serde::Serialize;
 use sidex_syntax::highlight::{HighlightConfig, Highlighter, SyntaxHighlighter, TokenScope};
 use sidex_syntax::language::{builtin_language_configurations, LanguageConfiguration};
@@ -255,4 +256,394 @@ pub fn textmate_tokenize_lines(
         });
     }
     Ok(out)
+}
+
+// ---------------------------------------------------------------------------
+// Lightweight outline and folding (no language servers)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LineRange {
+    pub start_line: u32,
+    pub start_column: u32,
+    pub end_line: u32,
+    pub end_column: u32,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OutlineSymbol {
+    pub name: String,
+    pub detail: String,
+    pub kind: u32,
+    pub range: LineRange,
+    pub selection_range: LineRange,
+    pub children: Vec<OutlineSymbol>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SidexFoldingRange {
+    pub start: u32,
+    pub end: u32,
+    pub kind: Option<String>,
+}
+
+struct RawSymbol {
+    name: String,
+    detail: String,
+    kind: u32,
+    line: u32,
+    indent: u32,
+    name_start_column: u32,
+    name_end_column: u32,
+}
+
+struct OutlineNode {
+    symbol: RawSymbol,
+    children: Vec<usize>,
+    end_line: u32,
+}
+
+fn indentation(line: &str) -> u32 {
+    line.chars()
+        .take_while(|c| c.is_whitespace())
+        .map(|c| if c == '\t' { 4 } else { 1 })
+        .sum()
+}
+
+fn symbol_patterns(language: &str) -> Vec<(Regex, u32, &'static str)> {
+    let mut patterns: Vec<(Regex, u32, &'static str)> = Vec::new();
+    let mut add = |pattern: &str, kind: u32, detail: &'static str| {
+        if let Ok(regex) = Regex::new(pattern) {
+            patterns.push((regex, kind, detail));
+        }
+    };
+
+    match language {
+        "rust" => {
+            add(r"^\s*(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?(?:unsafe\s+)?(?:const\s+)?fn\s+([A-Za-z_][A-Za-z0-9_]*)", 11, "fn");
+            add(r"^\s*(?:pub(?:\([^)]*\))?\s+)?(?:struct|union)\s+([A-Za-z_][A-Za-z0-9_]*)", 22, "struct");
+            add(r"^\s*(?:pub(?:\([^)]*\))?\s+)?enum\s+([A-Za-z_][A-Za-z0-9_]*)", 9, "enum");
+            add(r"^\s*(?:pub(?:\([^)]*\))?\s+)?trait\s+([A-Za-z_][A-Za-z0-9_]*)", 10, "trait");
+            add(r"^\s*(?:pub(?:\([^)]*\))?\s+)?mod\s+([A-Za-z_][A-Za-z0-9_]*)", 1, "mod");
+            add(r"^\s*(?:pub(?:\([^)]*\))?\s+)?const\s+([A-Za-z_][A-Za-z0-9_]*)", 13, "const");
+            add(r"^\s*(?:pub(?:\([^)]*\))?\s+)?static\s+([A-Za-z_][A-Za-z0-9_]*)", 13, "static");
+            add(r"^\s*(?:pub(?:\([^)]*\))?\s+)?type\s+([A-Za-z_][A-Za-z0-9_]*)", 25, "type");
+        }
+        "python" => {
+            add(r"^(\s*)(?:async\s+)?def\s+([A-Za-z_][A-Za-z0-9_]*)", 11, "def");
+            add(r"^(\s*)class\s+([A-Za-z_][A-Za-z0-9_]*)", 4, "class");
+        }
+        "go" => {
+            add(r"^(\s*)func\s+(?:\([^)]*\)\s*)?([A-Za-z_][A-Za-z0-9_]*)", 11, "func");
+            add(r"^(\s*)type\s+([A-Za-z_][A-Za-z0-9_]*)", 22, "type");
+            add(r"^(\s*)const\s+([A-Za-z_][A-Za-z0-9_]*)", 13, "const");
+            add(r"^(\s*)var\s+([A-Za-z_][A-Za-z0-9_]*)", 12, "var");
+        }
+        "typescript" | "typescriptreact" | "javascript" | "javascriptreact" => {
+            add(r"^(\s*)(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)", 11, "function");
+            add(r"^(\s*)(?:export\s+)?(?:default\s+)?(?:abstract\s+)?class\s+([A-Za-z_$][\w$]*)", 4, "class");
+            add(r"^(\s*)(?:export\s+)?interface\s+([A-Za-z_$][\w$]*)", 10, "interface");
+            add(r"^(\s*)(?:export\s+)?type\s+([A-Za-z_$][\w$]*)", 25, "type");
+            add(r"^(\s*)(?:export\s+)?enum\s+([A-Za-z_$][\w$]*)", 9, "enum");
+            add(r"^(\s*)(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)", 12, "variable");
+        }
+        "c" | "cpp" | "objective-c" | "objective-cpp" => {
+            add(r"^(\s*)(?:class|struct)\s+([A-Za-z_][A-Za-z0-9_]*)", 4, "class");
+            add(r"^(\s*)enum\s+([A-Za-z_][A-Za-z0-9_]*)", 9, "enum");
+            add(r"^(\s*)namespace\s+([A-Za-z_][A-Za-z0-9_]*)", 2, "namespace");
+            add(
+                r"^(\s*)(?:[A-Za-z_][\w:<>,*&\s]*\s+)+([A-Za-z_~][\w:~]*)\s*\([^;]*\)\s*(?:const|override|noexcept)?\s*\{?",
+                11,
+                "function",
+            );
+        }
+        "java" | "csharp" => {
+            add(r"^(\s*)(?:(?:public|private|protected|internal|static|final|abstract|sealed|partial|record)\s+)*(?:class|struct)\s+([A-Za-z_][A-Za-z0-9_]*)", 4, "class");
+            add(r"^(\s*)(?:(?:public|private|protected|internal|static|final|abstract|sealed|partial)\s+)*interface\s+([A-Za-z_][A-Za-z0-9_]*)", 10, "interface");
+            add(r"^(\s*)(?:(?:public|private|protected|internal|static|final|abstract|sealed|partial)\s+)*enum\s+([A-Za-z_][A-Za-z0-9_]*)", 9, "enum");
+            add(
+                r"^(\s*)(?:(?:public|private|protected|internal|static|final|abstract|sealed|partial|override|virtual|async)\s+)+[A-Za-z_][\w<>\[\],.]*\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(",
+                5,
+                "method",
+            );
+        }
+        _ => {}
+    }
+
+    patterns
+}
+
+fn extract_markdown_symbols(source: &str) -> Vec<RawSymbol> {
+    let mut symbols = Vec::new();
+    for (index, line) in source.lines().enumerate() {
+        let trimmed = line.trim_start();
+        if !trimmed.starts_with('#') {
+            continue;
+        }
+        let level = trimmed.chars().take_while(|c| *c == '#').count();
+        if level == 0 || level > 6 {
+            continue;
+        }
+        let name = trimmed[level..].trim();
+        if name.is_empty() {
+            continue;
+        }
+        let line_number = u32::try_from(index + 1).unwrap_or(u32::MAX);
+        let indent = u32::try_from(level * 2).unwrap_or(u32::MAX);
+        symbols.push(RawSymbol {
+            name: name.to_string(),
+            detail: format!("H{level}"),
+            kind: 14,
+            line: line_number,
+            indent,
+            name_start_column: 1,
+            name_end_column: u32::try_from(line.chars().count() + 1).unwrap_or(u32::MAX),
+        });
+    }
+    symbols
+}
+
+fn extract_symbols(language: &str, source: &str) -> Vec<RawSymbol> {
+    if language == "markdown" {
+        return extract_markdown_symbols(source);
+    }
+
+    let patterns = symbol_patterns(language);
+    if patterns.is_empty() {
+        return Vec::new();
+    }
+
+    let mut symbols = Vec::new();
+    for (index, line) in source.lines().enumerate() {
+        let Some((regex, kind, detail)) = patterns
+            .iter()
+            .find(|(regex, _, _)| regex.is_match(line))
+        else {
+            continue;
+        };
+        let Some(captures) = regex.captures(line) else {
+            continue;
+        };
+        let name_group = captures.len().saturating_sub(1);
+        let Some(name_match) = captures.get(name_group) else {
+            continue;
+        };
+
+        let name = name_match.as_str().trim();
+        if name.is_empty() {
+            continue;
+        }
+
+        let indent = indentation(line);
+
+        let name_start_column =
+            u32::try_from(line[..name_match.start()].chars().count() + 1).unwrap_or(u32::MAX);
+        let name_end_column = name_start_column
+            .saturating_add(u32::try_from(name.chars().count()).unwrap_or(0));
+
+        symbols.push(RawSymbol {
+            name: name.to_string(),
+            detail: (*detail).to_string(),
+            kind: *kind,
+            line: u32::try_from(index + 1).unwrap_or(u32::MAX),
+            indent,
+            name_start_column,
+            name_end_column,
+        });
+    }
+    symbols
+}
+
+fn build_outline(symbols: Vec<RawSymbol>, source: &str) -> Vec<OutlineSymbol> {
+    if symbols.is_empty() {
+        return Vec::new();
+    }
+
+    let line_lengths: Vec<u32> = source
+        .lines()
+        .map(|line| u32::try_from(line.chars().count()).unwrap_or(u32::MAX))
+        .collect();
+    let total_lines = u32::try_from(line_lengths.len()).unwrap_or(u32::MAX).max(1);
+
+    let mut nodes: Vec<OutlineNode> = Vec::with_capacity(symbols.len());
+    let mut roots: Vec<usize> = Vec::new();
+    let mut stack: Vec<(u32, usize)> = Vec::new();
+
+    for symbol in symbols {
+        while stack.last().is_some_and(|(indent, _)| *indent >= symbol.indent) {
+            if let Some((_, node_index)) = stack.pop() {
+                nodes[node_index].end_line = symbol.line.saturating_sub(1);
+            }
+        }
+
+        let index = nodes.len();
+        nodes.push(OutlineNode {
+            symbol,
+            children: Vec::new(),
+            end_line: total_lines,
+        });
+
+        if let Some((_, parent_index)) = stack.last() {
+            nodes[*parent_index].children.push(index);
+        } else {
+            roots.push(index);
+        }
+        let indent = nodes[index].symbol.indent;
+        stack.push((indent, index));
+    }
+
+    while let Some((_, node_index)) = stack.pop() {
+        nodes[node_index].end_line = total_lines;
+    }
+
+    roots
+        .into_iter()
+        .map(|index| build_outline_symbol(&nodes, index, &line_lengths))
+        .collect()
+}
+
+fn build_outline_symbol(
+    nodes: &[OutlineNode],
+    index: usize,
+    line_lengths: &[u32],
+) -> OutlineSymbol {
+    let node = &nodes[index];
+    let end_line = node.end_line.max(node.symbol.line);
+    let end_column = line_lengths
+        .get(usize::try_from(end_line.saturating_sub(1)).unwrap_or(0))
+        .map_or(1, |length| length.saturating_add(1));
+
+    OutlineSymbol {
+        name: node.symbol.name.clone(),
+        detail: node.symbol.detail.clone(),
+        kind: node.symbol.kind,
+        range: LineRange {
+            start_line: node.symbol.line,
+            start_column: node.symbol.name_start_column,
+            end_line,
+            end_column,
+        },
+        selection_range: LineRange {
+            start_line: node.symbol.line,
+            start_column: node.symbol.name_start_column,
+            end_line: node.symbol.line,
+            end_column: node.symbol.name_end_column,
+        },
+        children: node
+            .children
+            .iter()
+            .map(|child| build_outline_symbol(nodes, *child, line_lengths))
+            .collect(),
+    }
+}
+
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
+pub fn syntax_get_document_symbols(
+    language: String,
+    source: String,
+) -> Result<Vec<OutlineSymbol>, String> {
+    Ok(build_outline(extract_symbols(&language, &source), &source))
+}
+
+fn markdown_folding_ranges(source: &str) -> Vec<SidexFoldingRange> {
+    let mut headings: Vec<(u32, u32)> = Vec::new();
+    for (index, line) in source.lines().enumerate() {
+        let trimmed = line.trim_start();
+        let level = trimmed.chars().take_while(|c| *c == '#').count();
+        if level == 0 || level > 6 || trimmed.chars().nth(level) != Some(' ') {
+            continue;
+        }
+        headings.push((u32::try_from(index + 1).unwrap_or(u32::MAX), u32::try_from(level).unwrap_or(0)));
+    }
+
+    let total_lines = u32::try_from(source.lines().count()).unwrap_or(u32::MAX);
+    let mut ranges = Vec::new();
+    for (index, (line, level)) in headings.iter().enumerate() {
+        let mut end = total_lines;
+        for (next_line, next_level) in headings.iter().skip(index + 1) {
+            if *next_level <= *level {
+                end = next_line.saturating_sub(1);
+                break;
+            }
+        }
+        if end > *line {
+            ranges.push(SidexFoldingRange {
+                start: *line,
+                end,
+                kind: Some("region".to_string()),
+            });
+        }
+    }
+    ranges
+}
+
+fn brace_folding_ranges(source: &str) -> Vec<SidexFoldingRange> {
+    let mut ranges = Vec::new();
+    let mut stack: Vec<u32> = Vec::new();
+
+    for (index, line) in source.lines().enumerate() {
+        let line_number = u32::try_from(index + 1).unwrap_or(u32::MAX);
+        let mut in_string: Option<char> = None;
+        let mut escaped = false;
+
+        for character in line.chars() {
+            if escaped {
+                escaped = false;
+                continue;
+            }
+            if character == '\\' {
+                escaped = true;
+                continue;
+            }
+            if let Some(quote) = in_string {
+                if character == quote {
+                    in_string = None;
+                }
+                continue;
+            }
+            if character == '"' || character == '\'' || character == '`' {
+                in_string = Some(character);
+                continue;
+            }
+            match character {
+                '{' => stack.push(line_number),
+                '}' => {
+                    if let Some(start) = stack.pop() {
+                        if line_number > start {
+                            ranges.push(SidexFoldingRange {
+                                start,
+                                end: line_number,
+                                kind: None,
+                            });
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    ranges
+}
+
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
+pub fn syntax_get_folding_ranges(
+    language: String,
+    source: String,
+) -> Result<Vec<SidexFoldingRange>, String> {
+    if language == "markdown" {
+        return Ok(markdown_folding_ranges(&source));
+    }
+    if matches!(
+        language.as_str(),
+        "python" | "yaml" | "makefile" | "ini" | "properties"
+    ) {
+        return Ok(Vec::new());
+    }
+    Ok(brace_folding_ranges(&source))
 }
