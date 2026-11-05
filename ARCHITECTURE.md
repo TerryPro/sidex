@@ -153,7 +153,7 @@ the full, current list.
 | **os** | `get_os_info`, `get_env`, `get_all_env`, `get_shell` |
 | **storage** | `storage_get`, `storage_set`, `storage_list`, `storage_delete` |
 | **syntax** | `syntax_get_document_symbols`, `syntax_get_folding_ranges` |
-| **extension_platform** | `list_available_extensions` |
+| **extensions** | `list_installed_extensions` |
 | **network** | `proxy_request`, `proxy_request_full` |
 
 There is no Git module. Source control was removed along with the rest of the
@@ -179,5 +179,7 @@ brace/Markdown ranges. TypeScript/JavaScript outlines use tree-sitter via
 
 The bundled `extensions/` tree holds declarative extensions only — grammars,
 themes and language configuration. There is no Node extension host and no
-marketplace client.
+marketplace client. The only extension UI is the read-only built-in
+extensions panel; extension management views, install commands, diagnostics
+and bisect are removed.
 

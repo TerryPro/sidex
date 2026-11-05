@@ -12,8 +12,6 @@ import { ContextKeyExpr } from '../../../../platform/contextkey/common/contextke
 import { KeybindingWeight } from '../../../../platform/keybinding/common/keybindingsRegistry.js';
 import { ICommandService } from '../../../../platform/commands/common/commands.js';
 import { INotificationService } from '../../../../platform/notification/common/notification.js';
-import { IExtensionsWorkbenchService } from '../../extensions/common/extensions.js';
-import { IDialogService } from '../../../../platform/dialogs/common/dialogs.js';
 import { ILanguageFeaturesService } from '../../../../editor/common/services/languageFeatures.js';
 
 registerEditorAction(
@@ -41,9 +39,7 @@ registerEditorAction(
 			}
 
 			const commandService = accessor.get(ICommandService);
-			const extensionsWorkbenchService = accessor.get(IExtensionsWorkbenchService);
 			const notificationService = accessor.get(INotificationService);
-			const dialogService = accessor.get(IDialogService);
 			const languageFeaturesService = accessor.get(ILanguageFeaturesService);
 
 			const model = editor.getModel();
@@ -57,17 +53,10 @@ registerEditorAction(
 				notificationService.warn(nls.localize('too.large', 'This file cannot be formatted because it is too large'));
 			} else {
 				const langName = model.getLanguageId();
-				const message = nls.localize('no.provider', "There is no formatter for '{0}' files installed.", langName);
-				const { confirmed } = await dialogService.confirm({
-					message,
-					primaryButton: nls.localize(
-						{ key: 'install.formatter', comment: ['&& denotes a mnemonic'] },
-						'&&Install Formatter...'
-					)
-				});
-				if (confirmed) {
-					extensionsWorkbenchService.openSearch(`category:formatters ${langName}`);
-				}
+				// SideX 没有扩展市场，无法安装格式化扩展。
+				notificationService.warn(
+					nls.localize('no.provider', "There is no formatter for '{0}' files installed.", langName)
+				);
 			}
 		}
 	}

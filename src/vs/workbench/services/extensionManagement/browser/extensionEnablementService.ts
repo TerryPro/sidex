@@ -54,7 +54,6 @@ import {
 	Severity
 } from '../../../../platform/notification/common/notification.js';
 import { IHostService } from '../../host/browser/host.js';
-import { IExtensionBisectService } from './extensionBisect.js';
 import {
 	IWorkspaceTrustManagementService,
 	IWorkspaceTrustRequestService
@@ -97,7 +96,6 @@ export class ExtensionEnablementService extends Disposable implements IWorkbench
 		@ILifecycleService private readonly lifecycleService: ILifecycleService,
 		@INotificationService private readonly notificationService: INotificationService,
 		@IHostService hostService: IHostService,
-		@IExtensionBisectService private readonly extensionBisectService: IExtensionBisectService,
 		@IAllowedExtensionsService private readonly allowedExtensionsService: IAllowedExtensionsService,
 		@IWorkspaceTrustManagementService
 		private readonly workspaceTrustManagementService: IWorkspaceTrustManagementService,
@@ -543,8 +541,6 @@ export class ExtensionEnablementService extends Disposable implements IWorkbench
 			enablementState = EnablementState.DisabledByAllowlist;
 		} else if (isEnabled && !extension.isValid) {
 			enablementState = EnablementState.DisabledByInvalidExtension;
-		} else if (this.extensionBisectService.isDisabledByBisect(extension)) {
-			enablementState = EnablementState.DisabledByEnvironment;
 		} else if (this._isDisabledInEnv(extension)) {
 			enablementState = EnablementState.DisabledByEnvironment;
 		} else if (this._isDisabledByVirtualWorkspace(extension, workspaceType)) {

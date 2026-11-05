@@ -13,11 +13,10 @@ import { ScrollbarVisibility } from '../../../../base/common/scrollable.js';
 import { ThemeIcon } from '../../../../base/common/themables.js';
 import { localize, localize2 } from '../../../../nls.js';
 import { SyncDescriptor } from '../../../../platform/instantiation/common/descriptors.js';
-import { IInstantiationService, ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
+import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
 import { Registry } from '../../../../platform/registry/common/platform.js';
 import { CommandsRegistry } from '../../../../platform/commands/common/commands.js';
-import { Action2, MenuId, MenuRegistry, registerAction2 } from '../../../../platform/actions/common/actions.js';
-import { Categories } from '../../../../platform/action/common/actionCommonCategories.js';
+import { MenuId, MenuRegistry } from '../../../../platform/actions/common/actions.js';
 import { ContextKeyExpr } from '../../../../platform/contextkey/common/contextkey.js';
 import { IKeybindingService } from '../../../../platform/keybinding/common/keybinding.js';
 import { IContextMenuService } from '../../../../platform/contextview/browser/contextView.js';
@@ -27,15 +26,15 @@ import { IThemeService } from '../../../../platform/theme/common/themeService.js
 import { IOpenerService } from '../../../../platform/opener/common/opener.js';
 import { IHoverService } from '../../../../platform/hover/browser/hover.js';
 import { ViewPane, IViewPaneOptions } from '../../../browser/parts/views/viewPane.js';
-import { IViewsService } from '../../../services/views/common/viewsService.js';
+import { ViewPaneContainer } from '../../../browser/parts/views/viewPaneContainer.js';
 import {
 	Extensions as ViewExtensions,
 	IViewContainersRegistry,
 	IViewDescriptor,
 	IViewsRegistry,
-	IViewDescriptorService
+	IViewDescriptorService,
+	ViewContainerLocation
 } from '../../../common/views.js';
-import { DefaultViewsContext, VIEWLET_ID } from '../../extensions/common/extensions.js';
 import {
 	IBuiltinExtensionsScannerService,
 	IExtension
@@ -438,44 +437,39 @@ class BuiltinExtensionsView extends SidexExtensionListView {
 	}
 }
 
-class OpenSidexExtensionsAction extends Action2 {
-	constructor() {
-		super({
-			id: 'sidexExtensions.open',
-			title: localize2('sidexExtensions.open', '打开 SideX 扩展'),
-			category: Categories.View,
-			f1: true
-		});
-	}
+const BUILTIN_VIEW_CONTAINER_ID = 'workbench.view.builtinExtensions';
 
-	async run(accessor: ServicesAccessor): Promise<void> {
-		await accessor.get(IViewsService).openView(BUILTIN_VIEW_ID, true);
-	}
-}
-
-registerAction2(OpenSidexExtensionsAction);
-
-const extensionsViewContainer = Registry.as<IViewContainersRegistry>(
+const builtinViewContainer = Registry.as<IViewContainersRegistry>(
 	ViewExtensions.ViewContainersRegistry
-).get(VIEWLET_ID);
+).registerViewContainer(
+	{
+		id: BUILTIN_VIEW_CONTAINER_ID,
+		title: localize2('sidexExtensions.viewContainerTitle', '内置扩展'),
+		icon: Codicon.library,
+		ctorDescriptor: new SyncDescriptor(ViewPaneContainer, [
+			BUILTIN_VIEW_CONTAINER_ID,
+			{ mergeViewWithContainerWhenSingleView: true }
+		]),
+		order: 6,
+		hideIfEmpty: false
+	},
+	ViewContainerLocation.Sidebar
+);
 
 const builtinViewDescriptor: IViewDescriptor = {
 	id: BUILTIN_VIEW_ID,
 	containerIcon: Codicon.library,
 	name: localize2('sidexExtensions.builtinViewTitle', '内置扩展'),
 	ctorDescriptor: new SyncDescriptor(BuiltinExtensionsView),
-	when: ContextKeyExpr.and(DefaultViewsContext),
 	canToggleVisibility: true,
 	canMoveView: true,
-	order: 3
+	order: 1
 };
 
-if (extensionsViewContainer) {
-	Registry.as<IViewsRegistry>(ViewExtensions.ViewsRegistry).registerViews(
-		[builtinViewDescriptor],
-		extensionsViewContainer
-	);
-}
+Registry.as<IViewsRegistry>(ViewExtensions.ViewsRegistry).registerViews(
+	[builtinViewDescriptor],
+	builtinViewContainer
+);
 
 CommandsRegistry.registerCommand('builtinExtensions.refresh', () => {
 	void activeBuiltinView?.refresh();

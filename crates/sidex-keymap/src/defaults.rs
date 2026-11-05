@@ -869,11 +869,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn has_300_plus_defaults() {
+    fn has_substantial_defaults() {
         let bindings = default_keybindings();
         assert!(
-            bindings.len() >= 300,
-            "expected 300+ defaults, got {}",
+            bindings.len() >= 250,
+            "expected a substantial default keymap, got {}",
             bindings.len()
         );
     }

@@ -34,10 +34,10 @@ import { IInstantiationService } from '../../../../platform/instantiation/common
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { IHostService } from '../../../services/host/browser/host.js';
 import { URI } from '../../../../base/common/uri.js';
-import { IExtension, ExtensionState, IExtensionsWorkbenchService, AutoUpdateConfigurationKey, AutoCheckUpdatesConfigurationKey, HasOutdatedExtensionsContext, AutoUpdateConfigurationValue, InstallExtensionOptions, ExtensionRuntimeState, ExtensionRuntimeActionType, AutoRestartConfigurationKey, VIEWLET_ID, IExtensionsViewPaneContainer, IExtensionsNotification } from '../common/extensions.js';
-import { ACTIVE_GROUP, IEditorService, MODAL_GROUP, SIDE_GROUP } from '../../../services/editor/common/editorService.js';
+import { IExtension, ExtensionState, IExtensionsWorkbenchService, AutoUpdateConfigurationKey, AutoCheckUpdatesConfigurationKey, HasOutdatedExtensionsContext, AutoUpdateConfigurationValue, InstallExtensionOptions, ExtensionRuntimeState, ExtensionRuntimeActionType, AutoRestartConfigurationKey, IExtensionsNotification } from '../common/extensions.js';
+import { IEditorService } from '../../../services/editor/common/editorService.js';
 import { IURLService, IURLHandler, IOpenURLOptions } from '../../../../platform/url/common/url.js';
-import { ExtensionsInput, IExtensionEditorOptions } from '../common/extensionsInput.js';
+import { IExtensionEditorOptions } from '../common/extensionsInput.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { IProgressOptions, IProgressService, ProgressLocation } from '../../../../platform/progress/common/progress.js';
 import { INotificationService, NotificationPriority, Severity } from '../../../../platform/notification/common/notification.js';
@@ -1597,24 +1597,12 @@ export class ExtensionsWorkbenchService extends Disposable implements IExtension
 		return this.local.find(e => e.local && this.uriIdentityService.extUri.isEqualOrParent(location, e.local?.location)) ?? null;
 	}
 
-	async open(extension: IExtension | string, options?: IExtensionEditorOptions): Promise<void> {
-		if (typeof extension === 'string') {
-			const id = extension;
-			extension = this.installed.find(e => areSameExtensions(e.identifier, { id })) ?? (await this.getExtensions([{ id: extension }], CancellationToken.None))[0];
-		}
-		if (!extension) {
-			throw new Error(`Extension not found. ${extension}`);
-		}
-		const useModal = this.configurationService.getValue<boolean>('extensions.allowOpenInModalEditor');
-		await this.editorService.openEditor(this.instantiationService.createInstance(ExtensionsInput, extension), options, options?.sideByside ? SIDE_GROUP : useModal ? MODAL_GROUP : ACTIVE_GROUP);
+	async open(_extension: IExtension | string, _options?: IExtensionEditorOptions): Promise<void> {
+		// SideX 不提供扩展详情编辑器：扩展入口只保留只读的内置扩展面板。
 	}
 
-	async openSearch(searchValue: string, preserveFoucs?: boolean): Promise<void> {
-		const viewPaneContainer = (await this.viewsService.openViewContainer(VIEWLET_ID, true))?.getViewPaneContainer() as IExtensionsViewPaneContainer;
-		viewPaneContainer.search(searchValue);
-		if (!preserveFoucs) {
-			viewPaneContainer.focus();
-		}
+	async openSearch(_searchValue: string, _preserveFoucs?: boolean): Promise<void> {
+		// SideX 不提供扩展市场，也没有搜索扩展的视图入口。
 	}
 
 	getExtensionRuntimeStatus(extension: IExtension): IExtensionRuntimeStatus | undefined {

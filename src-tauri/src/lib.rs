@@ -2,7 +2,6 @@ mod app_dirs;
 mod commands;
 
 use commands::db_state::SidexDbState;
-use commands::extension_diagnostics::ExtensionDiagnosticsStore;
 use commands::settings::SettingsStore;
 use commands::storage::StorageDb;
 use commands::terminal::TerminalStore;
@@ -386,7 +385,6 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .manage(Arc::new(TerminalStore::new()))
         .manage(Arc::new(WatchStore::new()))
-        .manage(ExtensionDiagnosticsStore::new())
         .manage(Arc::new(SettingsStore::new()))
         .register_asynchronous_uri_scheme_protocol("sidex-asset", |ctx, request, responder| {
             let app = ctx.app_handle().clone();
@@ -739,23 +737,6 @@ pub fn run() {
             commands::watch_is_active,
             // Extensions (built-in declarative only)
             commands::list_installed_extensions,
-            // Extension diagnostics
-            commands::extension_report_activated,
-            commands::extension_report_provider_call,
-            commands::extension_report_deactivated,
-            commands::extension_report_error,
-            commands::extension_mark_startup_complete,
-            commands::extension_register_session,
-            commands::extension_runtime_status,
-            commands::extension_runtime_profile,
-            commands::extension_slow_extensions,
-            commands::extension_startup_summary,
-            // Extension bisect
-            commands::extension_bisect_start,
-            commands::extension_bisect_good,
-            commands::extension_bisect_bad,
-            commands::extension_bisect_reset,
-            commands::extension_bisect_state,
             // LSP management removed: SideX keeps syntax highlighting, folding and outline only.
             // Syntax / language info
             commands::syntax_get_languages,

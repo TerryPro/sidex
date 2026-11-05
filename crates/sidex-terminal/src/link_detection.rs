@@ -388,6 +388,7 @@ mod tests {
         assert_eq!(links[0].url, "http://localhost:3000/api");
     }
 
+    #[cfg(unix)]
     #[test]
     fn detect_absolute_path_unix() {
         let cells = cells_from_str("Error in /usr/local/bin/app.rs");

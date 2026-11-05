@@ -65,7 +65,8 @@ import '../platform/actions/common/actions.contribution.js';
 import '../platform/undoRedo/common/undoRedoService.js';
 import './services/workspaces/common/editSessionIdentityService.js';
 import './services/workspaces/common/canonicalUriService.js';
-import './services/extensions/browser/extensionUrlHandler.js';
+// SideX：不处理 vscode:extension 市场安装链接。
+// import './services/extensions/browser/extensionUrlHandler.js';
 import './services/keybinding/common/keybindingEditing.js';
 import './services/decorations/browser/decorationsService.js';
 import './services/dialogs/common/dialogService.js';
@@ -245,9 +246,9 @@ import './contrib/sidexExplorer/browser/sidexLanguageFeatures.contribution.js';
 // Custom Editors
 import './contrib/customEditor/browser/customEditor.contribution.js';
 
-// Extensions Management
+// SideX：扩展只保留只读的内置扩展面板，旧扩展管理视图不再注册。
+// 扩展服务仍由扩展扫描与主题/语言贡献使用，但没有任何市场或安装入口。
 import './contrib/extensions/browser/extensions.contribution.js';
-import './contrib/extensions/browser/extensionsViewlet.js';
 
 // Output View
 import './contrib/output/browser/output.contribution.js';

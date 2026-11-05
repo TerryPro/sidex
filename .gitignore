@@ -85,6 +85,10 @@ venv/
 .turbo/
 .cache/
 .parcel-cache/
+# Local debugging / screenshot artifacts (never commit)
+.tmp-*
+.trae-html-share-packages/
+.screenshots/
 
 # ── Incomplete Rust WASM extensions (stubs, not yet LSP-backed) ──────────────
 extensions-rust/debug-auto-launch-extension/

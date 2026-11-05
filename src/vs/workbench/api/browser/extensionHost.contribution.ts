@@ -58,7 +58,8 @@ import './mainThreadTerminalShellIntegration.js';
 import './mainThreadTheming.js';
 import './mainThreadTreeViews.js';
 import './mainThreadDownloadService.js';
-import './mainThreadUrls.js';
+// SideX: removed — no extension-contributed URI handlers / marketplace install links
+// import './mainThreadUrls.js';
 import './mainThreadUriOpeners.js';
 import './mainThreadWindow.js';
 import './mainThreadPower.js';

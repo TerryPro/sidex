@@ -127,8 +127,8 @@ import './contrib/preferences/browser/keyboardLayoutPicker.js';
 // Webview
 import './contrib/webview/browser/webview.web.contribution.js';
 
-// Extensions Management
-import './contrib/extensions/browser/extensions.web.contribution.js';
+// Extensions Management — removed: SideX ships built-in declarative extensions only
+// import './contrib/extensions/browser/extensions.web.contribution.js';
 
 // Terminal
 import './contrib/terminal/browser/terminal.web.contribution.js';

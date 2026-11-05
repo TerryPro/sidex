@@ -2,7 +2,6 @@ pub mod crypto;
 pub mod db_state;
 pub mod editor;
 pub mod encoding;
-pub mod extension_diagnostics;
 pub mod extension_platform;
 pub mod extensions;
 pub mod fs;
@@ -28,8 +27,6 @@ pub mod window;
 
 pub use crypto::*;
 pub use editor::*;
-pub use extension_diagnostics::*;
-pub use extension_platform::*;
 pub use extensions::*;
 pub use fs::*;
 pub use keymap::*;

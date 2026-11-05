@@ -13,26 +13,18 @@
 //!   compatibility with the legacy Tauri `StorageDb`.
 //! - Workspace state, global state, and extension state functions.
 //! - [`recent`] — recently opened files and workspaces.
-//! - [`window_state`] — OS window frame geometry (workbench layout uses `kv_store`).
 //! - [`history`] — search history, terminal sessions, clipboard history,
 //!   breakpoints, and bookmarks.
 //! - [`validation`] — security-critical input validation (path traversal,
 //!   NUL byte detection).
 
-pub mod chat_sessions;
 pub mod db;
 pub mod history;
 pub mod recent;
 pub mod state;
 pub mod storage_kv;
 pub mod validation;
-pub mod window_state;
 
-pub use chat_sessions::{
-    create_session, delete_session, list_sessions, load_messages, save_message, save_session,
-    search_sessions, update_session_title, update_session_pin, update_session_archive,
-    ChatMessage, ChatSession,
-};
 pub use db::{Database, CURRENT_SCHEMA_VERSION};
 pub use history::{
     add_clipboard_entry, add_search_history, add_terminal_session, all_breakpoints,
@@ -52,4 +44,3 @@ pub use state::{
 };
 pub use storage_kv::StorageKv;
 pub use validation::{validate_args, validate_path};
-pub use window_state::{load_window_state, save_window_state, WindowState};

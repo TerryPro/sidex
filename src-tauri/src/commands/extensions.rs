@@ -2,7 +2,6 @@ use crate::commands::extension_platform::{read_extension_manifest, ExtensionMani
 use serde::Serialize;
 use sidex_extensions::paths::user_extensions_dir;
 use std::fs;
-use tauri::AppHandle;
 
 #[derive(Debug, Serialize)]
 pub struct InstalledExtension {
@@ -26,7 +25,7 @@ fn to_installed(manifest: &ExtensionManifest, path: &std::path::Path) -> Install
 }
 
 #[tauri::command]
-pub async fn list_installed_extensions(app: AppHandle) -> Result<Vec<InstalledExtension>, String> {
+pub async fn list_installed_extensions() -> Result<Vec<InstalledExtension>, String> {
     let dir = user_extensions_dir();
     if !dir.exists() {
         return Ok(vec![]);
@@ -35,7 +34,7 @@ pub async fn list_installed_extensions(app: AppHandle) -> Result<Vec<InstalledEx
     let entries = fs::read_dir(&dir).map_err(|e| format!("readdir: {e}"))?;
     for entry in entries.flatten() {
         let path = entry.path();
-        if let Ok(manifest) = read_extension_manifest(&app, &path) {
+        if let Ok(manifest) = read_extension_manifest(&path) {
             out.push(to_installed(&manifest, &path));
         }
     }
