@@ -40,9 +40,15 @@ export interface ISideXFileSystemProviderService extends SideXFileSystemProvider
 export class SideXFileSystemProvider {
 	declare readonly _serviceBrand: undefined;
 	async readFile(path: string): Promise<Uint8Array> {
-		const bytes = await invoke<number[]>('read_file_bytes', { path });
-		if (Array.isArray(bytes)) {
+		const bytes = await invoke<unknown>('read_file_bytes', { path });
+		if (bytes instanceof Uint8Array) {
+			return bytes;
+		}
+		if (bytes instanceof ArrayBuffer) {
 			return new Uint8Array(bytes);
+		}
+		if (Array.isArray(bytes)) {
+			return new Uint8Array(bytes as number[]);
 		}
 		return new Uint8Array(0);
 	}

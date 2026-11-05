@@ -9,11 +9,9 @@ use tauri::{AppHandle, Manager};
 #[serde(rename_all = "camelCase")]
 pub enum ExtensionKind {
     Node,
-    Wasm,
 }
 
 /// Extension manifest record produced entirely by Rust.
-/// Works for both Node (package.json) and WASM (sidex.toml) extensions.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExtensionManifest {
@@ -26,13 +24,10 @@ pub struct ExtensionManifest {
     pub kind: ExtensionKind,
     pub main: Option<String>,
     pub browser: Option<String>,
-    pub wasm_binary: Option<String>,
     pub source: String,
     pub builtin: bool,
     pub activation_events: Vec<String>,
     pub contributes_keys: Vec<String>,
-    #[serde(default)]
-    pub custom_editors: Vec<WasmCustomEditorContribution>,
     #[serde(default)]
     pub commands: Vec<ManifestCommand>,
     #[serde(default)]
@@ -60,17 +55,6 @@ pub struct ManifestMenuItem {
     pub group: Option<String>,
 }
 
-/// Custom editor declared by a WASM extension through `[contributes.custom-editors]`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WasmCustomEditorContribution {
-    pub view_type: String,
-    pub display_name: Option<String>,
-    #[serde(default)]
-    pub filename_patterns: Vec<String>,
-    pub priority: Option<String>,
-}
-
 pub fn path_to_uri_path(path: &str) -> String {
     let stripped = path.strip_prefix(r"\\?\").unwrap_or(path);
     let p = stripped.replace('\\', "/");
@@ -79,196 +63,6 @@ pub fn path_to_uri_path(path: &str) -> String {
     } else {
         format!("/{p}")
     }
-}
-
-#[derive(Debug, Deserialize)]
-struct SidexTomlManifest {
-    extension: SidexTomlExtension,
-    activation: Option<SidexTomlActivation>,
-    contributes: Option<SidexTomlContributes>,
-}
-
-#[allow(dead_code)]
-#[derive(Debug, Deserialize)]
-struct SidexTomlExtension {
-    id: String,
-    name: String,
-    version: String,
-    #[serde(default)]
-    description: Option<String>,
-    wasm: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct SidexTomlActivation {
-    #[serde(default)]
-    events: Vec<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct SidexTomlContributes {
-    #[serde(default)]
-    languages: Vec<String>,
-    #[serde(default)]
-    commands: Vec<SidexTomlCommand>,
-    #[serde(default, rename = "custom-editors")]
-    custom_editors: Vec<SidexTomlCustomEditor>,
-    #[serde(default)]
-    menus: HashMap<String, Vec<SidexTomlMenuItem>>,
-}
-
-#[allow(dead_code)]
-#[derive(Debug, Deserialize)]
-struct SidexTomlCommand {
-    id: String,
-    title: String,
-    #[serde(default)]
-    icon: Option<String>,
-}
-
-#[allow(dead_code)]
-#[derive(Debug, Deserialize)]
-struct SidexTomlMenuItem {
-    command: String,
-    #[serde(default)]
-    when: Option<String>,
-    #[serde(default)]
-    group: Option<String>,
-}
-
-#[allow(dead_code)]
-#[derive(Debug, Deserialize)]
-struct SidexTomlCustomEditor {
-    #[serde(rename = "viewType")]
-    view_type: String,
-    #[serde(default, rename = "displayName")]
-    display_name: Option<String>,
-    #[serde(default, rename = "filenamePatterns")]
-    filename_patterns: Vec<String>,
-    #[serde(default)]
-    priority: Option<String>,
-}
-
-pub fn read_wasm_extension_manifest(
-    app: &AppHandle,
-    ext_dir: &Path,
-) -> Result<ExtensionManifest, String> {
-    let toml_path = ext_dir.join("sidex.toml");
-    let raw_bytes =
-        fs::read(&toml_path).map_err(|e| format!("read {}: {e}", toml_path.display()))?;
-    let raw = crate::commands::encoding::decode_utf8_strict(&raw_bytes)
-        .map_err(|e| format!("decode {}: {e}", toml_path.display()))?;
-    let manifest: SidexTomlManifest =
-        toml::from_str(raw).map_err(|e| format!("parse {}: {e}", toml_path.display()))?;
-
-    let wasm_path = ext_dir.join(&manifest.extension.wasm);
-    if !wasm_path.exists() {
-        return Err(format!(
-            "wasm binary '{}' not found for extension {}",
-            manifest.extension.wasm, manifest.extension.id
-        ));
-    }
-
-    let parts: Vec<&str> = manifest.extension.id.splitn(2, '.').collect();
-    let (publisher, name) = if parts.len() == 2 {
-        (parts[0].to_string(), parts[1].to_string())
-    } else {
-        ("unknown".to_string(), manifest.extension.id.clone())
-    };
-
-    let activation_events = manifest.activation.map(|a| a.events).unwrap_or_default();
-
-    let mut contributes_keys = Vec::new();
-    if let Some(ref c) = manifest.contributes {
-        if !c.languages.is_empty() {
-            contributes_keys.push("languages".to_string());
-        }
-        if !c.commands.is_empty() {
-            contributes_keys.push("commands".to_string());
-        }
-        if !c.custom_editors.is_empty() {
-            contributes_keys.push("customEditors".to_string());
-        }
-    }
-
-    let (source, builtin) = extension_source(app, ext_dir);
-
-    let custom_editors = manifest
-        .contributes
-        .as_ref()
-        .map(|contributes| {
-            contributes
-                .custom_editors
-                .iter()
-                .map(|editor| WasmCustomEditorContribution {
-                    view_type: editor.view_type.clone(),
-                    display_name: editor.display_name.clone(),
-                    filename_patterns: editor.filename_patterns.clone(),
-                    priority: editor.priority.clone(),
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-
-    let commands = manifest
-        .contributes
-        .as_ref()
-        .map(|contributes| {
-            contributes
-                .commands
-                .iter()
-                .map(|command| ManifestCommand {
-                    id: command.id.clone(),
-                    title: command.title.clone(),
-                    icon: command.icon.clone(),
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-
-    let menus = manifest
-        .contributes
-        .as_ref()
-        .map(|contributes| {
-            contributes
-                .menus
-                .iter()
-                .map(|(menu, items)| {
-                    (
-                        menu.clone(),
-                        items
-                            .iter()
-                            .map(|item| ManifestMenuItem {
-                                command: item.command.clone(),
-                                when: item.when.clone(),
-                                group: item.group.clone(),
-                            })
-                            .collect(),
-                    )
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-
-    Ok(ExtensionManifest {
-        id: manifest.extension.id,
-        publisher,
-        name,
-        display_name: manifest.extension.name,
-        version: manifest.extension.version,
-        path: ext_dir.to_string_lossy().to_string(),
-        kind: ExtensionKind::Wasm,
-        main: None,
-        browser: None,
-        wasm_binary: Some(manifest.extension.wasm),
-        source,
-        builtin,
-        activation_events,
-        contributes_keys,
-        custom_editors,
-        commands,
-        menus,
-    })
 }
 
 pub fn user_extensions_dir() -> PathBuf {
@@ -450,205 +244,11 @@ pub fn read_extension_manifest(
         kind: ExtensionKind::Node,
         main,
         browser,
-        wasm_binary: None,
         source,
         builtin,
         activation_events,
         contributes_keys,
-        custom_editors: Vec::new(),
         commands,
         menus,
     })
-}
-
-pub fn extension_search_paths(app: &AppHandle) -> Vec<PathBuf> {
-    let builtin_ext = resolve_builtin_extensions_dir(app);
-    // NOTE: we intentionally do NOT scan other editors' extension dirs
-    // (~/.vscode/extensions, ~/.cursor/extensions, or their app bundles).
-    // Loading foreign user extensions pulls in incompatible/platform-native
-    // extensions and can mutate the user's other-editor runtimes.
-    let dist_ext = std::env::current_dir()
-        .unwrap_or_else(|_| PathBuf::from("."))
-        .join("dist")
-        .join("extensions");
-    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-
-    let rust_ext = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("extensions-rust");
-
-    let candidates = vec![
-        user_extensions_dir(),
-        builtin_ext,
-        rust_ext,
-        dist_ext,
-        cwd.join("extensions"),
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("..")
-            .join("extensions"),
-    ];
-
-    let mut seen = HashSet::new();
-    let mut out = Vec::new();
-    for candidate in candidates {
-        if candidate.as_os_str().is_empty() {
-            continue;
-        }
-        // canonicalize yields `\\?\C:\...` extended-length paths on Windows,
-        // which Node's CJS resolver cannot handle; dunce strips the prefix
-        // when safe and is a pass-through elsewhere.
-        let normalized = dunce::simplified(
-            &candidate
-                .canonicalize()
-                .unwrap_or_else(|_| candidate.clone()),
-        )
-        .to_path_buf();
-        if seen.insert(normalized.clone()) {
-            out.push(normalized);
-        }
-    }
-    out
-}
-
-pub fn scan_extensions(app: &AppHandle, paths: &[PathBuf]) -> Vec<ExtensionManifest> {
-    let mut disable_ids: HashSet<String> = std::env::var("SIDEX_DISABLE_EXTENSION_IDS")
-        .unwrap_or_else(|_| "ms-python.vscode-pylance".to_string())
-        .split(',')
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(str::to_string)
-        .collect();
-
-    for id in &[
-        "GitHub.copilot",
-        "GitHub.copilot-chat",
-        "sswg.swift-lang",
-        "vscode.github-authentication",
-        "vscode.microsoft-authentication",
-    ] {
-        disable_ids.insert(id.to_string());
-    }
-
-    let disable_prefixes = ["anysphere.cursor", "cursor."];
-
-    let mut by_id: HashMap<String, ExtensionManifest> = HashMap::new();
-    for search_path in paths {
-        let Ok(entries) = fs::read_dir(search_path) else {
-            continue;
-        };
-
-        for entry in entries.flatten() {
-            let Ok(file_type) = entry.file_type() else {
-                continue;
-            };
-            if !file_type.is_dir() {
-                continue;
-            }
-
-            let ext_dir = entry.path();
-            let manifest = if ext_dir.join("sidex.toml").exists() {
-                read_wasm_extension_manifest(app, &ext_dir)
-            } else {
-                read_extension_manifest(app, &ext_dir)
-            };
-            let Ok(manifest) = manifest else {
-                continue;
-            };
-
-            if disable_ids.contains(&manifest.id)
-                || disable_prefixes.iter().any(|p| manifest.id.starts_with(p))
-            {
-                continue;
-            }
-
-            let replace = match by_id.get(&manifest.id) {
-                Some(existing) => is_version_greater(&manifest.version, &existing.version),
-                None => true,
-            };
-            if replace {
-                by_id.insert(manifest.id.clone(), manifest);
-            }
-        }
-    }
-
-    let mut values: Vec<_> = by_id.into_values().collect();
-    values.sort_by_key(|a| a.id.clone());
-    values
-}
-
-#[tauri::command]
-pub async fn list_available_extensions(app: AppHandle) -> Result<Vec<ExtensionManifest>, String> {
-    let paths = extension_search_paths(&app);
-    Ok(scan_extensions(&app, &paths))
-}
-
-#[tauri::command]
-pub async fn extension_platform_bootstrap(
-    app: AppHandle,
-    wasm_runtime: tauri::State<
-        '_,
-        std::sync::Arc<crate::commands::extension_wasm::WasmExtensionRuntime>,
-    >,
-) -> Result<serde_json::Value, String> {
-    let paths = extension_search_paths(&app);
-    let manifests = scan_extensions(&app, &paths);
-
-    let wasm_manifests: Vec<ExtensionManifest> = manifests
-        .iter()
-        .filter(|m| m.kind == ExtensionKind::Wasm && m.wasm_binary.is_some())
-        .cloned()
-        .collect();
-
-    if !wasm_manifests.is_empty() {
-        let runtime = wasm_runtime.inner().clone();
-        // Remember every discovered manifest so language-triggered extensions can
-        // be instantiated later without rescanning the disk.
-        runtime.register_extensions(wasm_manifests.clone());
-
-        let app_handle = app.clone();
-        let count = wasm_manifests.len();
-        log::info!(
-            "[platform] registered {count} WASM extensions, activating startup ones in background"
-        );
-        std::thread::spawn(move || {
-            use tauri::Emitter;
-            let activated = runtime
-                .activate_for_events(&crate::commands::extension_wasm::startup_activation_events());
-            log::info!(
-                "[platform] {} of {count} WASM extensions activated at startup",
-                activated.len()
-            );
-            let _ = app_handle.emit("sidex-wasm-extensions-ready", activated.len());
-        });
-    }
-
-    let summaries: Vec<serde_json::Value> = manifests
-        .iter()
-        .map(|m| {
-            serde_json::json!({
-                "id": m.id,
-                "name": m.display_name,
-                "version": m.version,
-                "kind": m.kind,
-                "activationEvents": m.activation_events,
-                "main": m.main,
-                "browser": m.browser,
-                "wasmBinary": m.wasm_binary,
-                "contributes": m.contributes_keys,
-                "commands": m.commands,
-                "menus": m.menus,
-                "location": m.path,
-            })
-        })
-        .collect();
-
-    Ok(serde_json::json!({
-        "paths": {
-            "builtinExtensionsDir": dunce::simplified(&resolve_builtin_extensions_dir(&app)).to_string_lossy(),
-            "userExtensionsDir": dunce::simplified(&user_extensions_dir()).to_string_lossy(),
-            "globalStorageDir": dunce::simplified(&global_storage_dir()).to_string_lossy(),
-        },
-        "sessionKind": "local",
-        "extensions": summaries,
-    }))
 }

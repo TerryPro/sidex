@@ -1,0 +1,103 @@
+/*---------------------------------------------------------------------------------------------
+ *  SideX: 内置 CSV 表格编辑器样式
+ *--------------------------------------------------------------------------------------------*/
+
+.csv-preview-editor {
+	display: flex;
+	flex-direction: column;
+	width: 100%;
+	height: 100%;
+	overflow: hidden;
+	outline: none;
+	background: var(--vscode-editor-background);
+	color: var(--vscode-editor-foreground);
+}
+
+.csv-preview-toolbar {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	height: 30px;
+	padding: 0 8px;
+	box-sizing: border-box;
+	flex: 0 0 auto;
+	overflow: hidden;
+	white-space: nowrap;
+	font-size: 12px;
+	user-select: none;
+	border-bottom: 1px solid var(--vscode-editorGroup-border, transparent);
+}
+
+.csv-preview-name {
+	font-weight: 600;
+}
+
+.csv-preview-meta,
+.csv-preview-status {
+	opacity: 0.75;
+}
+
+.csv-preview-spacer {
+	flex: 1 1 auto;
+}
+
+.csv-preview-button {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	height: 22px;
+	padding: 0 6px;
+	font-size: 12px;
+	cursor: pointer;
+	border-radius: 2px;
+	border: 1px solid var(--vscode-button-border, transparent);
+	background: var(--vscode-button-secondaryBackground, transparent);
+	color: var(--vscode-button-secondaryForeground, inherit);
+}
+
+.csv-preview-button:hover {
+	background: var(--vscode-button-secondaryHoverBackground, var(--vscode-toolbar-hoverBackground));
+}
+
+.csv-preview-scroll {
+	flex: 1 1 auto;
+	min-height: 0;
+	overflow: auto;
+}
+
+.csv-preview-table {
+	border-collapse: collapse;
+	font-family: var(--vscode-editor-font-family);
+	font-size: var(--vscode-editor-font-size);
+	table-layout: auto;
+}
+
+.csv-preview-table th,
+.csv-preview-table td {
+	border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border));
+	padding: 2px 8px;
+	min-width: 60px;
+	max-width: 360px;
+	vertical-align: top;
+	white-space: pre-wrap;
+	outline: none;
+}
+
+.csv-preview-table th {
+	position: sticky;
+	top: 0;
+	z-index: 1;
+	font-weight: 600;
+	background: var(--vscode-editorWidget-background);
+}
+
+.csv-preview-table td:focus,
+.csv-preview-table th:focus {
+	background: var(--vscode-editor-background);
+	box-shadow: inset 0 0 0 1px var(--vscode-focusBorder);
+}
+
+.csv-preview-empty {
+	padding: 16px;
+	opacity: 0.7;
+}

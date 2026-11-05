@@ -1922,7 +1922,7 @@ workbenchRegistry.registerWorkbenchContribution(StatusUpdater, LifecyclePhase.Ev
 workbenchRegistry.registerWorkbenchContribution(MaliciousExtensionChecker, LifecyclePhase.Eventually);
 workbenchRegistry.registerWorkbenchContribution(KeymapExtensions, LifecyclePhase.Restored);
 // Marketplace views (including the "Downloaded" panel) are not registered:
-// SideX ships built-in declarative extensions and Rust/WASM extensions only.
+// SideX ships built-in declarative extensions only.
 workbenchRegistry.registerWorkbenchContribution(ExtensionActivationProgress, LifecyclePhase.Eventually);
 workbenchRegistry.registerWorkbenchContribution(ExtensionDependencyChecker, LifecyclePhase.Eventually);
 workbenchRegistry.registerWorkbenchContribution(ExtensionEnablementWorkspaceTrustTransitionParticipant, LifecyclePhase.Restored);

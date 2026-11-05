@@ -54,12 +54,61 @@ export class DirectoryNavBarControl extends Disposable {
 		this._register(addDisposableListener(this.searchInput, EventType.KEY_DOWN, event => {
 			if (event.key === 'Enter') {
 				event.preventDefault();
-				this.searchInput.blur();
+				this.directoryService.setSearch(this.searchInput.value.trim());
+			}
+		}));
+		this._register(addDisposableListener(this.searchInput, EventType.INPUT, () => {
+			if (!this.searchInput.value.trim()) {
+				this.directoryService.setSearch('');
 			}
 		}));
 
+		this._register(addDisposableListener(this.breadcrumb, EventType.DBLCLICK, () => this.beginAddressEdit()));
+
 		this._register(this.directoryService.onDidChange(() => this.update()));
 		this.update();
+	}
+
+	private beginAddressEdit(): void {
+		const input = $('input.sidex-explorer-address-input') as HTMLInputElement;
+		input.type = 'text';
+		input.spellcheck = false;
+		input.value = this.directoryService.activeLocation;
+		input.style.cssText = [
+			'flex:1 1 auto;min-width:0;height:22px;padding:0 6px;font-size:12px',
+			'background:var(--vscode-input-background);color:var(--vscode-input-foreground)',
+			'border:1px solid var(--vscode-focusBorder);border-radius:2px;outline:none'
+		].join(';');
+
+		this.breadcrumb.style.display = 'none';
+		this.breadcrumb.parentElement?.appendChild(input);
+		input.focus();
+		input.select();
+
+		let closed = false;
+		const close = (apply: boolean) => {
+			if (closed) {
+				return;
+			}
+			closed = true;
+			const value = input.value;
+			input.remove();
+			this.breadcrumb.style.display = '';
+			if (apply) {
+				this.directoryService.navigate(normalizeLocation(value));
+			}
+		};
+
+		input.addEventListener('keydown', event => {
+			if (event.key === 'Enter') {
+				event.preventDefault();
+				close(true);
+			} else if (event.key === 'Escape') {
+				event.preventDefault();
+				close(false);
+			}
+		});
+		input.addEventListener('blur', () => close(false));
 	}
 
 	private createNavButton(parent: HTMLElement, icon: string, title: string): HTMLButtonElement {

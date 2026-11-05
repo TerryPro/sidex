@@ -43,4 +43,10 @@ export interface ISideXExplorerService {
 	listDrives(): Promise<SideXDriveInfo[]>;
 	readDirectory(path: string): Promise<SideXExplorerEntry[]>;
 	stat(path: string): Promise<SideXFileStat>;
+
+	createFile(path: string, content?: string): Promise<void>;
+	createFolder(path: string): Promise<void>;
+	rename(oldPath: string, newPath: string): Promise<void>;
+	moveToTrash(path: string): Promise<void>;
+	copy(source: string, destination: string, recursive?: boolean): Promise<void>;
 }

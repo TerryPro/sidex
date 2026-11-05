@@ -43,6 +43,22 @@ fn io_err(path: &str, e: &sidex_workspace::WorkspaceError) -> String {
     format!("{path}: {e}")
 }
 
+/// 单次 IPC 读取上限。超过此大小直接拒绝：整文件读入内存再跨 IPC 传输，
+/// 大文件（几百 MB 的压缩包等）会把进程内存打爆并卡住主线程。
+const MAX_READ_BYTES: u64 = 32 * 1024 * 1024;
+
+fn ensure_readable_size(path: &str) -> Result<(), String> {
+    let metadata = std::fs::metadata(path).map_err(|e| format!("{path}: {e}"))?;
+    if metadata.len() > MAX_READ_BYTES {
+        return Err(format!(
+            "文件过大（{:.1} MB），超过单次读取上限 {} MB",
+            metadata.len() as f64 / (1024.0 * 1024.0),
+            MAX_READ_BYTES / (1024 * 1024)
+        ));
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub fn get_cwd() -> Result<String, String> {
     std::env::current_dir()
@@ -54,14 +70,18 @@ pub fn get_cwd() -> Result<String, String> {
 #[tauri::command]
 pub fn read_file(path: String) -> Result<String, String> {
     validate_path(&path)?;
+    ensure_readable_size(&path)?;
     ws::read_file(Path::new(&path)).map_err(|e| io_err(&path, &e))
 }
 
+/// 返回原始字节（`tauri::ipc::Response`），避免把每个字节展开成 JSON 数字。
 #[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
-pub fn read_file_bytes(path: String) -> Result<Vec<u8>, String> {
+pub fn read_file_bytes(path: String) -> Result<tauri::ipc::Response, String> {
     validate_path(&path)?;
-    ws::read_file_bytes(Path::new(&path)).map_err(|e| io_err(&path, &e))
+    ensure_readable_size(&path)?;
+    let bytes = ws::read_file_bytes(Path::new(&path)).map_err(|e| io_err(&path, &e))?;
+    Ok(tauri::ipc::Response::new(bytes))
 }
 
 #[allow(clippy::needless_pass_by_value)]
@@ -270,4 +290,44 @@ pub fn rename(old_path: String, new_path: String) -> Result<(), String> {
 pub fn exists(path: String) -> Result<bool, String> {
     validate_path(&path)?;
     Ok(ws::exists(Path::new(&path)))
+}
+
+fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dst)?;
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let target = dst.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            copy_dir_recursive(&entry.path(), &target)?;
+        } else {
+            std::fs::copy(entry.path(), target)?;
+        }
+    }
+    Ok(())
+}
+
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
+pub fn copy_path(source: String, dest: String, recursive: bool) -> Result<(), String> {
+    validate_path(&source)?;
+    validate_path(&dest)?;
+    let src = Path::new(&source);
+    let dst = Path::new(&dest);
+    if src.is_dir() {
+        if !recursive {
+            return Err("复制文件夹需要 recursive=true".to_string());
+        }
+        copy_dir_recursive(src, dst).map_err(|e| format!("{source}: {e}"))
+    } else {
+        std::fs::copy(src, dst)
+            .map(|_| ())
+            .map_err(|e| format!("{source}: {e}"))
+    }
+}
+
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
+pub fn move_to_trash(path: String) -> Result<(), String> {
+    validate_path(&path)?;
+    trash::delete(&path).map_err(|e| format!("move to trash: {e}"))
 }

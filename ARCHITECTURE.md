@@ -10,7 +10,7 @@ servers.
 
 The VS Code source (MIT License) is the architectural reference. No proprietary code is used.
 
-可视化版本：[SideX 架构：WASM 扩展与语言能力](.archify/architecture-sidex-20261104-151740/sidex-architecture.html)
+
 
 ## Process Model
 
@@ -29,7 +29,7 @@ Renderer Process             →       Tauri Webview (frontend TS)
   └─ Extension Host API      →       Extension Host API (ported)
 
 Shared Process               →       Rust service layer
-Extension Host               →       WASM runtime in-process
+Extension Host               →       built-in declarative extensions only
 ```
 
 ## VSCode Layering (Preserved)
@@ -128,7 +128,7 @@ Extension Host               →       WASM runtime in-process
 | `browser/parts` (8 Parts) | Reuse with mods | Done |
 | `contrib/` (92 features) | Incremental port | Partial |
 | `services/` (90 services) | Incremental port | Partial |
-| `api/` (Extension host) | WASM-only subset | Done |
+| `api/` (Extension host) | VS Code API compatibility subset | Done |
 
 ### code/ (Application Entry)
 | Sublayer | Strategy | Status |
@@ -140,9 +140,9 @@ Extension Host               →       WASM runtime in-process
 
 All Tauri commands are registered in `src-tauri/src/lib.rs`. The table below
 covers the modules most central to this doc's architecture story — the
-command surface has grown well past what fits here (WASM extensions, syntax
-analysis, and more all live in `src-tauri/src/commands/` too). `lib.rs` is
-the source of truth for the full, current list.
+command surface has grown well past what fits here (syntax analysis and more
+all live in `src-tauri/src/commands/` too). `lib.rs` is the source of truth for
+the full, current list.
 
 | Module | Commands |
 |---|---|
@@ -153,7 +153,7 @@ the source of truth for the full, current list.
 | **os** | `get_os_info`, `get_env`, `get_all_env`, `get_shell` |
 | **storage** | `storage_get`, `storage_set`, `storage_list`, `storage_delete` |
 | **syntax** | `syntax_get_document_symbols`, `syntax_get_folding_ranges` |
-| **extension_platform** | `extension_platform_bootstrap`, `extension_platform_status`, `extension_platform_restart`, `extension_platform_stop`, `extension_platform_init_data` |
+| **extension_platform** | `list_available_extensions` |
 | **network** | `proxy_request`, `proxy_request_full` |
 
 There is no Git module. Source control was removed along with the rest of the
@@ -161,18 +161,19 @@ VS Code feature surface that a file manager does not need.
 
 ## Extension Host
 
-The extension host is WASM-first. `src-tauri/src/commands/extension_wasm.rs`
-loads `.wasm` components through the wasmtime component model against the WIT
-contract in `src-tauri/wit/world.wit`. A Rust extension (`csv-editor`) ships in
-`extensions-rust/` and provides a custom editor.
+SideX has no extension runtime. The only extension form is the declarative
+catalogue under `extensions/`: TextMate grammars, themes and language
+configuration, scanned into the workbench at startup.
 
-The workbench side lives in
-`src/vs/workbench/contrib/extensions/browser/tauriExtensionHost.contribution.ts`.
-It registers the WASM symbol and folding providers and custom editors.
+CSV files are handled by the built-in native editor pane in
+`src/vs/workbench/contrib/csvPreview/`. It parses the file, renders an editable
+table and writes back through `IFileService`. There is no wasmtime, WIT contract
+or `.wasm` component in the product.
 
 SideX has no language server layer. Keyword colouring comes from TextMate
 grammars (`commands/textmate.rs`), folding from Monaco indentation plus native
-brace/Markdown ranges, and the outline from regex-based symbol extraction in
+brace/Markdown ranges. TypeScript/JavaScript outlines use tree-sitter via
+`tree-sitter-typescript`; other languages use regex-based symbol extraction in
 `commands/syntax.rs` (`syntax_get_document_symbols`,
 `syntax_get_folding_ranges`).
 

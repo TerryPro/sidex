@@ -70,6 +70,26 @@ export class SideXExplorerService implements ISideXExplorerService {
 			readOnly: !!stat.readonly
 		};
 	}
+
+	async createFile(path: string, content = ''): Promise<void> {
+		await invoke('write_file', { path, content });
+	}
+
+	async createFolder(path: string): Promise<void> {
+		await invoke('mkdir', { path, recursive: true });
+	}
+
+	async rename(oldPath: string, newPath: string): Promise<void> {
+		await invoke('rename', { oldPath, newPath });
+	}
+
+	async moveToTrash(path: string): Promise<void> {
+		await invoke('move_to_trash', { path });
+	}
+
+	async copy(source: string, destination: string, recursive = true): Promise<void> {
+		await invoke('copy_path', { source, dest: destination, recursive });
+	}
 }
 
 registerSingleton(ISideXExplorerService, SideXExplorerService, InstantiationType.Delayed);

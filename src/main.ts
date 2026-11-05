@@ -56,7 +56,6 @@ async function boot() {
 			SideXSearchService,
 			SideXSettingsService,
 			SideXThemeService,
-			SideXExtensionService,
 			SideXKeymapService,
 			SideXFileSystemProvider
 		} = await import('./vs/platform/sidex/common/sidexServices.js');
@@ -67,7 +66,6 @@ async function boot() {
 			search: new SideXSearchService(),
 			settings: new SideXSettingsService(),
 			theme: new SideXThemeService(),
-			extensions: new SideXExtensionService(),
 			keymap: new SideXKeymapService(),
 			fileSystem: new SideXFileSystemProvider()
 		};
@@ -216,12 +214,45 @@ async function boot() {
 	setupNativeWindowDragging();
 	setupWindowsEditorNewlineKeybindings();
 	updateNativeMenuLabels();
+	void reportWorkbenchReady();
 
 	console.log(
 		'[SideX] Workbench created' + (folderParam ? ` (folder: ${folderParam})` : ' (no folder)'),
 		'workspace:',
 		workspace
 	);
+}
+
+/**
+ * 去掉启动遮罩并把实际耗时写进 Rust 日志，方便对比 dev / 打包版本的启动速度。
+ * `code/didStartWorkbench` 由 workbench.ts 在布局恢复完成后打出。
+ */
+async function reportWorkbenchReady(): Promise<void> {
+	const deadline = performance.now() + 60000;
+	while (performance.now() < deadline) {
+		if (performance.getEntriesByName('code/didStartWorkbench').length > 0) {
+			break;
+		}
+		await new Promise(resolve => setTimeout(resolve, 100));
+	}
+
+	const splash = document.getElementById('sidex-splash');
+	if (splash) {
+		splash.classList.add('sidex-splash-hide');
+		window.setTimeout(() => splash.remove(), 200);
+	}
+
+	try {
+		const { invoke } = await import('@tauri-apps/api/core');
+		const markOf = (name: string) => performance.getEntriesByName(name)[0]?.startTime;
+		await invoke('frontend_ready', {
+			renderMs: Math.round(performance.now()),
+			loadMs: markOf('code/didLoadWorkbenchMain'),
+			startMs: markOf('code/didStartWorkbench')
+		});
+	} catch {
+		// 只用于诊断，失败不影响使用
+	}
 }
 
 function setupTauriExternalOpener() {

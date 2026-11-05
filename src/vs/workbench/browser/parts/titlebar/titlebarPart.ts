@@ -117,6 +117,15 @@ import { ILabelService } from '../../../../platform/label/common/label.js';
 import { DirectoryTabsControl } from '../../../contrib/sidexExplorer/browser/directoryTabsControl.js';
 import { DirectoryNavBarControl } from '../../../contrib/sidexExplorer/browser/directoryNavBarControl.js';
 
+/**
+ * SideX runs inside Tauri and replaces parts of the stock VS Code title bar
+ * (directory tabs, navigation bar) with its own chrome. This flag lets the
+ * stock code paths bail out where they would conflict with that chrome.
+ */
+function isSidexMode(): boolean {
+	return !!(globalThis as any).__SIDEX_TAURI__;
+}
+
 export interface ITitleVariable {
 	readonly name: string;
 	readonly contextKey: string;
@@ -314,7 +323,7 @@ export class BrowserTitlebarPart extends Part implements ITitlebarPart {
 	get minimumHeight(): number {
 		const wcoEnabled = isWeb && isWCOEnabled();
 		let value: number;
-		if ((globalThis as any).__SIDEX_TAURI__) {
+		if (isSidexMode()) {
 			value = 88;
 		} else {
 			value = this.isCommandCenterVisible || wcoEnabled ? DEFAULT_CUSTOM_TITLEBAR_HEIGHT : 28;
@@ -562,7 +571,7 @@ export class BrowserTitlebarPart extends Part implements ITitlebarPart {
 
 	protected override createContentArea(parent: HTMLElement): HTMLElement {
 		this.element = parent;
-		const isSidex = !!(globalThis as any).__SIDEX_TAURI__;
+		const isSidex = isSidexMode();
 		this.rootContainer = append(parent, $('.titlebar-container'));
 
 		this.leftContent = append(this.rootContainer, $('.titlebar-left'));
@@ -576,7 +585,7 @@ export class BrowserTitlebarPart extends Part implements ITitlebarPart {
 
 		// Draggable region that we can manipulate for #52522
 		this.dragRegion = prepend(this.rootContainer, $('div.titlebar-drag-region'));
-		if ((globalThis as any).__SIDEX_TAURI__) {
+		if (isSidex) {
 			this.dragRegion.style.setProperty('-webkit-app-region', 'no-drag');
 			// this.dragRegion.style.pointerEvents = 'none';
 
@@ -668,10 +677,19 @@ export class BrowserTitlebarPart extends Part implements ITitlebarPart {
 		}
 
 		// Create Toolbar Actions — includes the layout controls (side bar, panel, secondary side bar)
-		if (!isSidex && hasCustomTitlebar(this.configurationService, this.titleBarStyle)) {
+		// SideX: the layout control is the only toolbar content we keep (no editor/global actions).
+		if (hasCustomTitlebar(this.configurationService, this.titleBarStyle)) {
 			this.actionToolBarElement = append(this.rightContent, $('div.action-toolbar-container'));
 			this.createActionToolBar();
 			this.createActionToolBarMenus();
+			console.log('[SIDEX-DIAG] toolbar created', JSON.stringify({
+				type: this.configurationService.getValue('workbench.layoutControl.type'),
+				enabled: this.configurationService.getValue('workbench.layoutControl.enabled'),
+				sideBarLoc: this.configurationService.getValue('workbench.sideBar.location'),
+				layoutActions: this.layoutToolbarMenu?.getActions().length ?? -1,
+				globalActions: this.globalToolbarMenu?.getActions().length ?? -1,
+				rightChildren: Array.from(this.rightContent.children).map(c => c.className)
+			}));
 		}
 
 		// Window Controls Container
@@ -705,7 +723,7 @@ export class BrowserTitlebarPart extends Part implements ITitlebarPart {
 					this.windowControlsContainer.classList.add('wco-enabled');
 				}
 
-				if (!isMacintosh && (globalThis as any).__SIDEX_TAURI__) {
+				if (!isMacintosh && isSidex) {
 					const minBtn = append(this.windowControlsContainer, $('div.window-icon.window-min'));
 					const minIcon = append(minBtn, $('span.codicon.codicon-chrome-minimize'));
 					minIcon.setAttribute('aria-hidden', 'true');
@@ -969,6 +987,11 @@ export class BrowserTitlebarPart extends Part implements ITitlebarPart {
 			update = { editorActions: true, layoutActions: true, globalActions: true, activityActions: true };
 		}
 
+		// The tool bar is only created when a custom title bar is in use.
+		if (!this.actionToolBar) {
+			return;
+		}
+
 		const updateToolBarActions = () => {
 			const actions: IToolbarActions = { primary: [], secondary: [] };
 
@@ -1125,13 +1148,17 @@ export class BrowserTitlebarPart extends Part implements ITitlebarPart {
 
 	protected get isCommandCenterVisible() {
 		// Sidex: command center is hidden by default (the search bar is removed from the titlebar)
-		if ((globalThis as any).__SIDEX_TAURI__) {
+		if (isSidexMode()) {
 			return false;
 		}
 		return !this.isCompact && this.configurationService.getValue<boolean>(LayoutSettings.COMMAND_CENTER) !== false;
 	}
 
 	private get editorActionsEnabled(): boolean {
+		// SideX: the title bar shows the layout control only, editor actions stay in the tab bar.
+		if (isSidexMode()) {
+			return false;
+		}
 		return (
 			this.editorGroupsContainer.partOptions.editorActionsLocation === EditorActionsLocation.TITLEBAR ||
 			(this.editorGroupsContainer.partOptions.editorActionsLocation === EditorActionsLocation.DEFAULT &&
@@ -1151,6 +1178,10 @@ export class BrowserTitlebarPart extends Part implements ITitlebarPart {
 	}
 
 	private get globalActionsEnabled(): boolean {
+		// SideX: no notification bell / accounts tile in the title bar.
+		if (isSidexMode()) {
+			return false;
+		}
 		return !this.isCompact;
 	}
 

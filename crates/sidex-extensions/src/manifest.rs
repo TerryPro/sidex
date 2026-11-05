@@ -1,9 +1,7 @@
-//! Extension manifest parsing for both Node (`package.json`) and WASM
-//! (`sidex.toml`) extensions.
+//! Extension manifest parsing for `package.json` based extensions.
 //!
-//! Ported from `src-tauri/src/commands/extension_platform.rs`, removing all
-//! Tauri dependencies. The original VS Code-compatible `package.json`
-//! parsing is preserved and augmented with WASM manifest support.
+//! The VS Code-compatible `package.json` parsing is preserved; WASM
+//! `sidex.toml` manifests are no longer supported.
 
 use std::path::Path;
 
@@ -18,14 +16,13 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "camelCase")]
 pub enum ExtensionKind {
     Node,
-    Wasm,
 }
 
 // ---------------------------------------------------------------------------
 // Core manifest (unified)
 // ---------------------------------------------------------------------------
 
-/// Parsed extension manifest — works for both Node and WASM extensions.
+/// Parsed extension manifest.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExtensionManifest {
@@ -52,9 +49,6 @@ pub struct ExtensionManifest {
     /// Browser entry point (web extensions).
     #[serde(default)]
     pub browser: Option<String>,
-    /// WASM binary path (relative to extension dir).
-    #[serde(default)]
-    pub wasm_binary: Option<String>,
     /// Extension kind.
     #[serde(default = "default_kind")]
     pub kind: ExtensionKind,
@@ -171,49 +165,6 @@ pub struct EngineRequirement {
 }
 
 // ---------------------------------------------------------------------------
-// WASM manifest (sidex.toml)
-// ---------------------------------------------------------------------------
-
-#[derive(Debug, Deserialize)]
-struct SidexTomlManifest {
-    extension: SidexTomlExtension,
-    activation: Option<SidexTomlActivation>,
-    contributes: Option<SidexTomlContributes>,
-}
-
-#[derive(Debug, Deserialize)]
-struct SidexTomlExtension {
-    id: String,
-    name: String,
-    version: String,
-    #[serde(default)]
-    #[allow(dead_code)]
-    description: Option<String>,
-    wasm: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct SidexTomlActivation {
-    #[serde(default)]
-    events: Vec<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct SidexTomlContributes {
-    #[serde(default)]
-    languages: Vec<String>,
-    #[serde(default)]
-    commands: Vec<SidexTomlCommand>,
-}
-
-#[derive(Debug, Deserialize)]
-#[allow(dead_code)]
-struct SidexTomlCommand {
-    id: String,
-    title: String,
-}
-
-// ---------------------------------------------------------------------------
 // VS Code-compatible extension description (for Node host init data)
 // ---------------------------------------------------------------------------
 
@@ -320,68 +271,8 @@ pub fn parse_manifest_str(json: &str) -> Result<ExtensionManifest> {
     if manifest.id.is_empty() {
         manifest.id = manifest.canonical_id();
     }
-    if manifest.kind == ExtensionKind::Node && manifest.wasm_binary.is_none() {
-        // Already correct default
-    }
 
     Ok(manifest)
-}
-
-/// Reads a WASM extension manifest from `sidex.toml` in `ext_dir`.
-pub fn read_wasm_manifest(ext_dir: &Path) -> Result<ExtensionManifest> {
-    let toml_path = ext_dir.join("sidex.toml");
-    let raw = std::fs::read_to_string(&toml_path)
-        .with_context(|| format!("read {}", toml_path.display()))?;
-    let manifest: SidexTomlManifest =
-        toml::from_str(&raw).with_context(|| format!("parse {}", toml_path.display()))?;
-
-    let wasm_path = ext_dir.join(&manifest.extension.wasm);
-    if !wasm_path.exists() {
-        anyhow::bail!(
-            "wasm binary '{}' not found for extension {}",
-            manifest.extension.wasm,
-            manifest.extension.id
-        );
-    }
-
-    let parts: Vec<&str> = manifest.extension.id.splitn(2, '.').collect();
-    let (publisher, name) = if parts.len() == 2 {
-        (parts[0].to_string(), parts[1].to_string())
-    } else {
-        ("unknown".to_string(), manifest.extension.id.clone())
-    };
-
-    let activation_events = manifest.activation.map(|a| a.events).unwrap_or_default();
-
-    let mut contributes_keys = Vec::new();
-    if let Some(ref c) = manifest.contributes {
-        if !c.languages.is_empty() {
-            contributes_keys.push("languages".to_string());
-        }
-        if !c.commands.is_empty() {
-            contributes_keys.push("commands".to_string());
-        }
-    }
-
-    Ok(ExtensionManifest {
-        id: manifest.extension.id,
-        publisher: Some(publisher),
-        name,
-        display_name: manifest.extension.name,
-        version: manifest.extension.version,
-        path: ext_dir.to_string_lossy().to_string(),
-        kind: ExtensionKind::Wasm,
-        main: None,
-        browser: None,
-        wasm_binary: Some(manifest.extension.wasm),
-        source: String::new(),
-        builtin: false,
-        activation_events,
-        contributes: ExtensionContributes::default(),
-        contributes_keys,
-        engines: EngineRequirement::default(),
-        description: String::new(),
-    })
 }
 
 /// Reads a Node extension manifest from `package.json` in `ext_dir`,
@@ -459,7 +350,6 @@ pub fn read_node_manifest(ext_dir: &Path) -> Result<ExtensionManifest> {
         kind: ExtensionKind::Node,
         main,
         browser,
-        wasm_binary: None,
         source: String::new(),
         builtin: false,
         activation_events,

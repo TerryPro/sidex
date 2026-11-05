@@ -62,7 +62,7 @@ VS Code 的内存开销主要来自它自带的 Chromium，而非编辑器本身
 - Monaco 编辑器：多光标、查找替换、折叠、撤销重做、自动保存
 - 基于 TextMate 语法的语法高亮
 - 大纲与折叠支持 Rust、Python、Go、TypeScript/JavaScript、C/C++、Java/C#、Markdown
-- 通过 WASM 扩展 API 提供自定义编辑器（内置 `csv-editor`）
+- 原生 CSV 表格编辑器（可直接编辑单元格并写回文件）
 - 图片、PDF、HTML、Markdown、Mermaid 预览编辑器
 
 **其他**
@@ -88,7 +88,7 @@ VS Code 的内存开销主要来自它自带的 Chromium，而非编辑器本身
 | Shell 集成 | 没有 Windows 系统图标、没有缩略图、没有属性对话框、没有扩展右键菜单。 |
 | 语言智能 | 没有补全、没有跳转定义、没有查找引用、没有重命名重构、没有诊断。SideX 按设计不运行语言服务器。 |
 | Git | 未实现，也不计划实现。 |
-| 扩展市场 | 已移除。仅有内置扩展与 WASM 扩展。 |
+| 扩展市场 | 已移除。仅有内置声明式扩展（语法、主题、语言配置）。 |
 | 多窗口 | 单窗口，菜单自绘。 |
 | 账号与同步 | 无。完全独立运行。 |
 
@@ -132,7 +132,7 @@ SideX 把 VS Code 的 Electron 架构逐层映射到 Tauri：
 | Node.js `fs`、`pty` 等 | Rust 命令（`std::fs`、`portable-pty`） |
 | 菜单 / 对话框 / 剪贴板 | Tauri 插件 |
 | 渲染进程（DOM + TypeScript） | 完全相同——运行在原生 WebView 中 |
-| 扩展宿主 | 进程内 WASM 运行时 |
+| 扩展宿主 | 无运行时，仅内置声明式扩展 |
 
 前端 TypeScript 是 VS Code workbench 的直接移植。Rust 后端位于 `src-tauri/src/commands/`，承担所有原本属于 Node.js 原生模块的工作：文件 I/O、终端 PTY、文件监听、搜索索引、SQLite、语法分析以及进程管理。
 
@@ -169,7 +169,7 @@ sidex/
 | 文件监听 | notify crate |
 | 搜索 | dashmap + rayon + regex（Rust 并行） |
 | 存储 | rusqlite（SQLite） |
-| 扩展 | 进程内 WASM（wasmtime）+ WIT 契约 |
+| 扩展 | 内置声明式扩展（TextMate 语法、主题、语言配置） |
 
 想深入了解，可阅读 [ARCHITECTURE.md](./ARCHITECTURE.md)。
 

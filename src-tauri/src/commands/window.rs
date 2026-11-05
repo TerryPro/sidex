@@ -105,6 +105,33 @@ pub struct WindowState {
 
 const WINDOW_STATE_KEY: &str = "sidex.windowState";
 
+/// 进程启动时刻，用于把「窗口真正可交互」的耗时打进日志。
+pub struct BootTimer(pub std::time::Instant);
+
+/// 前端在 workbench 完成首屏布局后调用，仅用于启动耗时诊断。
+#[tauri::command]
+pub fn frontend_ready(
+    timer: tauri::State<'_, BootTimer>,
+    render_ms: Option<f64>,
+    load_ms: Option<f64>,
+    start_ms: Option<f64>,
+) {
+    log::info!(
+        "[SideX] workbench ready in {}ms (module load {}ms, workbench init {}ms)",
+        timer.0.elapsed().as_millis(),
+        opt_ms(load_ms),
+        start_ms.zip(load_ms).map_or_else(
+            || "?".to_string(),
+            |(start, load)| format!("{:.0}ms", start - load)
+        ),
+    );
+    log::debug!("[SideX] frontend ready payload: render={render_ms:?}");
+}
+
+fn opt_ms(value: Option<f64>) -> String {
+    value.map_or_else(|| "?".to_string(), |v| format!("{v:.0}ms"))
+}
+
 #[allow(clippy::cast_possible_wrap)]
 pub fn restore_and_show(app: &tauri::App, db: &StorageDb) {
     let Some(window) = app.get_webview_window("main") else {

@@ -4,6 +4,7 @@ use sidex_syntax::highlight::{HighlightConfig, Highlighter, SyntaxHighlighter, T
 use sidex_syntax::language::{builtin_language_configurations, LanguageConfiguration};
 use std::path::Path;
 use std::sync::OnceLock;
+use tree_sitter::{Node, Parser};
 
 static LANGUAGE_CONFIGS: OnceLock<Vec<LanguageConfiguration>> = OnceLock::new();
 
@@ -211,51 +212,6 @@ pub fn syntax_tokenize(language: String, source: String) -> Result<Vec<SyntaxTok
         }
     }
     Ok(tokens)
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TextMateLineTokens {
-    pub line: u32,
-    pub tokens: Vec<TextMateToken>,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TextMateToken {
-    pub start: u32,
-    pub end: u32,
-    pub scopes: Vec<String>,
-}
-
-#[allow(clippy::needless_pass_by_value)]
-#[tauri::command]
-pub fn textmate_tokenize_lines(
-    grammar_json: String,
-    source: String,
-) -> Result<Vec<TextMateLineTokens>, String> {
-    let grammar = sidex_syntax::textmate::TextMateGrammar::from_json(&grammar_json)
-        .map_err(|e| format!("parse grammar: {e}"))?;
-    let tokenizer = sidex_syntax::textmate::TextMateTokenizer::new(&grammar);
-    let mut state = sidex_syntax::textmate::TokenizerState::default();
-
-    let mut out = Vec::with_capacity(source.lines().count());
-    for (idx, line) in source.lines().enumerate() {
-        let tokens = tokenizer
-            .tokenize_line(line, &mut state)
-            .into_iter()
-            .map(|t| TextMateToken {
-                start: u32::try_from(t.start).unwrap_or(u32::MAX),
-                end: u32::try_from(t.end).unwrap_or(u32::MAX),
-                scopes: t.scopes,
-            })
-            .collect::<Vec<_>>();
-        out.push(TextMateLineTokens {
-            line: u32::try_from(idx).unwrap_or(u32::MAX),
-            tokens,
-        });
-    }
-    Ok(out)
 }
 
 // ---------------------------------------------------------------------------
@@ -546,7 +502,144 @@ pub fn syntax_get_document_symbols(
     language: String,
     source: String,
 ) -> Result<Vec<OutlineSymbol>, String> {
+    if is_typescript_like(&language) {
+        if let Some(symbols) = extract_ts_outline(&language, &source) {
+            if !symbols.is_empty() {
+                return Ok(symbols);
+            }
+        }
+    }
     Ok(build_outline(extract_symbols(&language, &source), &source))
+}
+
+// ---------------------------------------------------------------------------
+// TypeScript / JavaScript outline via tree-sitter
+// ---------------------------------------------------------------------------
+
+fn is_typescript_like(language: &str) -> bool {
+    matches!(
+        language,
+        "typescript" | "typescriptreact" | "javascript" | "javascriptreact"
+    )
+}
+
+fn ts_language_for(language: &str) -> Option<tree_sitter::Language> {
+    match language {
+        "typescript" => Some(tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into()),
+        "typescriptreact" | "javascript" | "javascriptreact" => {
+            Some(tree_sitter_typescript::LANGUAGE_TSX.into())
+        }
+        _ => None,
+    }
+}
+
+/// Symbol kind and detail label for a tree-sitter node type.
+fn ts_symbol_info(kind: &str) -> Option<(u32, &'static str)> {
+    match kind {
+        "function_declaration" | "generator_function_declaration" | "function_signature" => {
+            Some((11, "function"))
+        }
+        "class_declaration" | "abstract_class_declaration" => Some((4, "class")),
+        "interface_declaration" => Some((10, "interface")),
+        "type_alias_declaration" => Some((25, "type")),
+        "enum_declaration" => Some((9, "enum")),
+        "module" | "internal_module" => Some((2, "namespace")),
+        "method_definition" | "method_signature" | "abstract_method_signature" => {
+            Some((5, "method"))
+        }
+        "public_field_definition" | "property_signature" => Some((7, "property")),
+        "variable_declarator" => Some((12, "variable")),
+        _ => None,
+    }
+}
+
+fn node_text(node: Node<'_>, source: &str) -> Option<String> {
+    source
+        .get(node.byte_range())
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
+        .map(str::to_string)
+}
+
+fn line_range_from(node: Node<'_>) -> LineRange {
+    let start = node.start_position();
+    let end = node.end_position();
+    LineRange {
+        start_line: u32::try_from(start.row).unwrap_or(u32::MAX).saturating_add(1),
+        start_column: u32::try_from(start.column)
+            .unwrap_or(u32::MAX)
+            .saturating_add(1),
+        end_line: u32::try_from(end.row).unwrap_or(u32::MAX).saturating_add(1),
+        end_column: u32::try_from(end.column)
+            .unwrap_or(u32::MAX)
+            .saturating_add(1),
+    }
+}
+
+/// Walks a container node and emits one symbol per declaration. Function and
+/// method bodies are not descended into, so locals never leak into the outline.
+fn collect_ts_items(node: Node<'_>, source: &str, out: &mut Vec<OutlineSymbol>) {
+    for index in 0..node.named_child_count() {
+        let Some(child) = node.named_child(index) else {
+            continue;
+        };
+
+        // Wrappers that hold the real declaration as a child.
+        if matches!(
+            child.kind(),
+            "export_statement"
+                | "ambient_declaration"
+                | "lexical_declaration"
+                | "variable_declaration"
+        ) {
+            collect_ts_items(child, source, out);
+            continue;
+        }
+
+        let Some((kind, detail)) = ts_symbol_info(child.kind()) else {
+            continue;
+        };
+        let Some(name_node) = child.child_by_field_name("name") else {
+            continue;
+        };
+        let Some(name) = node_text(name_node, source) else {
+            continue;
+        };
+
+        let mut children = Vec::new();
+        if matches!(
+            child.kind(),
+            "class_declaration"
+                | "abstract_class_declaration"
+                | "interface_declaration"
+                | "module"
+                | "internal_module"
+        ) {
+            if let Some(body) = child.child_by_field_name("body") {
+                collect_ts_items(body, source, &mut children);
+            }
+        }
+
+        out.push(OutlineSymbol {
+            name,
+            detail: detail.to_string(),
+            kind,
+            range: line_range_from(child),
+            selection_range: line_range_from(name_node),
+            children,
+        });
+    }
+}
+
+fn extract_ts_outline(language: &str, source: &str) -> Option<Vec<OutlineSymbol>> {
+    let ts_language = ts_language_for(language)?;
+    let mut parser = Parser::new();
+    parser.set_language(&ts_language).ok()?;
+    let tree = parser.parse(source, None)?;
+
+    let mut out = Vec::new();
+    collect_ts_items(tree.root_node(), source, &mut out);
+    Some(out)
 }
 
 fn markdown_folding_ranges(source: &str) -> Vec<SidexFoldingRange> {
@@ -661,10 +754,25 @@ mod outline_tests {
     }
 
     #[test]
-    fn typescript_outline_covers_common_declarations() {
-        let source = "export function foo(): void {}\nexport const bar = 1;\nexport declare function baz(): void;\n";
-        let symbols = extract_symbols("typescript", source);
-        let names: Vec<_> = symbols.iter().map(|s| s.name.as_str()).collect();
-        assert_eq!(names, vec!["foo", "bar"]);
+    fn typescript_outline_covers_declare_namespace_and_members() {
+        let source = "export declare function ambient(): void;\n\nexport namespace NS {\n  export interface Shape { area(): number; }\n}\n\nexport default class Widget {\n  value: number = 0;\n  render(): void {}\n}\n\nexport const helper = (): number => 1;\nexport function* gen(): Generator<number> {}\n";
+        let symbols = extract_ts_outline("typescript", source).expect("tree-sitter parse");
+        let names: Vec<&str> = symbols.iter().map(|symbol| symbol.name.as_str()).collect();
+        assert!(names.contains(&"ambient"), "names={names:?}");
+        assert!(names.contains(&"NS"), "names={names:?}");
+        assert!(names.contains(&"Widget"), "names={names:?}");
+        assert!(names.contains(&"helper"), "names={names:?}");
+        assert!(names.contains(&"gen"), "names={names:?}");
+
+        let widget = symbols
+            .iter()
+            .find(|symbol| symbol.name == "Widget")
+            .expect("Widget symbol");
+        let members: Vec<&str> = widget
+            .children
+            .iter()
+            .map(|child| child.name.as_str())
+            .collect();
+        assert!(members.contains(&"render"), "members={members:?}");
     }
 }

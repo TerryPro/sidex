@@ -72,7 +72,6 @@ import './mainThreadSecretState.js';
 // ProfileContentHandlers — removed: SideX uses sidex-extension-api
 import './mainThreadDataChannels.js';
 import './mainThreadMeteredConnection.js';
-import '../../contrib/extensions/browser/tauriExtensionHost.contribution.js';
 
 export class ExtensionPoints implements IWorkbenchContribution {
 	static readonly ID = 'workbench.contrib.extensionPoints';

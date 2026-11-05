@@ -182,13 +182,31 @@ export class TauriFileSystemProvider extends Disposable implements IFileSystemPr
 
 	async readFile(resource: URI): Promise<Uint8Array> {
 		const path = TauriFileSystemProvider.toPath(resource);
-		let bytes: number[];
+		let data: unknown;
 		try {
-			bytes = await invoke<number[]>('read_file_bytes', { path });
+			// Rust 侧返回原始字节（ArrayBuffer），不再逐字节转成 JSON 数字。
+			data = await invoke<unknown>('read_file_bytes', { path });
 		} catch (err) {
-			throw TauriFileSystemProvider.toError(err, resource, FileSystemProviderErrorCode.FileNotFound);
+			const msg = typeof err === 'string' ? err : err instanceof Error ? err.message : String(err);
+			let code = FileSystemProviderErrorCode.Unknown;
+			if (/过大|too large/i.test(msg)) {
+				code = FileSystemProviderErrorCode.FileTooLarge;
+			} else if (/no such file|not found|ENOENT/i.test(msg)) {
+				code = FileSystemProviderErrorCode.FileNotFound;
+			}
+			throw TauriFileSystemProvider.toError(err, resource, code);
 		}
-		return new Uint8Array(bytes);
+
+		if (data instanceof Uint8Array) {
+			return data;
+		}
+		if (data instanceof ArrayBuffer) {
+			return new Uint8Array(data);
+		}
+		if (Array.isArray(data)) {
+			return new Uint8Array(data as number[]);
+		}
+		return new Uint8Array(0);
 	}
 
 	async writeFile(resource: URI, content: Uint8Array, _opts: IFileWriteOptions): Promise<void> {

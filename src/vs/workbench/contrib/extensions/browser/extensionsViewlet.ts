@@ -561,7 +561,7 @@ export class ExtensionsViewPaneContainer extends ViewPaneContainer<IExtensionsVi
 		parent.classList.add('extensions-viewlet');
 		this.root = parent;
 		// The marketplace was removed with the Node extension host; only the
-		// built-in and Rust extension views remain in this container.
+		// built-in extension view remains in this container.
 		super.create(append(this.root, $('.extensions')));
 	}
 

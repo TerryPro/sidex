@@ -66,6 +66,27 @@
 	background-size: 14px;
 }
 
+/* ==================== 布局控件（layout control） ==================== */
+
+/*
+ * SideX 的标题栏有一个 absolute 全屏拖拽覆盖层（.titlebar-drag-region），
+ * 布局控件必须提升到它之上并且标记 no-drag，否则按钮既点不到也拖不动窗口。
+ */
+.monaco-workbench .part.titlebar.sidex-explorer-titlebar > .titlebar-container > .titlebar-right {
+	position: relative;
+	z-index: 2500;
+}
+
+.monaco-workbench .part.titlebar.sidex-explorer-titlebar > .titlebar-container > .titlebar-right > .action-toolbar-container {
+	display: flex;
+	-webkit-app-region: no-drag;
+}
+
+.monaco-workbench .part.titlebar.sidex-explorer-titlebar > .titlebar-container > .titlebar-right > .action-toolbar-container .monaco-action-bar .action-item {
+	display: flex;
+	-webkit-app-region: no-drag;
+}
+
 /* ==================== 目录标签 ==================== */
 
 .sidex-directory-tabs {
@@ -554,7 +575,11 @@
 .sidex-file-list-header,
 .sidex-file-row {
 	display: grid;
-	grid-template-columns: minmax(0, 1fr) 160px 120px 90px;
+	grid-template-columns:
+		var(--sidex-col-name, minmax(0, 1fr))
+		var(--sidex-col-modified, 160px)
+		var(--sidex-col-type, 120px)
+		var(--sidex-col-size, 90px);
 	align-items: center;
 	gap: 8px;
 	box-sizing: border-box;
@@ -573,6 +598,73 @@
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
+	position: relative;
+	cursor: pointer;
+}
+
+.sidex-column-resizer {
+	position: absolute;
+	top: 0;
+	right: -4px;
+	width: 8px;
+	height: 100%;
+	cursor: col-resize;
+	z-index: 2;
+}
+
+.sidex-context-menu {
+	position: fixed;
+	z-index: 3000;
+	min-width: 170px;
+	max-width: 340px;
+	padding: 4px 0;
+	background: var(--vscode-menu-background, var(--vscode-editorWidget-background, var(--vscode-editor-background, #252526)));
+	color: var(--vscode-menu-foreground, var(--vscode-foreground, #cccccc));
+	border: 1px solid var(--vscode-menu-border, var(--vscode-widget-border, rgba(128, 128, 128, 0.35)));
+	border-radius: 5px;
+	box-shadow: 0 2px 8px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.36));
+	font-family: var(--vscode-font-family, 'Segoe UI', sans-serif);
+	font-size: 13px;
+	line-height: 1;
+	user-select: none;
+	overflow: hidden;
+}
+
+.sidex-context-menu-item {
+	display: flex;
+	align-items: center;
+	height: 24px;
+	padding: 0 12px;
+	cursor: pointer;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.sidex-context-menu-item:hover {
+	background: var(--vscode-menu-selectionBackground, var(--vscode-list-activeSelectionBackground, #04395e));
+	color: var(--vscode-menu-selectionForeground, var(--vscode-list-activeSelectionForeground, #ffffff));
+}
+
+.sidex-context-menu-item.disabled {
+	opacity: 0.4;
+	pointer-events: none;
+}
+
+.sidex-file-row.drop-target {
+	box-shadow: inset 0 0 0 1px var(--vscode-focusBorder);
+}
+
+.sidex-file-list-more {
+	align-self: center;
+	margin: 10px auto;
+	padding: 4px 12px;
+	font-size: 12px;
+	cursor: pointer;
+	color: var(--vscode-textLink-foreground);
+	background: transparent;
+	border: 1px solid var(--vscode-editorGroup-border, transparent);
+	border-radius: 2px;
 }
 
 .sidex-file-list {

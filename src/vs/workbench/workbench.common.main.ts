@@ -235,6 +235,9 @@ import './contrib/imagePreview/browser/imagePreview.contribution.js';
 // PDF Preview
 import './contrib/pdfPreview/browser/pdfPreview.contribution.js';
 
+// CSV Preview
+import './contrib/csvPreview/browser/csvPreview.contribution.js';
+
 // SideX Explorer (directory tabs / navigation / file list)
 import './contrib/sidexExplorer/browser/sidexExplorer.contribution.js';
 import './contrib/sidexExplorer/browser/sidexLanguageFeatures.contribution.js';
@@ -257,7 +260,7 @@ import './contrib/terminal/terminal.all.js';
 import './contrib/markdown/browser/markdown.contribution.js';
 import './contrib/mermaidPreview/browser/mermaidPreview.contribution.js';
 import './contrib/htmlPreview/browser/htmlPreview.contribution.js';
-import './contrib/rustExtensions/browser/rustExtensions.contribution.js';
+import './contrib/builtinExtensions/browser/builtinExtensions.contribution.js';
 
 // Keybindings Contributions
 import './contrib/keybindings/browser/keybindings.contribution.js';

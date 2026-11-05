@@ -23,7 +23,10 @@ import { IEditorOptions } from '../../../../platform/editor/common/editor.js';
 import { FileKind } from '../../../../platform/files/common/files.js';
 import { ITelemetryService } from '../../../../platform/telemetry/common/telemetry.js';
 import { IThemeService } from '../../../../platform/theme/common/themeService.js';
-import { IStorageService } from '../../../../platform/storage/common/storage.js';
+import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
+import { IQuickInputService } from '../../../../platform/quickinput/common/quickInput.js';
+import { IDialogService } from '../../../../platform/dialogs/common/dialogs.js';
+import { INotificationService } from '../../../../platform/notification/common/notification.js';
 import { ISideXExplorerService, SideXDriveInfo, SideXExplorerEntry } from '../../../../platform/sidex/common/sidexExplorerService.js';
 import { EditorPane } from '../../../browser/parts/editor/editorPane.js';
 import { IEditorOpenContext } from '../../../common/editor.js';
@@ -54,19 +57,30 @@ export class DirectoryViewEditor extends EditorPane {
 	private readonly savedScrollTops = new Map<string, number>();
 	private activeTabId: string | undefined;
 	private readonly viewDisposables = this._register(new DisposableStore());
+	private contextMenu: HTMLElement | undefined;
+	private copiedPath: string | undefined;
+	private sortKey: 'name' | 'modified' | 'type' | 'size' = 'name';
+	private sortAscending = true;
+	private readonly columnWidths = [260, 170, 130, 110];
+	private static readonly PAGE_SIZE = 300;
 
 	constructor(
 		group: IEditorGroup,
 		@ITelemetryService telemetryService: ITelemetryService,
 		@IThemeService themeService: IThemeService,
-		@IStorageService storageService: IStorageService,
+		@IStorageService private readonly storageService: IStorageService,
 		@IDirectoryService private readonly directoryService: IDirectoryService,
 		@ISideXExplorerService private readonly explorerService: ISideXExplorerService,
 		@IEditorService private readonly editorService: IEditorService,
 		@IModelService private readonly modelService: IModelService,
-		@ILanguageService private readonly languageService: ILanguageService
+		@ILanguageService private readonly languageService: ILanguageService,
+		@IQuickInputService private readonly quickInputService: IQuickInputService,
+		@IDialogService private readonly dialogService: IDialogService,
+		@INotificationService private readonly notificationService: INotificationService
 	) {
 		super(DirectoryViewEditor.ID, group, telemetryService, themeService, storageService);
+
+		this.restoreViewPreferences();
 
 		this.viewDisposables.add(this.directoryService.onDidChange(() => this.onDirectoryChange()));
 		this.viewDisposables.add(this.directoryService.onDidChangeDrives(() => this.onDrivesChange()));
@@ -191,7 +205,8 @@ export class DirectoryViewEditor extends EditorPane {
 		if (tab && tab.location === view.renderedLocation && tab.refreshToken === view.renderedRefreshToken) {
 			// 内容已是最新，复用已有 DOM，并恢复被其他编辑器遮挡时记录的滚动位置。
 			if (restoreScroll) {
-				const scrollTop = this.savedScrollTops.get(tabId);
+				const persisted = Number(this.storageService.get(`sidex.directory.scroll:${tabId}`, StorageScope.PROFILE) ?? '0');
+				const scrollTop = this.savedScrollTops.get(tabId) ?? persisted;
 				this.savedScrollTops.delete(tabId);
 				if (scrollTop) {
 					view.scrollable.setScrollPosition({ scrollTop });
@@ -358,26 +373,112 @@ export class DirectoryViewEditor extends EditorPane {
 		}));
 	}
 
-	private renderDirectory(view: DirectoryTabView, location: string, entries: readonly SideXExplorerEntry[]): void {
-		const sorted = [...entries].sort((a, b) => {
+	private restoreViewPreferences(): void {
+		const sort = this.storageService.get('sidex.directory.sort', StorageScope.PROFILE);
+		if (sort) {
+			const [key, direction] = sort.split(':');
+			if (key === 'name' || key === 'modified' || key === 'type' || key === 'size') {
+				this.sortKey = key;
+				this.sortAscending = direction !== 'desc';
+			}
+		}
+		const widths = this.storageService.get('sidex.directory.columnWidths', StorageScope.PROFILE);
+		if (widths) {
+			const parsed = widths.split(',').map(Number);
+			if (parsed.length === 4 && parsed.every(value => Number.isFinite(value) && value > 40)) {
+				parsed.forEach((value, index) => {
+					this.columnWidths[index] = value;
+				});
+			}
+		}
+	}
+
+	private persistViewPreferences(): void {
+		this.storageService.store('sidex.directory.sort', `${this.sortKey}:${this.sortAscending ? 'asc' : 'desc'}`, StorageScope.PROFILE, StorageTarget.MACHINE);
+		this.storageService.store('sidex.directory.columnWidths', this.columnWidths.join(','), StorageScope.PROFILE, StorageTarget.MACHINE);
+	}
+
+	private sortEntries(entries: readonly SideXExplorerEntry[]): SideXExplorerEntry[] {
+		const factor = this.sortAscending ? 1 : -1;
+		return [...entries].sort((a, b) => {
 			if (a.isDir !== b.isDir) {
 				return a.isDir ? -1 : 1;
 			}
-			return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+			switch (this.sortKey) {
+				case 'modified':
+					return (a.modified - b.modified) * factor;
+				case 'size':
+					return (a.size - b.size) * factor;
+				case 'type': {
+					const aType = a.isDir ? '' : a.name.slice(a.name.lastIndexOf('.') + 1);
+					const bType = b.isDir ? '' : b.name.slice(b.name.lastIndexOf('.') + 1);
+					return aType.localeCompare(bType) * factor;
+				}
+				default:
+					return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }) * factor;
+			}
 		});
+	}
+
+	private addColumnWidths(container: HTMLElement): void {
+		container.style.setProperty('--sidex-col-name', `${this.columnWidths[0]}px`);
+		container.style.setProperty('--sidex-col-modified', `${this.columnWidths[1]}px`);
+		container.style.setProperty('--sidex-col-type', `${this.columnWidths[2]}px`);
+		container.style.setProperty('--sidex-col-size', `${this.columnWidths[3]}px`);
+	}
+
+	private renderDirectory(view: DirectoryTabView, location: string, entries: readonly SideXExplorerEntry[]): void {
+		const query = this.directoryService.searchQuery.toLowerCase();
+		const filtered = query ? entries.filter(entry => entry.name.toLowerCase().includes(query)) : entries;
+		const sorted = this.sortEntries(filtered);
+
+		this.addColumnWidths(view.content);
 
 		const header = append(view.content, $('div.sidex-file-list-header'));
-		for (const column of [
-			localize('sidex.fileList.name', '名称'),
-			localize('sidex.fileList.modified', '修改日期'),
-			localize('sidex.fileList.type', '类型'),
-			localize('sidex.fileList.size', '大小')
-		]) {
+		const columns: Array<{ key: 'name' | 'modified' | 'type' | 'size'; label: string }> = [
+			{ key: 'name', label: localize('sidex.fileList.name', '名称') },
+			{ key: 'modified', label: localize('sidex.fileList.modified', '修改日期') },
+			{ key: 'type', label: localize('sidex.fileList.type', '类型') },
+			{ key: 'size', label: localize('sidex.fileList.size', '大小') }
+		];
+		columns.forEach((column, index) => {
 			const cell = append(header, $('span.sidex-file-list-column'));
-			cell.textContent = column;
-		}
+			cell.textContent = column.label;
+			if (this.sortKey === column.key) {
+				cell.textContent = `${column.label} ${this.sortAscending ? '↑' : '↓'}`;
+			}
+			cell.addEventListener('click', () => {
+				if (this.sortKey === column.key) {
+					this.sortAscending = !this.sortAscending;
+				} else {
+					this.sortKey = column.key;
+					this.sortAscending = true;
+				}
+				this.persistViewPreferences();
+				void this.reload(view);
+			});
+			const resizer = append(cell, $('span.sidex-column-resizer'));
+			resizer.addEventListener('pointerdown', (event: PointerEvent) => {
+				event.preventDefault();
+				event.stopPropagation();
+				const startX = event.clientX;
+				const startWidth = this.columnWidths[index];
+				const move = (moveEvent: PointerEvent) => {
+					this.columnWidths[index] = Math.max(60, startWidth + moveEvent.clientX - startX);
+					this.addColumnWidths(view.content);
+				};
+				const up = () => {
+					window.removeEventListener('pointermove', move);
+					window.removeEventListener('pointerup', up);
+					this.persistViewPreferences();
+				};
+				window.addEventListener('pointermove', move);
+				window.addEventListener('pointerup', up);
+			});
+		});
 
 		const list = append(view.content, $('div.sidex-file-list'));
+		list.addEventListener('contextmenu', event => this.showContextMenu(event, view, location));
 
 		if (!sorted.length) {
 			const empty = append(list, $('.sidex-file-list-empty'));
@@ -386,23 +487,41 @@ export class DirectoryViewEditor extends EditorPane {
 		}
 
 		const rows = new Map<string, HTMLElement>();
-		for (const entry of sorted) {
-			rows.set(entry.path, this.renderFileRow(view, list, entry));
-		}
+		const renderBatch = (start: number) => {
+			const end = Math.min(sorted.length, start + DirectoryViewEditor.PAGE_SIZE);
+			for (let index = start; index < end; index++) {
+				const entry = sorted[index];
+				rows.set(entry.path, this.renderFileRow(view, list, location, entry));
+			}
+			if (end < sorted.length) {
+				const more = append(list, $('button.sidex-file-list-more'));
+				more.textContent = localize('sidex.fileList.loadMore', '显示更多（剩余 {0} 项）', sorted.length - end);
+				more.addEventListener('click', () => {
+					more.remove();
+					renderBatch(end);
+				});
+			}
+		};
+		renderBatch(0);
 
-		// 重绘后恢复该标签上次的选中项，右侧预览与列表高亮保持一致。
 		const selection = this.directoryService.getSelection(view.tabId);
 		if (selection) {
 			rows.get(selection.path)?.classList.add('selected');
 		}
 
 		view.content.setAttribute('data-location', location);
+
+		view.renderDisposables.add(view.scrollable.onScroll(() => {
+			const scrollTop = String(view.scrollable.getScrollPosition().scrollTop);
+			this.storageService.store(`sidex.directory.scroll:${view.tabId}`, scrollTop, StorageScope.PROFILE, StorageTarget.MACHINE);
+		}));
 	}
 
-	private renderFileRow(view: DirectoryTabView, list: HTMLElement, entry: SideXExplorerEntry): HTMLElement {
+	private renderFileRow(view: DirectoryTabView, list: HTMLElement, location: string, entry: SideXExplorerEntry): HTMLElement {
 		const row = append(list, $('div.sidex-file-row'));
 		row.tabIndex = 0;
 		row.setAttribute('data-path', entry.path);
+		row.draggable = true;
 
 		const nameCell = append(row, $('span.sidex-file-name'));
 		const icon = append(nameCell, $('span.sidex-file-icon'));
@@ -425,7 +544,6 @@ export class DirectoryViewEditor extends EditorPane {
 			if (entry.isDir) {
 				this.directoryService.navigate(entry.path);
 			} else {
-				// 双击打开的文件固定为常驻标签，避免被下一次预览替换。
 				void this.editorService.openEditor({
 					resource: URI.file(entry.path),
 					options: { pinned: true }
@@ -446,14 +564,194 @@ export class DirectoryViewEditor extends EditorPane {
 		}));
 
 		view.renderDisposables.add(addDisposableListener(row, EventType.DBLCLICK, open));
-
 		view.renderDisposables.add(addDisposableListener(row, EventType.KEY_DOWN, event => {
 			if (event.key === 'Enter') {
 				open();
 			}
 		}));
+		view.renderDisposables.add(addDisposableListener(row, EventType.CONTEXT_MENU, event => this.showContextMenu(event, view, location, entry)));
+
+		row.addEventListener('dragstart', event => {
+			event.dataTransfer?.setData('text/plain', entry.path);
+			event.dataTransfer?.setDragImage(row, 12, 12);
+		});
+		if (entry.isDir) {
+			row.addEventListener('dragover', event => {
+				event.preventDefault();
+				row.classList.add('drop-target');
+			});
+			row.addEventListener('dragleave', () => row.classList.remove('drop-target'));
+			row.addEventListener('drop', event => {
+				event.preventDefault();
+				row.classList.remove('drop-target');
+				const source = event.dataTransfer?.getData('text/plain');
+				if (source && source !== entry.path) {
+					void this.moveEntry(source, entry.path);
+				}
+			});
+		}
 
 		return row;
+	}
+
+	private showContextMenu(event: MouseEvent, view: DirectoryTabView, location: string, entry?: SideXExplorerEntry): void {
+		event.preventDefault();
+		event.stopPropagation();
+		this.hideContextMenu();
+
+		const menu = $('div.sidex-context-menu');
+		menu.style.left = `${event.clientX}px`;
+		menu.style.top = `${event.clientY}px`;
+		menu.style.visibility = 'hidden';
+		const host = document.querySelector('.monaco-workbench') ?? document.body;
+		host.appendChild(menu);
+		this.contextMenu = menu;
+
+		const addItem = (label: string, run: () => void, enabled = true) => {
+			const item = append(menu, $('div.sidex-context-menu-item'));
+			item.textContent = label;
+			if (!enabled) {
+				item.classList.add('disabled');
+				return;
+			}
+			item.addEventListener('mousedown', event => {
+				event.preventDefault();
+				event.stopPropagation();
+				this.hideContextMenu();
+				run();
+			});
+		};
+
+		if (entry) {
+			addItem(localize('sidex.menu.open', '打开'), () => {
+				if (entry.isDir) {
+					this.directoryService.navigate(entry.path);
+				} else {
+					void this.editorService.openEditor({ resource: URI.file(entry.path), options: { pinned: true } });
+				}
+			});
+			addItem(localize('sidex.menu.rename', '重命名'), () => void this.renameEntry(entry));
+			addItem(localize('sidex.menu.copy', '复制'), () => {
+				this.copiedPath = entry.path;
+				this.notificationService.info(localize('sidex.copy.done', '已复制“{0}”', entry.name));
+			});
+			addItem(localize('sidex.menu.trash', '移到回收站'), () => void this.deleteEntry(entry));
+			addItem(localize('sidex.menu.copyPath', '复制路径'), () => void navigator.clipboard.writeText(entry.path));
+		} else {
+			addItem(localize('sidex.menu.newFile', '新建文件'), () => void this.createEntry(location, false));
+			addItem(localize('sidex.menu.newFolder', '新建文件夹'), () => void this.createEntry(location, true));
+			addItem(localize('sidex.menu.paste', '粘贴'), () => void this.pasteEntry(location), !!this.copiedPath);
+			addItem(localize('sidex.menu.refresh', '刷新'), () => this.directoryService.refresh());
+		}
+
+		const rect = menu.getBoundingClientRect();
+		if (rect.right > window.innerWidth) {
+			menu.style.left = `${Math.max(4, window.innerWidth - rect.width - 4)}px`;
+		}
+		if (rect.bottom > window.innerHeight) {
+			menu.style.top = `${Math.max(4, window.innerHeight - rect.height - 4)}px`;
+		}
+		menu.style.visibility = '';
+
+		window.setTimeout(() => {
+			const dismiss = (dismissEvent: MouseEvent) => {
+				if (!menu.contains(dismissEvent.target as Node)) {
+					this.hideContextMenu();
+				}
+			};
+			window.addEventListener('mousedown', dismiss, { once: true });
+			window.addEventListener('blur', () => this.hideContextMenu(), { once: true });
+		}, 0);
+	}
+
+	private hideContextMenu(): void {
+		this.contextMenu?.remove();
+		this.contextMenu = undefined;
+	}
+
+	private async createEntry(location: string, folder: boolean): Promise<void> {
+		const name = await this.quickInputService.input({
+			prompt: folder
+				? localize('sidex.newFolder.prompt', '新建文件夹名称')
+				: localize('sidex.newFile.prompt', '新建文件名称'),
+			placeHolder: folder ? 'New folder' : 'untitled.txt'
+		});
+		if (!name) {
+			return;
+		}
+		const target = `${location.endsWith('\\') ? location : `${location}\\`}${name}`;
+		try {
+			if (folder) {
+				await this.explorerService.createFolder(target);
+			} else {
+				await this.explorerService.createFile(target);
+			}
+			this.directoryService.refresh();
+		} catch (error) {
+			this.notificationService.error(String(error));
+		}
+	}
+
+	private async renameEntry(entry: SideXExplorerEntry): Promise<void> {
+		const name = await this.quickInputService.input({
+			prompt: localize('sidex.rename.prompt', '重命名'),
+			value: entry.name
+		});
+		if (!name || name === entry.name) {
+			return;
+		}
+		const parent = entry.path.slice(0, entry.path.lastIndexOf('\\'));
+		try {
+			await this.explorerService.rename(entry.path, `${parent}\\${name}`);
+			this.directoryService.refresh();
+		} catch (error) {
+			this.notificationService.error(String(error));
+		}
+	}
+
+	private async deleteEntry(entry: SideXExplorerEntry): Promise<void> {
+		const { confirmed } = await this.dialogService.confirm({
+			message: localize('sidex.trash.confirm', '将“{0}”移到回收站？', entry.name),
+			primaryButton: localize('sidex.trash.action', '移到回收站')
+		});
+		if (!confirmed) {
+			return;
+		}
+		try {
+			await this.explorerService.moveToTrash(entry.path);
+			this.directoryService.refresh();
+		} catch (error) {
+			this.notificationService.error(String(error));
+		}
+	}
+
+	private async pasteEntry(targetDirectory: string): Promise<void> {
+		const source = this.copiedPath;
+		if (!source) {
+			return;
+		}
+		const name = source.slice(source.lastIndexOf('\\') + 1);
+		const destination = `${targetDirectory.endsWith('\\') ? targetDirectory : `${targetDirectory}\\`}${name}`;
+		try {
+			await this.explorerService.copy(source, destination, true);
+			this.directoryService.refresh();
+		} catch (error) {
+			this.notificationService.error(String(error));
+		}
+	}
+
+	private async moveEntry(source: string, targetDirectory: string): Promise<void> {
+		const name = source.slice(source.lastIndexOf('\\') + 1);
+		const destination = `${targetDirectory.endsWith('\\') ? targetDirectory : `${targetDirectory}\\`}${name}`;
+		if (source === destination) {
+			return;
+		}
+		try {
+			await this.explorerService.rename(source, destination);
+			this.directoryService.refresh();
+		} catch (error) {
+			this.notificationService.error(String(error));
+		}
 	}
 
 	/** 优先使用文件图标主题；没有配置图标主题时回退到 codicon。 */

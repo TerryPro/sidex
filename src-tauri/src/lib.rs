@@ -3,7 +3,6 @@ mod commands;
 
 use commands::db_state::SidexDbState;
 use commands::extension_diagnostics::ExtensionDiagnosticsStore;
-use commands::extension_wasm::WasmExtensionRuntime;
 use commands::settings::SettingsStore;
 use commands::storage::StorageDb;
 use commands::terminal::TerminalStore;
@@ -379,6 +378,9 @@ pub fn run() {
         dotenvy::from_path(&env_path).ok();
     }
 
+    // 记录进程启动时刻；前端就绪后会用它打印启动耗时（仅诊断用途）。
+    let boot_instant = std::time::Instant::now();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
@@ -386,10 +388,6 @@ pub fn run() {
         .manage(Arc::new(WatchStore::new()))
         .manage(ExtensionDiagnosticsStore::new())
         .manage(Arc::new(SettingsStore::new()))
-        .manage(Arc::new(sidex_extension_api::CommandRegistry::new()))
-        .manage(Arc::new(
-            WasmExtensionRuntime::new().expect("failed to initialize WASM runtime"),
-        ))
         .register_asynchronous_uri_scheme_protocol("sidex-asset", |ctx, request, responder| {
             let app = ctx.app_handle().clone();
             std::thread::spawn(move || {
@@ -541,7 +539,9 @@ pub fn run() {
                 );
             });
         })
-        .setup(|app| {
+        .setup(move |app| {
+            app.manage(commands::window::BootTimer(boot_instant));
+
             let app_data = crate::app_dirs::resolve_and_migrate();
             std::fs::create_dir_all(&app_data).ok();
             let db_path = app_data.join("sidex_storage.db");
@@ -570,26 +570,6 @@ pub fn run() {
             }
 
             app.manage(Arc::new(db));
-
-            // Full extension-API dispatcher (ext_api_call), sharing the
-            // already-managed CommandRegistry.
-            {
-                use sidex_extension_api as ext;
-                let registry = app
-                    .state::<Arc<ext::CommandRegistry>>()
-                    .inner()
-                    .clone();
-                app.manage(Arc::new(ext::ExtensionApiHandler::new(
-                    Arc::new(ext::WindowApi::new()),
-                    Arc::new(ext::WorkspaceApi::new()),
-                    Arc::new(ext::LanguagesApi::new()),
-                    registry,
-                    Arc::new(ext::DebugApi::new()),
-                    Arc::new(ext::TasksApi::new()),
-                    Arc::new(ext::TestApi::new()),
-                    Arc::new(ext::EnvApi::new()),
-                )));
-            }
 
             {
                 let settings_store = app.state::<Arc<SettingsStore>>();
@@ -671,6 +651,8 @@ pub fn run() {
             commands::remove,
             commands::rename,
             commands::exists,
+            commands::copy_path,
+            commands::move_to_trash,
             // Path operations
             commands::parse_path,
             commands::join_paths,
@@ -718,6 +700,7 @@ pub fn run() {
             commands::create_window,
             commands::close_window,
             commands::set_window_title,
+            commands::frontend_ready,
             commands::get_monitors,
             commands::save_window_state,
             commands::profiles_load,
@@ -741,7 +724,6 @@ pub fn run() {
             commands::settings_load,
             commands::settings_parse_jsonc,
             commands::settings_modify_jsonc,
-            commands::extension_platform_bootstrap,
             commands::proxy_request,
             commands::proxy_request_full,
             commands::clipboard_read_text,
@@ -755,29 +737,8 @@ pub fn run() {
             commands::watch_update_patterns,
             commands::watch_list,
             commands::watch_is_active,
-            // Extensions (built-in declarative + Rust/WASM only)
+            // Extensions (built-in declarative only)
             commands::list_installed_extensions,
-            commands::list_available_extensions,
-            commands::extension_get_contributions,
-            // WASM extensions
-            commands::wasm_load_extension,
-            commands::wasm_unload_extension,
-            commands::wasm_list_extensions,
-            commands::wasm_get_decorations,
-            commands::wasm_activate_language,
-            commands::wasm_list_commands,
-            commands::wasm_extension_details,
-            commands::wasm_execute_command_all,
-            commands::wasm_sync_document,
-            commands::wasm_close_document,
-            commands::wasm_sync_workspace_folders,
-            commands::wasm_provide_document_symbols,
-            commands::wasm_provide_document_symbols_all,
-            commands::wasm_provide_folding_ranges_all,
-            commands::wasm_take_custom_editor_actions,
-            commands::wasm_activate_custom_editor,
-            commands::wasm_custom_editor_message,
-            commands::wasm_custom_editor_save,
             // Extension diagnostics
             commands::extension_report_activated,
             commands::extension_report_provider_call,
@@ -818,10 +779,6 @@ pub fn run() {
             commands::editor_detect_colors,
             commands::editor_compute_bracket_pairs,
             commands::editor_compute_folding_ranges,
-            // Extension API introspection
-            commands::ext_api_get_namespaces,
-            commands::ext_api_get_commands,
-            commands::ext_api_call,
             // Menu i18n
             commands::update_menu_labels,
         ])

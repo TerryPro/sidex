@@ -6,7 +6,6 @@ members = [
   "crates/sidex-workspace",
   "crates/sidex-terminal",
   "crates/sidex-extensions",
-  "crates/sidex-extension-api",
   "crates/sidex-theme",
   "crates/sidex-keymap",
   "crates/sidex-settings",
@@ -15,9 +14,7 @@ members = [
   "crates/sidex-auth",
   "crates/sidex-textmate",
   "src-tauri",
-  "sidex-extension-sdk",
 ]
-exclude = ["extensions-rust"]
 
 [workspace.package]
 version = "0.2.0"

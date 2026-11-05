@@ -11,6 +11,7 @@ import { localize } from '../../../../nls.js';
 import { createDecorator } from '../../../../platform/instantiation/common/instantiation.js';
 import { InstantiationType, registerSingleton } from '../../../../platform/instantiation/common/extensions.js';
 import { ISideXExplorerService, SideXDriveInfo } from '../../../../platform/sidex/common/sidexExplorerService.js';
+import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
 
 export interface DirectoryTab {
 	readonly id: string;
@@ -53,6 +54,9 @@ export interface IDirectoryService {
 	getSelection(tabId?: string): DirectorySelection | undefined;
 	/** 单击文件列表项时调用；导航或刷新会清空选中项。 */
 	select(entry: DirectorySelection): void;
+	/** 当前目录内的名称过滤词；空字符串表示不过滤。 */
+	readonly searchQuery: string;
+	setSearch(query: string): void;
 
 	initialize(): Promise<void>;
 
@@ -143,11 +147,71 @@ export class DirectoryService extends Disposable implements IDirectoryService {
 	private _drivesError: string | undefined;
 	private _tabCounter = 0;
 	private _initialized = false;
+	private _searchQuery = '';
 
 	constructor(
-		@ISideXExplorerService private readonly explorerService: ISideXExplorerService
+		@ISideXExplorerService private readonly explorerService: ISideXExplorerService,
+		@IStorageService private readonly storageService: IStorageService
 	) {
 		super();
+	}
+
+	private persistTabs(): void {
+		const data = JSON.stringify({
+			active: this._activeTabId,
+			tabs: this._tabs.map(tab => ({
+				id: tab.id,
+				location: tab.location,
+				history: tab.history,
+				historyIndex: tab.historyIndex
+			}))
+		});
+		this.storageService.store('sidex.directory.tabs', data, StorageScope.PROFILE, StorageTarget.MACHINE);
+	}
+
+	private restoreTabs(): boolean {
+		const raw = this.storageService.get('sidex.directory.tabs', StorageScope.PROFILE);
+		if (!raw) {
+			return false;
+		}
+		try {
+			const data = JSON.parse(raw) as {
+				active?: string;
+				tabs?: Array<{ id: string; location: string; history?: string[]; historyIndex?: number }>;
+			};
+			if (!data.tabs?.length) {
+				return false;
+			}
+			this._tabs = data.tabs.map(tab => {
+				const location = normalizeLocation(tab.location);
+				return {
+					id: tab.id,
+					location,
+					title: this.titleForLocation(location),
+					history: tab.history?.length ? tab.history : [location],
+					historyIndex: tab.historyIndex ?? 0,
+					refreshToken: 0
+				};
+			});
+			this._activeTabId = this._tabs.find(tab => tab.id === data.active)?.id ?? this._tabs[0].id;
+			this._tabCounter = this._tabs.length;
+			return true;
+		} catch {
+			return false;
+		}
+	}
+
+	/** 当前目录内的名称过滤词；空字符串表示不过滤。 */
+	get searchQuery(): string {
+		return this._searchQuery;
+	}
+
+	setSearch(query: string): void {
+		if (this._searchQuery === query) {
+			return;
+		}
+		this._searchQuery = query;
+		this._onDidChange.fire();
 	}
 
 	get tabs(): readonly DirectoryTab[] {
@@ -204,7 +268,12 @@ export class DirectoryService extends Disposable implements IDirectoryService {
 		this._onDidChangeDrives.fire();
 
 		if (!this._tabs.length) {
-			this.addTab('');
+			if (!this.restoreTabs()) {
+				this.addTab('');
+			} else {
+				this._onDidChange.fire();
+				this.persistTabs();
+			}
 		} else {
 			this._retitleTabs();
 			this._onDidChange.fire();
@@ -224,6 +293,7 @@ export class DirectoryService extends Disposable implements IDirectoryService {
 		this._tabs = [...this._tabs, tab];
 		this._activeTabId = tab.id;
 		this._onDidChange.fire();
+		this.persistTabs();
 		return tab;
 	}
 
@@ -247,6 +317,7 @@ export class DirectoryService extends Disposable implements IDirectoryService {
 			this._activeTabId = this._tabs[Math.min(index, this._tabs.length - 1)].id;
 		}
 		this._onDidChange.fire();
+		this.persistTabs();
 	}
 
 	activateTab(id: string): void {
@@ -259,6 +330,7 @@ export class DirectoryService extends Disposable implements IDirectoryService {
 		}
 		this._activeTabId = id;
 		this._onDidChange.fire();
+		this.persistTabs();
 	}
 
 	navigate(location: string): void {
@@ -374,6 +446,7 @@ export class DirectoryService extends Disposable implements IDirectoryService {
 	private _updateTab(id: string, patch: Partial<DirectoryTab>): void {
 		this._tabs = this._tabs.map(tab => (tab.id === id ? { ...tab, ...patch } : tab));
 		this._onDidChange.fire();
+		this.persistTabs();
 	}
 
 	private _retitleTabs(): void {
