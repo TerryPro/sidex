@@ -11,7 +11,7 @@ import { $, addDisposableListener, append, Dimension, EventType, reset } from '.
 import { DomScrollableElement } from '../../../../base/browser/ui/scrollbar/scrollableElement.js';
 import { CancellationToken } from '../../../../base/common/cancellation.js';
 import { Codicon } from '../../../../base/common/codicons.js';
-import { DisposableStore } from '../../../../base/common/lifecycle.js';
+import { Disposable, DisposableStore, toDisposable } from '../../../../base/common/lifecycle.js';
 import { ScrollbarVisibility } from '../../../../base/common/scrollable.js';
 import { ThemeIcon } from '../../../../base/common/themables.js';
 import { URI } from '../../../../base/common/uri.js';
@@ -45,7 +45,344 @@ interface DirectoryTabView {
 	readonly renderDisposables: DisposableStore;
 	renderedLocation: string | undefined;
 	renderedRefreshToken: number;
+	renderedQuery: string;
 	requestId: number;
+	/** 目录完整数据集；排序、过滤和虚拟滚动都基于它，不再分页读取。 */
+	entries: readonly SideXExplorerEntry[] | undefined;
+	virtualList: VirtualFileList | undefined;
+}
+
+const FILE_ROW_HEIGHT = 28;
+const FILE_LIST_OVERSCAN = 8;
+
+/** 虚拟文件列表对编辑器暴露的最小回调集合。 */
+interface IFileListHost {
+	renderRow(entry: SideXExplorerEntry): HTMLElement;
+	activateEntry(entry: SideXExplorerEntry): void;
+	selectEntry(entry: SideXExplorerEntry): void;
+	showContextMenu(event: MouseEvent, entry?: SideXExplorerEntry): void;
+	moveEntry(sourcePath: string, targetDirectory: string): void;
+}
+
+/**
+ * 只渲染可视区域附近的文件行，按固定行高把滚动位置映射到数据集索引。
+ * 滚动时增量回收/复用行元素，避免 10,000 项一次性创建 DOM。
+ */
+class VirtualFileList extends Disposable {
+
+	private readonly list: HTMLElement;
+	private readonly rows = new Map<number, HTMLElement>();
+	private readonly rowIdPrefix: string;
+	private entries: readonly SideXExplorerEntry[];
+	private selectedPath: string | undefined;
+	private firstRendered = -1;
+	private lastRendered = -1;
+	private updateHandle: number | undefined;
+	private dropTarget: HTMLElement | undefined;
+
+	constructor(
+		parent: HTMLElement,
+		private readonly content: HTMLElement,
+		private readonly scrollable: DomScrollableElement,
+		private readonly host: IFileListHost,
+		tabId: string,
+		entries: readonly SideXExplorerEntry[],
+		selectedPath: string | undefined
+	) {
+		super();
+		this.entries = entries;
+		this.selectedPath = selectedPath;
+		this.rowIdPrefix = `sidex-file-row-${tabId}`;
+
+		const list = append(parent, $('div.sidex-file-list'));
+		list.tabIndex = 0;
+		list.setAttribute('role', 'listbox');
+		list.setAttribute('aria-label', localize('sidex.fileList.ariaLabel', '文件列表'));
+		this.list = list;
+
+		this._register(this.scrollable.onScroll(() => this.scheduleUpdate()));
+		this._register(addDisposableListener(list, EventType.CLICK, event => this.onClick(event)));
+		this._register(addDisposableListener(list, EventType.DBLCLICK, event => this.onDoubleClick(event)));
+		this._register(addDisposableListener(list, EventType.KEY_DOWN, event => this.onKeyDown(event)));
+		this._register(addDisposableListener(list, EventType.CONTEXT_MENU, event => this.onContextMenu(event)));
+		this._register(addDisposableListener(list, EventType.DRAG_START, event => this.onDragStart(event)));
+		this._register(addDisposableListener(list, EventType.DRAG_OVER, event => this.onDragOver(event)));
+		this._register(addDisposableListener(list, EventType.DRAG_LEAVE, event => this.onDragLeave(event)));
+		this._register(addDisposableListener(list, EventType.DROP, event => this.onDrop(event)));
+		this._register(toDisposable(() => this.cancelUpdate()));
+
+		this.setEntries(entries, selectedPath);
+	}
+
+	setEntries(entries: readonly SideXExplorerEntry[], selectedPath: string | undefined): void {
+		this.entries = entries;
+		this.selectedPath = selectedPath;
+		for (const row of this.rows.values()) {
+			row.remove();
+		}
+		this.rows.clear();
+		this.firstRendered = -1;
+		this.lastRendered = -1;
+		this.list.style.height = `${entries.length * FILE_ROW_HEIGHT}px`;
+		this.update();
+	}
+
+	/** 窗口尺寸或滚动条状态变化后重新计算可视区间。 */
+	update(): void {
+		const total = this.entries.length;
+		const listTop = this.list.offsetTop;
+		const viewportTop = Math.max(0, this.scrollable.getScrollPosition().scrollTop - listTop);
+		const viewportHeight = this.content.clientHeight;
+		const first = Math.max(
+			0,
+			Math.min(total, Math.floor(viewportTop / FILE_ROW_HEIGHT) - FILE_LIST_OVERSCAN)
+		);
+		const visibleRows = Math.ceil(viewportHeight / FILE_ROW_HEIGHT) + FILE_LIST_OVERSCAN * 2 + 2;
+		const last = Math.min(total, first + visibleRows);
+
+		if (first === this.firstRendered && last === this.lastRendered) {
+			return;
+		}
+		this.firstRendered = first;
+		this.lastRendered = last;
+
+		for (const [index, row] of this.rows) {
+			if (index < first || index >= last) {
+				row.remove();
+				this.rows.delete(index);
+			}
+		}
+		for (let index = first; index < last; index++) {
+			if (this.rows.has(index)) {
+				continue;
+			}
+			const row = this.createRow(index);
+			this.rows.set(index, row);
+			append(this.list, row);
+		}
+		this.syncSelection();
+	}
+
+	/** 让当前选中项回到可见区域，用于键盘导航或重新排序后的定位。 */
+	revealSelection(): void {
+		if (!this.selectedPath) {
+			return;
+		}
+		const index = this.entries.findIndex(entry => entry.path === this.selectedPath);
+		if (index >= 0) {
+			this.revealIndex(index);
+		}
+	}
+
+	private scheduleUpdate(): void {
+		if (this.updateHandle !== undefined) {
+			return;
+		}
+		this.updateHandle = window.requestAnimationFrame(() => {
+			this.updateHandle = undefined;
+			this.update();
+		});
+	}
+
+	private cancelUpdate(): void {
+		if (this.updateHandle !== undefined) {
+			window.cancelAnimationFrame(this.updateHandle);
+			this.updateHandle = undefined;
+		}
+	}
+
+	private createRow(index: number): HTMLElement {
+		const entry = this.entries[index];
+		const row = this.host.renderRow(entry);
+		row.id = `${this.rowIdPrefix}-${index}`;
+		row.dataset.index = String(index);
+		row.setAttribute('role', 'option');
+		row.setAttribute('aria-selected', entry.path === this.selectedPath ? 'true' : 'false');
+		row.classList.toggle('selected', entry.path === this.selectedPath);
+		row.style.top = `${index * FILE_ROW_HEIGHT}px`;
+		row.tabIndex = -1;
+		return row;
+	}
+
+	private syncSelection(): void {
+		let activeDescendant: string | undefined;
+		for (const [index, row] of this.rows) {
+			const selected = this.entries[index]?.path === this.selectedPath;
+			row.classList.toggle('selected', selected);
+			row.setAttribute('aria-selected', selected ? 'true' : 'false');
+			if (selected) {
+				activeDescendant = row.id;
+			}
+		}
+		if (activeDescendant) {
+			this.list.setAttribute('aria-activedescendant', activeDescendant);
+		} else {
+			this.list.removeAttribute('aria-activedescendant');
+		}
+	}
+
+	private selectIndex(index: number, reveal: boolean): void {
+		const entry = this.entries[index];
+		if (!entry) {
+			return;
+		}
+		this.selectedPath = entry.path;
+		this.host.selectEntry(entry);
+		this.syncSelection();
+		if (reveal) {
+			this.revealIndex(index);
+		}
+	}
+
+	private revealIndex(index: number): void {
+		const listTop = this.list.offsetTop;
+		const viewportHeight = this.content.clientHeight;
+		const visibleTop = Math.max(0, this.scrollable.getScrollPosition().scrollTop - listTop);
+		const rowTop = index * FILE_ROW_HEIGHT;
+		if (rowTop < visibleTop) {
+			this.scrollable.setScrollPosition({ scrollTop: listTop + rowTop });
+		} else if (rowTop + FILE_ROW_HEIGHT > visibleTop + viewportHeight) {
+			this.scrollable.setScrollPosition({
+				scrollTop: Math.max(0, listTop + rowTop + FILE_ROW_HEIGHT - viewportHeight)
+			});
+		}
+		this.update();
+	}
+
+	private rowFromEvent(event: Event): HTMLElement | undefined {
+		const target = event.target as HTMLElement | null;
+		const row = target?.closest('.sidex-file-row');
+		return row instanceof HTMLElement && this.list.contains(row) ? row : undefined;
+	}
+
+	private entryFromRow(row: HTMLElement | undefined): SideXExplorerEntry | undefined {
+		if (!row) {
+			return undefined;
+		}
+		const index = Number(row.dataset.index);
+		return Number.isInteger(index) ? this.entries[index] : undefined;
+	}
+
+	private onClick(event: MouseEvent): void {
+		const row = this.rowFromEvent(event);
+		if (!row) {
+			return;
+		}
+		const index = Number(row.dataset.index);
+		if (Number.isInteger(index)) {
+			this.list.focus();
+			this.selectIndex(index, false);
+		}
+	}
+
+	private onDoubleClick(event: MouseEvent): void {
+		const entry = this.entryFromRow(this.rowFromEvent(event));
+		if (entry) {
+			this.host.activateEntry(entry);
+		}
+	}
+
+	private onContextMenu(event: MouseEvent): void {
+		const entry = this.entryFromRow(this.rowFromEvent(event));
+		this.host.showContextMenu(event, entry);
+	}
+
+	private onKeyDown(event: KeyboardEvent): void {
+		const total = this.entries.length;
+		if (!total) {
+			return;
+		}
+		let index = this.selectedPath
+			? this.entries.findIndex(entry => entry.path === this.selectedPath)
+			: -1;
+		const page = Math.max(1, Math.floor(this.content.clientHeight / FILE_ROW_HEIGHT) - 1);
+
+		switch (event.key) {
+			case 'ArrowDown':
+				index = index < 0 ? 0 : Math.min(total - 1, index + 1);
+				break;
+			case 'ArrowUp':
+				index = index < 0 ? total - 1 : Math.max(0, index - 1);
+				break;
+			case 'PageDown':
+				index = Math.min(total - 1, (index < 0 ? 0 : index) + page);
+				break;
+			case 'PageUp':
+				index = Math.max(0, (index < 0 ? total : index) - page);
+				break;
+			case 'Home':
+				index = 0;
+				break;
+			case 'End':
+				index = total - 1;
+				break;
+			case 'Enter':
+				if (index >= 0) {
+					this.host.activateEntry(this.entries[index]);
+				}
+				event.preventDefault();
+				return;
+			default:
+				return;
+		}
+
+		event.preventDefault();
+		event.stopPropagation();
+		this.selectIndex(index, true);
+	}
+
+	private onDragStart(event: DragEvent): void {
+		const row = this.rowFromEvent(event);
+		const entry = this.entryFromRow(row);
+		if (!row || !entry || !event.dataTransfer) {
+			return;
+		}
+		event.dataTransfer.setData('text/plain', entry.path);
+		event.dataTransfer.setDragImage(row, 12, 12);
+	}
+
+	private onDragOver(event: DragEvent): void {
+		const entry = this.entryFromRow(this.rowFromEvent(event));
+		if (!entry?.isDir) {
+			return;
+		}
+		event.preventDefault();
+		const row = this.rowFromEvent(event);
+		if (row && this.dropTarget !== row) {
+			this.clearDropTarget();
+			row.classList.add('drop-target');
+			this.dropTarget = row;
+		}
+	}
+
+	private onDragLeave(event: DragEvent): void {
+		const row = this.rowFromEvent(event);
+		if (!row || this.dropTarget !== row) {
+			return;
+		}
+		const related = event.relatedTarget as Node | null;
+		if (!related || !row.contains(related)) {
+			this.clearDropTarget();
+		}
+	}
+
+	private onDrop(event: DragEvent): void {
+		const entry = this.entryFromRow(this.rowFromEvent(event));
+		if (!entry?.isDir) {
+			return;
+		}
+		event.preventDefault();
+		this.clearDropTarget();
+		const source = event.dataTransfer?.getData('text/plain');
+		if (source && source !== entry.path) {
+			this.host.moveEntry(source, entry.path);
+		}
+	}
+
+	private clearDropTarget(): void {
+		this.dropTarget?.classList.remove('drop-target');
+		this.dropTarget = undefined;
+	}
 }
 
 export class DirectoryViewEditor extends EditorPane {
@@ -62,7 +399,6 @@ export class DirectoryViewEditor extends EditorPane {
 	private sortKey: 'name' | 'modified' | 'type' | 'size' = 'name';
 	private sortAscending = true;
 	private readonly columnWidths = [260, 170, 130, 110];
-	private static readonly PAGE_SIZE = 300;
 
 	constructor(
 		group: IEditorGroup,
@@ -99,7 +435,9 @@ export class DirectoryViewEditor extends EditorPane {
 	}
 
 	override layout(_dimension: Dimension): void {
+		// 尺寸变化会改变可视行数，需要重新计算虚拟窗口。
 		this.activeView?.scrollable.scanDomNode();
+		this.activeView?.virtualList?.update();
 	}
 
 	override async setInput(
@@ -117,6 +455,13 @@ export class DirectoryViewEditor extends EditorPane {
 		super.setEditorVisible(visible);
 		if (!visible) {
 			this.captureScrollPositions();
+			return;
+		}
+		// 编辑器重新可见后，视口高度才有效，需要重新计算虚拟窗口。
+		const view = this.activeView;
+		if (view) {
+			view.scrollable.scanDomNode();
+			view.virtualList?.update();
 		}
 	}
 
@@ -151,6 +496,13 @@ export class DirectoryViewEditor extends EditorPane {
 			} else {
 				this.savedScrollTops.delete(view.tabId);
 			}
+			// 立即落盘，避免防抖持久化未触发时恢复到旧位置。
+			this.storageService.store(
+				`sidex.directory.scroll:${view.tabId}`,
+				String(scrollTop),
+				StorageScope.PROFILE,
+				StorageTarget.MACHINE
+			);
 		}
 	}
 
@@ -182,7 +534,10 @@ export class DirectoryViewEditor extends EditorPane {
 			renderDisposables: new DisposableStore(),
 			renderedLocation: undefined,
 			renderedRefreshToken: -1,
-			requestId: 0
+			renderedQuery: '',
+			requestId: 0,
+			entries: undefined,
+			virtualList: undefined
 		};
 		this.views.set(tabId, view);
 		return view;
@@ -200,23 +555,31 @@ export class DirectoryViewEditor extends EditorPane {
 
 		const view = this.ensureView(tabId);
 		view.scrollable.scanDomNode();
+		view.virtualList?.update();
+
+		const persisted = Number(this.storageService.get(`sidex.directory.scroll:${tabId}`, StorageScope.PROFILE) ?? '0');
+		const restoreTop = this.savedScrollTops.get(tabId) ?? persisted;
+		const query = this.directoryService.searchQuery;
 
 		const tab = this.directoryService.getTab(tabId);
 		if (tab && tab.location === view.renderedLocation && tab.refreshToken === view.renderedRefreshToken) {
-			// 内容已是最新，复用已有 DOM，并恢复被其他编辑器遮挡时记录的滚动位置。
-			if (restoreScroll) {
-				const persisted = Number(this.storageService.get(`sidex.directory.scroll:${tabId}`, StorageScope.PROFILE) ?? '0');
-				const scrollTop = this.savedScrollTops.get(tabId) ?? persisted;
+			// 内容已是最新：搜索词变化时只重绘，不重新读取目录。
+			if (query !== view.renderedQuery && view.entries) {
 				this.savedScrollTops.delete(tabId);
-				if (scrollTop) {
-					view.scrollable.setScrollPosition({ scrollTop });
-				}
+				this.rerenderDirectory(view, restoreScroll ? restoreTop : 0);
+				return;
 			}
+			// 复用已有 DOM，并恢复被其他编辑器遮挡时记录的滚动位置。
+			if (restoreScroll && restoreTop) {
+				view.scrollable.setScrollPosition({ scrollTop: restoreTop });
+				view.virtualList?.update();
+			}
+			this.savedScrollTops.delete(tabId);
 			return;
 		}
 
 		this.savedScrollTops.delete(tabId);
-		await this.reload(view);
+		await this.reload(view, restoreScroll ? restoreTop : 0);
 	}
 
 	private onDirectoryChange(): void {
@@ -253,11 +616,20 @@ export class DirectoryViewEditor extends EditorPane {
 			return;
 		}
 
-		// 只有内容真正变化时才重绘，切换标签本身不会影响其他视图。
+		// 目录内容未变时，搜索词变化只需基于缓存重绘，不重新读取磁盘。
 		if (tab.location === view.renderedLocation && tab.refreshToken === view.renderedRefreshToken) {
+			if (this.directoryService.searchQuery !== view.renderedQuery && view.entries) {
+				this.rerenderDirectory(view, 0);
+				view.virtualList?.revealSelection();
+			}
 			return;
 		}
-		void this.reload(view);
+
+		// 同一位置刷新时保留滚动位置；切换目录则回到顶部。
+		const scrollTop = tab.location === view.renderedLocation
+			? view.scrollable.getScrollPosition().scrollTop
+			: 0;
+		void this.reload(view, scrollTop);
 	}
 
 	private onDrivesChange(): void {
@@ -266,7 +638,7 @@ export class DirectoryViewEditor extends EditorPane {
 		}
 		const view = this.activeView;
 		if (view) {
-			void this.reload(view);
+			void this.reload(view, 0);
 		}
 	}
 
@@ -275,23 +647,38 @@ export class DirectoryViewEditor extends EditorPane {
 			view.renderedRefreshToken = -1;
 		}
 		const view = this.activeView;
-		if (view) {
-			void this.reload(view);
+		if (!view) {
+			return;
+		}
+		if (view.entries) {
+			// 图标主题只影响行内容，用缓存数据重绘即可。
+			this.rerenderDirectory(view, view.scrollable.getScrollPosition().scrollTop);
+			const tab = this.directoryService.getTab(view.tabId);
+			if (tab) {
+				view.renderedRefreshToken = tab.refreshToken;
+			}
+		} else {
+			void this.reload(view, view.scrollable.getScrollPosition().scrollTop);
 		}
 	}
 
-	private async reload(view: DirectoryTabView): Promise<void> {
+	private async reload(view: DirectoryTabView, scrollTop?: number): Promise<void> {
 		const currentRequest = ++view.requestId;
 		const tab = this.directoryService.getTab(view.tabId);
 		const location = tab?.location ?? '';
 		view.renderedLocation = tab ? tab.location : undefined;
 		view.renderedRefreshToken = tab ? tab.refreshToken : -1;
+		view.entries = undefined;
+		view.virtualList = undefined;
 
 		view.renderDisposables.clear();
 		reset(view.content);
 		if (!location) {
 			this.renderThisPc(view);
 			view.scrollable.scanDomNode();
+			if (scrollTop !== undefined) {
+				view.scrollable.setScrollPosition({ scrollTop });
+			}
 			return;
 		}
 
@@ -305,17 +692,40 @@ export class DirectoryViewEditor extends EditorPane {
 				return;
 			}
 			reset(view.content);
+			view.entries = entries;
 			this.renderDirectory(view, location, entries);
 			view.scrollable.scanDomNode();
+			if (scrollTop !== undefined) {
+				view.scrollable.setScrollPosition({ scrollTop });
+			}
+			view.virtualList?.update();
 		} catch (error) {
 			if (currentRequest !== view.requestId) {
 				return;
 			}
+			view.entries = undefined;
 			reset(view.content);
 			const message = append(view.content, $('.sidex-directory-status'));
 			message.textContent = localize('sidex.directory.loadFailed', '无法打开此位置：{0}', error instanceof Error ? error.message : String(error));
 			view.scrollable.scanDomNode();
 		}
+	}
+
+	/** 使用已缓存的完整数据集重新排序/过滤/渲染，不访问磁盘。 */
+	private rerenderDirectory(view: DirectoryTabView, scrollTop?: number): void {
+		if (!view.entries || !view.renderedLocation) {
+			void this.reload(view, scrollTop);
+			return;
+		}
+		view.renderDisposables.clear();
+		view.virtualList = undefined;
+		reset(view.content);
+		this.renderDirectory(view, view.renderedLocation, view.entries);
+		view.scrollable.scanDomNode();
+		if (scrollTop !== undefined) {
+			view.scrollable.setScrollPosition({ scrollTop });
+		}
+		view.virtualList?.update();
 	}
 
 	private renderThisPc(view: DirectoryTabView): void {
@@ -455,7 +865,13 @@ export class DirectoryViewEditor extends EditorPane {
 					this.sortAscending = true;
 				}
 				this.persistViewPreferences();
-				void this.reload(view);
+				const scrollTop = view.scrollable.getScrollPosition().scrollTop;
+				if (view.entries) {
+					this.rerenderDirectory(view, scrollTop);
+					view.virtualList?.revealSelection();
+				} else {
+					void this.reload(view, scrollTop);
+				}
 			});
 			const resizer = append(cell, $('span.sidex-column-resizer'));
 			resizer.addEventListener('pointerdown', (event: PointerEvent) => {
@@ -477,49 +893,65 @@ export class DirectoryViewEditor extends EditorPane {
 			});
 		});
 
-		const list = append(view.content, $('div.sidex-file-list'));
-		list.addEventListener('contextmenu', event => this.showContextMenu(event, view, location));
+		view.content.setAttribute('data-location', location);
+		view.renderedQuery = this.directoryService.searchQuery;
+		this.persistScrollPosition(view);
 
 		if (!sorted.length) {
-			const empty = append(list, $('.sidex-file-list-empty'));
+			const empty = append(view.content, $('.sidex-file-list-empty'));
 			empty.textContent = localize('sidex.fileList.empty', '此文件夹为空');
 			return;
 		}
 
-		const rows = new Map<string, HTMLElement>();
-		const renderBatch = (start: number) => {
-			const end = Math.min(sorted.length, start + DirectoryViewEditor.PAGE_SIZE);
-			for (let index = start; index < end; index++) {
-				const entry = sorted[index];
-				rows.set(entry.path, this.renderFileRow(view, list, location, entry));
-			}
-			if (end < sorted.length) {
-				const more = append(list, $('button.sidex-file-list-more'));
-				more.textContent = localize('sidex.fileList.loadMore', '显示更多（剩余 {0} 项）', sorted.length - end);
-				more.addEventListener('click', () => {
-					more.remove();
-					renderBatch(end);
-				});
-			}
+		const host: IFileListHost = {
+			renderRow: entry => this.renderFileRow(entry),
+			activateEntry: entry => this.openEntry(entry),
+			selectEntry: entry => this.selectEntry(entry),
+			showContextMenu: (event, entry) => this.showContextMenu(event, view, location, entry),
+			moveEntry: (source, targetDirectory) => void this.moveEntry(source, targetDirectory)
 		};
-		renderBatch(0);
-
 		const selection = this.directoryService.getSelection(view.tabId);
-		if (selection) {
-			rows.get(selection.path)?.classList.add('selected');
-		}
+		const virtualList = new VirtualFileList(
+			view.content,
+			view.content,
+			view.scrollable,
+			host,
+			view.tabId,
+			sorted,
+			selection?.path
+		);
+		view.virtualList = virtualList;
+		view.renderDisposables.add(virtualList);
+	}
 
-		view.content.setAttribute('data-location', location);
-
+	/** 滚动时只在停下来后持久化位置，避免滚动过程中频繁写存储。 */
+	private persistScrollPosition(view: DirectoryTabView): void {
+		let persistTimer: number | undefined;
+		view.renderDisposables.add(toDisposable(() => {
+			if (persistTimer !== undefined) {
+				window.clearTimeout(persistTimer);
+				persistTimer = undefined;
+			}
+		}));
 		view.renderDisposables.add(view.scrollable.onScroll(() => {
-			const scrollTop = String(view.scrollable.getScrollPosition().scrollTop);
-			this.storageService.store(`sidex.directory.scroll:${view.tabId}`, scrollTop, StorageScope.PROFILE, StorageTarget.MACHINE);
+			if (persistTimer !== undefined) {
+				return;
+			}
+			persistTimer = window.setTimeout(() => {
+				persistTimer = undefined;
+				const scrollTop = String(view.scrollable.getScrollPosition().scrollTop);
+				this.storageService.store(
+					`sidex.directory.scroll:${view.tabId}`,
+					scrollTop,
+					StorageScope.PROFILE,
+					StorageTarget.MACHINE
+				);
+			}, 250);
 		}));
 	}
 
-	private renderFileRow(view: DirectoryTabView, list: HTMLElement, location: string, entry: SideXExplorerEntry): HTMLElement {
-		const row = append(list, $('div.sidex-file-row'));
-		row.tabIndex = 0;
+	private renderFileRow(entry: SideXExplorerEntry): HTMLElement {
+		const row = $('div.sidex-file-row');
 		row.setAttribute('data-path', entry.path);
 		row.draggable = true;
 
@@ -540,58 +972,28 @@ export class DirectoryViewEditor extends EditorPane {
 		const size = append(row, $('span.sidex-file-cell'));
 		size.textContent = entry.isDir ? '' : formatBytes(entry.size);
 
-		const open = () => {
-			if (entry.isDir) {
-				this.directoryService.navigate(entry.path);
-			} else {
-				void this.editorService.openEditor({
-					resource: URI.file(entry.path),
-					options: { pinned: true }
-				});
-			}
-		};
+		return row;
+	}
 
-		view.renderDisposables.add(addDisposableListener(row, EventType.CLICK, () => {
-			view.content.querySelectorAll('.sidex-file-row.selected').forEach(element => element.classList.remove('selected'));
-			row.classList.add('selected');
-			this.directoryService.select({
-				path: entry.path,
-				name: entry.name,
-				isDir: entry.isDir,
-				size: entry.size,
-				modified: entry.modified
-			});
-		}));
-
-		view.renderDisposables.add(addDisposableListener(row, EventType.DBLCLICK, open));
-		view.renderDisposables.add(addDisposableListener(row, EventType.KEY_DOWN, event => {
-			if (event.key === 'Enter') {
-				open();
-			}
-		}));
-		view.renderDisposables.add(addDisposableListener(row, EventType.CONTEXT_MENU, event => this.showContextMenu(event, view, location, entry)));
-
-		row.addEventListener('dragstart', event => {
-			event.dataTransfer?.setData('text/plain', entry.path);
-			event.dataTransfer?.setDragImage(row, 12, 12);
-		});
+	private openEntry(entry: SideXExplorerEntry): void {
 		if (entry.isDir) {
-			row.addEventListener('dragover', event => {
-				event.preventDefault();
-				row.classList.add('drop-target');
-			});
-			row.addEventListener('dragleave', () => row.classList.remove('drop-target'));
-			row.addEventListener('drop', event => {
-				event.preventDefault();
-				row.classList.remove('drop-target');
-				const source = event.dataTransfer?.getData('text/plain');
-				if (source && source !== entry.path) {
-					void this.moveEntry(source, entry.path);
-				}
+			this.directoryService.navigate(entry.path);
+		} else {
+			void this.editorService.openEditor({
+				resource: URI.file(entry.path),
+				options: { pinned: true }
 			});
 		}
+	}
 
-		return row;
+	private selectEntry(entry: SideXExplorerEntry): void {
+		this.directoryService.select({
+			path: entry.path,
+			name: entry.name,
+			isDir: entry.isDir,
+			size: entry.size,
+			modified: entry.modified
+		});
 	}
 
 	private showContextMenu(event: MouseEvent, view: DirectoryTabView, location: string, entry?: SideXExplorerEntry): void {
