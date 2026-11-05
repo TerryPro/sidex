@@ -20,6 +20,9 @@ function quietMissingSourceMaps() {
   };
 }
 
+// `npm run dev` 走预打包模式：保留 sourcemap 且不压缩，方便在 WebView 里调试。
+const devBundle = process.env.SIDEX_DEV_BUNDLE === '1';
+
 export default defineConfig({
   clearScreen: false,
   assetsInclude: ['**/*.wasm', '**/*.json', '**/*.tmLanguage.json'],
@@ -47,8 +50,8 @@ export default defineConfig({
   },
   build: {
     target: ['es2022', 'chrome100', 'safari15'],
-    minify: 'esbuild',
-    sourcemap: false,
+    minify: devBundle ? false : 'esbuild',
+    sourcemap: devBundle ? true : false,
     cssCodeSplit: true,
     chunkSizeWarningLimit: 5000,
     rollupOptions: {

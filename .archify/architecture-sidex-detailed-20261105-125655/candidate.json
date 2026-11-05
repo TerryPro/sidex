@@ -1,0 +1,769 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "SideX 文件管理器与编辑器架构",
+    "locale": "zh-CN",
+    "subtitle": "目录标签 · 文件管理 · 预览 · 原生编辑器 · Tauri Rust 能力层",
+    "output": ".archify/architecture-sidex-detailed-20261105-125655/sidex-architecture.html",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "browse",
+        "label": "文件浏览主链路",
+        "focus": [
+          "user",
+          "shell",
+          "explorer",
+          "workset",
+          "preview",
+          "editor",
+          "bridge",
+          "tauriIPC",
+          "fsCmd",
+          "workspaceCap",
+          "localFS"
+        ],
+        "note": "目录标签、单击预览、双击编辑与文件操作"
+      },
+      {
+        "id": "editing",
+        "label": "编辑与预览链路",
+        "focus": [
+          "editor",
+          "csv",
+          "preview",
+          "bridge",
+          "tauriIPC",
+          "syntaxCmd",
+          "syntaxCap",
+          "configCmd",
+          "configCap",
+          "settingsStore"
+        ],
+        "note": "Monaco、CSV 原生表格与语法/配置能力"
+      },
+      {
+        "id": "platform",
+        "label": "扩展与平台能力",
+        "focus": [
+          "extensions",
+          "terminalUI",
+          "extCmd",
+          "platformCmd",
+          "storageCmd",
+          "extensionsCap",
+          "storageCap",
+          "extensionsDir",
+          "sqlite",
+          "terminalCmd",
+          "terminalCap",
+          "pty"
+        ],
+        "note": "声明式扩展、终端、存储与系统 API"
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "user",
+      "type": "external",
+      "icon": "person",
+      "label": "用户",
+      "sublabel": "Windows 桌面",
+      "pos": [
+        20,
+        340
+      ],
+      "size": [
+        100,
+        60
+      ]
+    },
+    {
+      "id": "shell",
+      "type": "frontend",
+      "label": "Workbench 外壳",
+      "sublabel": "WebView · 工作台外壳",
+      "pos": [
+        230,
+        320
+      ],
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "explorer",
+      "type": "frontend",
+      "label": "SideX Explorer",
+      "sublabel": "目录标签 · 导航树 · 文件列表",
+      "pos": [
+        410,
+        300
+      ],
+      "size": [
+        180,
+        88
+      ]
+    },
+    {
+      "id": "workset",
+      "type": "frontend",
+      "label": "目录标签工作集",
+      "sublabel": "打开文件 · 活动标签",
+      "pos": [
+        410,
+        140
+      ],
+      "size": [
+        180,
+        60
+      ]
+    },
+    {
+      "id": "preview",
+      "type": "frontend",
+      "label": "预览与属性面板",
+      "sublabel": "图片/文本 · 属性",
+      "pos": [
+        640,
+        120
+      ],
+      "size": [
+        170,
+        70
+      ]
+    },
+    {
+      "id": "editor",
+      "type": "frontend",
+      "label": "编辑器区",
+      "sublabel": "Monaco · 预览编辑器",
+      "pos": [
+        640,
+        300
+      ],
+      "size": [
+        160,
+        80
+      ]
+    },
+    {
+      "id": "csv",
+      "type": "frontend",
+      "label": "CSV 表格编辑器",
+      "sublabel": "原生 EditorPane",
+      "pos": [
+        850,
+        120
+      ],
+      "size": [
+        160,
+        56
+      ]
+    },
+    {
+      "id": "extensions",
+      "type": "frontend",
+      "label": "内置扩展面板",
+      "sublabel": "声明式扩展目录",
+      "pos": [
+        850,
+        196
+      ],
+      "size": [
+        160,
+        64
+      ]
+    },
+    {
+      "id": "terminalUI",
+      "type": "frontend",
+      "label": "终端面板",
+      "sublabel": "xterm · PTY 面板",
+      "pos": [
+        850,
+        320
+      ],
+      "size": [
+        150,
+        60
+      ]
+    },
+    {
+      "id": "bridge",
+      "type": "frontend",
+      "label": "SideX 前端桥接",
+      "sublabel": "文件系统 · 语法 · 搜索",
+      "pos": [
+        410,
+        470
+      ],
+      "size": [
+        220,
+        70
+      ]
+    },
+    {
+      "id": "tauriIPC",
+      "type": "backend",
+      "label": "Tauri IPC 命令层",
+      "sublabel": "lib.rs · invoke_handler",
+      "pos": [
+        410,
+        640
+      ],
+      "size": [
+        220,
+        60
+      ]
+    },
+    {
+      "id": "extCmd",
+      "type": "backend",
+      "label": "扩展扫描",
+      "sublabel": "声明式扩展",
+      "pos": [
+        40,
+        760
+      ],
+      "size": [
+        130,
+        64
+      ]
+    },
+    {
+      "id": "configCmd",
+      "type": "backend",
+      "label": "配置",
+      "sublabel": "设置 / 主题 / 键位",
+      "pos": [
+        180,
+        760
+      ],
+      "size": [
+        130,
+        64
+      ]
+    },
+    {
+      "id": "storageCmd",
+      "type": "backend",
+      "label": "存储与档案",
+      "sublabel": "存储 / 档案 / 密钥",
+      "pos": [
+        320,
+        760
+      ],
+      "size": [
+        130,
+        64
+      ]
+    },
+    {
+      "id": "terminalCmd",
+      "type": "backend",
+      "label": "终端",
+      "sublabel": "PTY / Shell",
+      "pos": [
+        460,
+        760
+      ],
+      "size": [
+        130,
+        64
+      ]
+    },
+    {
+      "id": "syntaxCmd",
+      "type": "backend",
+      "label": "语法与大纲",
+      "sublabel": "分词 / 大纲 / 折叠",
+      "pos": [
+        600,
+        760
+      ],
+      "size": [
+        130,
+        64
+      ]
+    },
+    {
+      "id": "searchCmd",
+      "type": "backend",
+      "label": "搜索",
+      "sublabel": "文件名 / 全文",
+      "pos": [
+        740,
+        760
+      ],
+      "size": [
+        130,
+        64
+      ]
+    },
+    {
+      "id": "fsCmd",
+      "type": "backend",
+      "label": "文件与驱动器",
+      "sublabel": "读写 / 回收站 / 复制",
+      "pos": [
+        880,
+        760
+      ],
+      "size": [
+        130,
+        64
+      ]
+    },
+    {
+      "id": "platformCmd",
+      "type": "backend",
+      "label": "平台 API",
+      "sublabel": "剪贴板 / 链接 / 环境",
+      "pos": [
+        1020,
+        760
+      ],
+      "size": [
+        130,
+        64
+      ]
+    },
+    {
+      "id": "extensionsCap",
+      "type": "backend",
+      "label": "扩展目录能力",
+      "sublabel": "sidex-extensions",
+      "pos": [
+        40,
+        900
+      ],
+      "size": [
+        170,
+        64
+      ]
+    },
+    {
+      "id": "configCap",
+      "type": "backend",
+      "label": "配置与主题能力",
+      "sublabel": "settings · keymap · theme",
+      "pos": [
+        240,
+        900
+      ],
+      "size": [
+        170,
+        64
+      ]
+    },
+    {
+      "id": "storageCap",
+      "type": "backend",
+      "label": "持久化能力",
+      "sublabel": "db · profiles · auth",
+      "pos": [
+        450,
+        900
+      ],
+      "size": [
+        170,
+        64
+      ]
+    },
+    {
+      "id": "terminalCap",
+      "type": "backend",
+      "label": "终端能力",
+      "sublabel": "sidex-terminal",
+      "pos": [
+        660,
+        900
+      ],
+      "size": [
+        160,
+        64
+      ]
+    },
+    {
+      "id": "syntaxCap",
+      "type": "backend",
+      "label": "语法能力",
+      "sublabel": "sidex-syntax · textmate",
+      "pos": [
+        830,
+        900
+      ],
+      "size": [
+        170,
+        64
+      ]
+    },
+    {
+      "id": "workspaceCap",
+      "type": "backend",
+      "label": "文件与文本能力",
+      "sublabel": "sidex-workspace · text",
+      "pos": [
+        1010,
+        900
+      ],
+      "size": [
+        170,
+        64
+      ]
+    },
+    {
+      "id": "extensionsDir",
+      "type": "database",
+      "label": "声明式扩展目录",
+      "sublabel": "extensions/",
+      "pos": [
+        40,
+        1020
+      ],
+      "size": [
+        170,
+        64
+      ]
+    },
+    {
+      "id": "settingsStore",
+      "type": "database",
+      "label": "用户设置",
+      "sublabel": "settings.json · JSONC",
+      "pos": [
+        240,
+        1020
+      ],
+      "size": [
+        170,
+        64
+      ]
+    },
+    {
+      "id": "sqlite",
+      "type": "database",
+      "label": "SQLite 状态库",
+      "sublabel": "sidex.db",
+      "pos": [
+        450,
+        1020
+      ],
+      "size": [
+        170,
+        64
+      ]
+    },
+    {
+      "id": "pty",
+      "type": "external",
+      "label": "伪终端",
+      "sublabel": "OS Shell / PTY",
+      "pos": [
+        660,
+        1020
+      ],
+      "size": [
+        160,
+        64
+      ]
+    },
+    {
+      "id": "localFS",
+      "type": "database",
+      "label": "本地文件系统",
+      "sublabel": "磁盘 / 目录 / 文件",
+      "pos": [
+        1010,
+        1020
+      ],
+      "size": [
+        170,
+        64
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Tauri WebView / VS Code Workbench",
+      "wraps": [
+        "shell",
+        "explorer",
+        "workset",
+        "preview",
+        "editor",
+        "csv",
+        "extensions",
+        "terminalUI",
+        "bridge"
+      ],
+      "pad": 18
+    },
+    {
+      "kind": "region",
+      "label": "Tauri Rust 后端",
+      "wraps": [
+        "tauriIPC",
+        "extCmd",
+        "configCmd",
+        "storageCmd",
+        "terminalCmd",
+        "syntaxCmd",
+        "searchCmd",
+        "fsCmd",
+        "platformCmd",
+        "extensionsCap",
+        "configCap",
+        "storageCap",
+        "terminalCap",
+        "syntaxCap",
+        "workspaceCap"
+      ],
+      "pad": 18
+    }
+  ],
+  "connections": [
+    {
+      "id": "user-shell",
+      "from": "user",
+      "to": "shell",
+      "label": "启动",
+      "variant": "emphasis"
+    },
+    {
+      "id": "shell-explorer",
+      "from": "shell",
+      "to": "explorer",
+      "label": "打开此电脑"
+    },
+    {
+      "id": "explorer-workset",
+      "from": "explorer",
+      "to": "workset",
+      "label": "切换标签"
+    },
+    {
+      "id": "explorer-preview",
+      "from": "explorer",
+      "to": "preview",
+      "label": "单击文件"
+    },
+    {
+      "id": "explorer-editor",
+      "from": "explorer",
+      "to": "editor",
+      "label": "双击文件"
+    },
+    {
+      "id": "explorer-bridge",
+      "from": "explorer",
+      "to": "bridge",
+      "label": "目录 / 文件命令"
+    },
+    {
+      "id": "workset-editor",
+      "from": "workset",
+      "to": "editor",
+      "label": "恢复打开文件"
+    },
+    {
+      "id": "preview-bridge",
+      "from": "preview",
+      "to": "bridge",
+      "label": "readFile / stat"
+    },
+    {
+      "id": "editor-bridge",
+      "from": "editor",
+      "to": "bridge",
+      "label": "打开 / 保存"
+    },
+    {
+      "id": "csv-bridge",
+      "from": "csv",
+      "to": "bridge",
+      "label": "解析 / 写回"
+    },
+    {
+      "id": "extensions-bridge",
+      "from": "extensions",
+      "to": "bridge",
+      "label": "扩展清单"
+    },
+    {
+      "id": "terminalIPC",
+      "from": "terminalUI",
+      "to": "tauriIPC",
+      "label": "PTY 输入输出"
+    },
+    {
+      "id": "bridge-ipc",
+      "from": "bridge",
+      "to": "tauriIPC",
+      "label": "invoke()",
+      "variant": "emphasis"
+    },
+    {
+      "id": "ipc-ext",
+      "from": "tauriIPC",
+      "to": "extCmd"
+    },
+    {
+      "id": "ipc-config",
+      "from": "tauriIPC",
+      "to": "configCmd"
+    },
+    {
+      "id": "ipc-storage",
+      "from": "tauriIPC",
+      "to": "storageCmd"
+    },
+    {
+      "id": "ipc-terminal",
+      "from": "tauriIPC",
+      "to": "terminalCmd"
+    },
+    {
+      "id": "ipc-syntax",
+      "from": "tauriIPC",
+      "to": "syntaxCmd"
+    },
+    {
+      "id": "ipc-search",
+      "from": "tauriIPC",
+      "to": "searchCmd"
+    },
+    {
+      "id": "ipc-fs",
+      "from": "tauriIPC",
+      "to": "fsCmd"
+    },
+    {
+      "id": "ipc-platform",
+      "from": "tauriIPC",
+      "to": "platformCmd"
+    },
+    {
+      "id": "ext-extensionsCap",
+      "from": "extCmd",
+      "to": "extensionsCap",
+      "label": "manifest / paths"
+    },
+    {
+      "id": "config-configCap",
+      "from": "configCmd",
+      "to": "configCap",
+      "label": "settings / theme / keymap"
+    },
+    {
+      "id": "storage-storageCap",
+      "from": "storageCmd",
+      "to": "storageCap",
+      "label": "state / profile / secret"
+    },
+    {
+      "id": "terminal-terminalCap",
+      "from": "terminalCmd",
+      "to": "terminalCap"
+    },
+    {
+      "id": "syntax-syntaxCap",
+      "from": "syntaxCmd",
+      "to": "syntaxCap"
+    },
+    {
+      "id": "search-workspaceCap",
+      "from": "searchCmd",
+      "to": "workspaceCap",
+      "label": "search"
+    },
+    {
+      "id": "fs-workspaceCap",
+      "from": "fsCmd",
+      "to": "workspaceCap",
+      "label": "file_ops"
+    },
+    {
+      "id": "extensionsCap-dir",
+      "from": "extensionsCap",
+      "to": "extensionsDir",
+      "label": "扫描目录"
+    },
+    {
+      "id": "configCap-settings",
+      "from": "configCap",
+      "to": "settingsStore",
+      "label": "JSONC"
+    },
+    {
+      "id": "storageCap-sqlite",
+      "from": "storageCap",
+      "to": "sqlite",
+      "label": "SQLite"
+    },
+    {
+      "id": "terminalCap-pty",
+      "from": "terminalCap",
+      "to": "pty",
+      "label": "spawn / resize"
+    },
+    {
+      "id": "workspaceCap-fs",
+      "from": "workspaceCap",
+      "to": "localFS",
+      "label": "读写文件"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "文件管理主链路",
+      "items": [
+        "目录标签各自维护导航历史、文件列表视图和编辑器工作集",
+        "文件列表支持排序列、列宽持久化与分页加载",
+        "单击文件显示预览与属性，双击在主编辑区打开",
+        "右键菜单接入新建、重命名、回收站删除、复制与粘贴"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "编辑与预览",
+      "items": [
+        "Monaco 编辑器保留多光标、查找替换、折叠与自动保存",
+        "CSV 使用原生表格编辑器，不再依赖 WASM 扩展",
+        "图片、PDF、HTML、Markdown、Mermaid 均以原生 EditorPane 预览",
+        "高亮由 TextMate 语法提供；大纲与折叠由 Rust 原生实现"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Rust 能力 crates",
+      "items": [
+        "sidex-workspace：文件树、搜索、路径与文件操作",
+        "sidex-text：Rope 文本缓冲、编码与行处理",
+        "sidex-syntax：语言检测、高亮、大纲与折叠",
+        "sidex-textmate：TextMate 分词与语法栈",
+        "sidex-terminal：PTY、终端网格与 ANSI 模拟",
+        "sidex-settings / keymap / theme：配置、键位与主题",
+        "sidex-db / profiles / auth：SQLite、档案与密钥",
+        "sidex-extensions：声明式扩展清单与路径"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "已移除的能力",
+      "items": [
+        "Node 扩展宿主、WASM 扩展运行时与自定义编辑器宿主",
+        "扩展市场、下载与 Open VSX 客户端",
+        "Git、源代码管理与时间线",
+        "LSP 语言服务器与语言诊断",
+        "账号同步、遥测与自动更新"
+      ]
+    }
+  ]
+}

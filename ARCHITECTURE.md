@@ -10,7 +10,7 @@ servers.
 
 The VS Code source (MIT License) is the architectural reference. No proprietary code is used.
 
-
+可视化版本：[SideX 文件管理器与编辑器架构](.archify/architecture-sidex-detailed-20261105-125655/sidex-architecture.html)
 
 ## Process Model
 

@@ -3,7 +3,7 @@
  *  Entry point. Globals set by inline script in index.html.
  *--------------------------------------------------------------------------------------------*/
 
-import { loadNlsMessages } from './nls-loader.js';
+import { loadNlsMessages, nlsLoadInfo } from './nls-loader.js';
 
 async function sidexOpenFolder() {
 	try {
@@ -28,6 +28,7 @@ function navigateToFolder(folderUri: string) {
 async function boot() {
 	// Load locale translations before any VS Code module imports
 	await loadNlsMessages();
+	performance.mark('sidex/nlsLoaded');
 
 	await Promise.all([
 		import('./vs/workbench/workbench.common.main.js').catch(e => {
@@ -47,6 +48,7 @@ async function boot() {
 			throw e;
 		})
 	]);
+	performance.mark('sidex/modulesLoaded');
 
 	// SideX Rust bridge initialization — make services available before workbench creation
 	if ((globalThis as any).__SIDEX_TAURI__) {
@@ -245,10 +247,18 @@ async function reportWorkbenchReady(): Promise<void> {
 	try {
 		const { invoke } = await import('@tauri-apps/api/core');
 		const markOf = (name: string) => performance.getEntriesByName(name)[0]?.startTime;
+		const ms = (value: number | undefined) => (value === undefined ? '?' : `${Math.round(value)}ms`);
+		const resources = (performance.getEntriesByType('resource') as PerformanceResourceTiming[])
+			.filter(entry => entry.name.endsWith('.js'))
+			.sort((a, b) => b.duration - a.duration)
+			.slice(0, 5)
+			.map(entry => `${entry.name.split('/').pop()} ${Math.round(entry.duration)}ms`);
+		const nlsCount = ((globalThis as any)._VSCODE_NLS_MESSAGES as unknown[] | undefined)?.length ?? 0;
 		await invoke('frontend_ready', {
 			renderMs: Math.round(performance.now()),
 			loadMs: markOf('code/didLoadWorkbenchMain'),
-			startMs: markOf('code/didStartWorkbench')
+			startMs: markOf('code/didStartWorkbench'),
+			diag: `nls=${ms(markOf('sidex/nlsLoaded'))} modules=${ms(markOf('sidex/modulesLoaded'))} nlsInfo=${nlsLoadInfo} msgs=${nlsCount} slow=[${resources.join(', ')}]`
 		});
 	} catch {
 		// 只用于诊断，失败不影响使用

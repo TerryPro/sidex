@@ -115,9 +115,10 @@ pub fn frontend_ready(
     render_ms: Option<f64>,
     load_ms: Option<f64>,
     start_ms: Option<f64>,
+    diag: Option<String>,
 ) {
     log::info!(
-        "[SideX] workbench ready in {}ms (module load {}ms, workbench init {}ms)",
+        "[SideX] workbench ready in {}ms (module load {}, workbench init {})",
         timer.0.elapsed().as_millis(),
         opt_ms(load_ms),
         start_ms.zip(load_ms).map_or_else(
@@ -125,6 +126,9 @@ pub fn frontend_ready(
             |(start, load)| format!("{:.0}ms", start - load)
         ),
     );
+    if let Some(diag) = diag {
+        log::info!("[SideX] boot breakdown: {diag}");
+    }
     log::debug!("[SideX] frontend ready payload: render={render_ms:?}");
 }
 

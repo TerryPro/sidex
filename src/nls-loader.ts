@@ -72,177 +72,84 @@ function applyDocumentLanguage(locale: string | null): void {
 	document.documentElement.lang = documentLanguageByLocale[normalized] ?? normalized;
 }
 
+/** 本次启动 NLS 的来源，仅用于启动诊断日志。 */
+export let nlsLoadInfo = 'none';
+
+async function fetchNlsIndex(): Promise<Array<{ key: string; msg: string }> | null> {
+	try {
+		const res = await fetch('/nls.messages.json');
+		if (!res.ok) {
+			return null;
+		}
+		const contentType = res.headers.get('content-type') ?? '';
+		if (!contentType.includes('json')) {
+			return null;
+		}
+		const entries: unknown = await res.json();
+		return Array.isArray(entries) && entries.length > 0
+			? (entries as Array<{ key: string; msg: string }>)
+			: null;
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * 语言包随应用一起打包在 `public/nls/<locale>.json`
+ * （由 `node scripts/sync-nls-pack.mjs` 生成），启动时只读本地资源，不做任何外网请求。
+ */
+async function fetchLocalPack(locale: string): Promise<Translations | null> {
+	try {
+		const res = await fetch(`/nls/${locale.toLowerCase()}.json`);
+		if (!res.ok) {
+			return null;
+		}
+		const data: unknown = await res.json();
+		return data && typeof data === 'object' ? (data as Translations) : null;
+	} catch {
+		return null;
+	}
+}
+
 export async function loadNlsMessages(): Promise<void> {
 	const locale = localStorage.getItem('vscode.nls.locale');
-	console.log('[SideX NLS] locale from localStorage:', locale);
-
 	applyDocumentLanguage(locale);
 
 	if (!locale || locale.toLowerCase().startsWith('en')) {
+		nlsLoadInfo = 'en';
 		return;
 	}
 
-	let extensionId = localStorage.getItem('vscode.nls.languagePackExtensionId');
-	console.log('[SideX NLS] extensionId from localStorage:', extensionId);
+	const nlsEntries = await fetchNlsIndex();
+	const translations = await fetchLocalPack(locale);
 
-	if (!extensionId) {
-		extensionId = await detectInstalledLanguagePack(locale);
-		if (extensionId) {
-			localStorage.setItem('vscode.nls.languagePackExtensionId', extensionId);
-			console.log('[SideX NLS] auto-detected language pack:', extensionId);
-		} else {
-			console.warn('[SideX NLS] No language pack found for locale:', locale);
-			return;
+	if (!translations) {
+		console.warn(`[SideX NLS] 未找到本地语言包 /nls/${locale.toLowerCase()}.json`);
+		nlsLoadInfo = 'no-local-pack';
+		return;
+	}
+	nlsLoadInfo = 'local';
+
+	// 合并语言包里没有的 SideX 专属翻译
+	const sidexExtra = sidexTranslations[locale.toLowerCase()];
+	if (sidexExtra) {
+		for (const [key, val] of Object.entries(sidexExtra)) {
+			if (!(key in translations)) {
+				translations[key] = val;
+			}
 		}
 	}
 
-	try {
-		const translations = (await loadFromDisk(extensionId)) ?? (await loadFromGallery(extensionId));
-
-		if (!translations) {
-			console.warn('[SideX NLS] No translations found for', extensionId);
-			return;
-		}
-
-		// Merge SideX-specific translations for strings not in the VS Code language pack
-		const sidexExtra = sidexTranslations[locale.toLowerCase()];
-		if (sidexExtra) {
-			for (const [key, val] of Object.entries(sidexExtra)) {
-				if (!(key in translations)) {
-					translations[key] = val;
-				}
-			}
-		}
-
-		const indexRes = await fetch('/nls.messages.json');
-		if (indexRes.ok) {
-			const contentType = indexRes.headers.get('content-type') ?? '';
-			if (contentType.includes('json')) {
-				const nlsEntries: Array<{ key: string; msg: string }> = await indexRes.json();
-				if (nlsEntries.length > 0) {
-					(globalThis as any)._VSCODE_NLS_MESSAGES = nlsEntries.map(({ key, msg }) => translations[key] ?? msg);
-					(globalThis as any)._VSCODE_NLS_LANGUAGE = locale;
-					console.log(`[SideX NLS] Loaded ${nlsEntries.length} translations for ${locale} (indexed mode)`);
-					return;
-				}
-			}
-		}
-
-		(globalThis as any)._VSCODE_NLS_TRANSLATIONS = translations;
+	if (nlsEntries) {
+		const messages = nlsEntries.map(({ key, msg }) => translations[key] ?? msg);
+		(globalThis as any)._VSCODE_NLS_MESSAGES = messages;
 		(globalThis as any)._VSCODE_NLS_LANGUAGE = locale;
-		console.log(`[SideX NLS] Loaded ${Object.keys(translations).length} translations for ${locale} (key mode)`);
-	} catch (e) {
-		console.warn('[SideX NLS] Failed to load translations:', e);
-	}
-}
-
-async function loadFromDisk(extensionId: string): Promise<Translations | null> {
-	try {
-		const { invoke } = await import('@tauri-apps/api/core');
-
-		const homedir: string | null =
-			(await invoke<string>('get_env', { key: 'HOME' }).catch(() => null)) ??
-			(await invoke<string>('get_env', { key: 'USERPROFILE' }).catch(() => null));
-
-		if (!homedir) {
-			return null;
-		}
-
-		const path = `${homedir}/.sidex/extensions/${extensionId}/translations/main.i18n.json`;
-		const raw = await invoke<string>('read_file', { path });
-		const result = parseBundle(raw);
-		if (result) {
-			console.log(`[SideX NLS] Loaded translations from disk: ${path}`);
-		}
-		return result;
-	} catch {
-		return null;
-	}
-}
-
-async function loadFromGallery(extensionId: string): Promise<Translations | null> {
-	const [publisher, name] = extensionId.split('.');
-	if (!publisher || !name) {
-		return null;
+		console.log(`[SideX NLS] Loaded ${messages.length} translations for ${locale} (local pack)`);
+		return;
 	}
 
-	const urls = [
-		`https://marketplace.siden.ai/api/gallery/publishers/${publisher}/vsextensions/${name}/latest/vspackage`,
-		`https://open-vsx.org/api/${publisher}/${name}/latest`
-	];
-
-	for (const metaUrl of urls) {
-		try {
-			const meta = await fetch(metaUrl).then(r => (r.ok ? r.json() : null));
-			if (!meta?.version) {
-				continue;
-			}
-			const translationUrl = `https://open-vsx.org/vscode/unpkg/${publisher}/${name}/${meta.version}/extension/translations/main.i18n.json`;
-			const res = await fetch(translationUrl);
-			if (res.ok) {
-				const result = parseBundle(await res.text());
-				if (result) {
-					console.log(`[SideX NLS] Loaded translations from gallery`);
-					return result;
-				}
-			}
-		} catch {
-			continue;
-		}
-	}
-	return null;
-}
-
-function parseBundle(raw: string): Translations | null {
-	try {
-		const bundles = JSON.parse(raw)?.contents;
-		if (!bundles) {
-			return null;
-		}
-		const messages: Translations = {};
-		for (const bundle of Object.values(bundles)) {
-			Object.assign(messages, bundle);
-		}
-		return messages;
-	} catch {
-		return null;
-	}
-}
-
-const localeToPackName: Record<string, string> = {
-	'zh-cn': 'MS-CEINTL.vscode-language-pack-zh-hans',
-	'zh-tw': 'MS-CEINTL.vscode-language-pack-zh-hant',
-	ja: 'MS-CEINTL.vscode-language-pack-ja',
-	ko: 'MS-CEINTL.vscode-language-pack-ko',
-	de: 'MS-CEINTL.vscode-language-pack-de',
-	fr: 'MS-CEINTL.vscode-language-pack-fr',
-	es: 'MS-CEINTL.vscode-language-pack-es',
-	it: 'MS-CEINTL.vscode-language-pack-it',
-	'pt-br': 'MS-CEINTL.vscode-language-pack-pt-BR',
-	ru: 'MS-CEINTL.vscode-language-pack-ru',
-	tr: 'MS-CEINTL.vscode-language-pack-tr',
-	pl: 'MS-CEINTL.vscode-language-pack-pl',
-	cs: 'MS-CEINTL.vscode-language-pack-cs',
-	hu: 'MS-CEINTL.vscode-language-pack-hu'
-};
-
-async function detectInstalledLanguagePack(locale: string): Promise<string | null> {
-	const knownId = localeToPackName[locale.toLowerCase()];
-	if (!knownId) {
-		return null;
-	}
-	try {
-		const { invoke } = await import('@tauri-apps/api/core');
-		const homedir: string | null =
-			(await invoke<string>('get_env', { key: 'HOME' }).catch(() => null)) ??
-			(await invoke<string>('get_env', { key: 'USERPROFILE' }).catch(() => null));
-		if (!homedir) {
-			return null;
-		}
-		const path = `${homedir}/.sidex/extensions/${knownId}/translations/main.i18n.json`;
-		await invoke<string>('read_file', { path });
-		return knownId;
-	} catch {
-		return null;
-	}
+	(globalThis as any)._VSCODE_NLS_TRANSLATIONS = translations;
+	(globalThis as any)._VSCODE_NLS_LANGUAGE = locale;
+	nlsLoadInfo = 'local-keys';
+	console.log(`[SideX NLS] Loaded ${Object.keys(translations).length} translations for ${locale} (key mode)`);
 }
