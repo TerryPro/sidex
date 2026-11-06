@@ -136,7 +136,7 @@ import './media/settingsEditor2.css';
 import { preferencesAiResultsIcon, preferencesClearInputIcon, preferencesFilterIcon } from './preferencesIcons.js';
 import { SettingsTarget, SettingsTargetsWidget } from './preferencesWidgets.js';
 import { ISettingOverrideClickEvent } from './settingsEditorSettingIndicators.js';
-import { getCommonlyUsedData, ITOCEntry, tocData } from './settingsLayout.js';
+import { ITOCEntry, tocData } from './settingsLayout.js';
 import { SettingsSearchFilterDropdownMenuActionViewItem } from './settingsSearchMenu.js';
 import {
 	AbstractSettingRenderer,
@@ -1826,11 +1826,16 @@ export class SettingsEditor2 extends EditorPane {
 			}
 		}
 
-		resolvedSettingsRoot.children!.push(
-			await createTocTreeForExtensionSettings(this.extensionService, extensionSettingsGroups, filter)
-		);
-
-		resolvedSettingsRoot.children!.unshift(getCommonlyUsedData(groups));
+		const extensionToc = await createTocTreeForExtensionSettings(this.extensionService, extensionSettingsGroups, filter);
+		// SideX keeps exactly five top-level groups: fold extension-contributed
+		// settings into the core Extensions group instead of appending a second
+		// "Extensions" entry.
+		const extensionsEntry = resolvedSettingsRoot.children!.find(entry => entry.id === 'extensions');
+		if (extensionsEntry) {
+			extensionsEntry.children = [...(extensionsEntry.children ?? []), ...(extensionToc.children ?? [])];
+		} else {
+			resolvedSettingsRoot.children!.push(extensionToc);
+		}
 
 		if (toggleData && setAdditionalGroups) {
 			// Add the additional groups to the model to help with searching.

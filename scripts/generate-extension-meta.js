@@ -33,12 +33,26 @@ if (!existsSync(extensionsDir)) {
   process.exit(0);
 }
 
+// SideX keeps only declarative extensions for the file manager/editor core.
+// Extensions for removed features (Git/SCM, chat/AI prompts, notebooks) are
+// skipped so their settings do not leak into the settings editor.
+const SKIPPED_EXTENSIONS = new Set([
+  'git',
+  'git-base',
+  'github',
+  'github-authentication',
+  'TypeScriptTeam.jsts-chat-features',
+  'copilot',
+  'copilot-chat',
+  'notebook-renderers',
+  'prompt-basics'
+]);
+
 const entries = readdirSync(extensionsDir);
 const descriptors = [];
 
 for (const dirName of entries) {
-  // Skip the Node.js Git extension — SideX uses its own Rust-native Git provider
-  if (dirName === 'git') continue;
+  if (SKIPPED_EXTENSIONS.has(dirName)) continue;
 
   const dirPath = join(extensionsDir, dirName);
   if (!statSync(dirPath).isDirectory()) continue;

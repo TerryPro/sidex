@@ -242,8 +242,8 @@ mod tests {
     #[test]
     fn get_typed_bool() {
         let s = Settings::new();
-        let minimap: bool = s.get("editor.minimap.enabled").unwrap();
-        assert!(!minimap);
+        let insert_spaces: bool = s.get("editor.insertSpaces").unwrap();
+        assert!(insert_spaces);
     }
 
     #[test]

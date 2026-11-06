@@ -1,23 +1,21 @@
-//! Built-in default settings — comprehensive VS Code parity.
+//! Built-in default settings for SideX.
 //!
-//! Covers editor, workbench, files, terminal, search, window, debug,
-//! explorer, and extension defaults.
+//! The catalog only covers features SideX keeps. Settings for removed IDE
+//! features (debug, Git/SCM, notebooks, remote, tasks, tests, chat, update,
+//! telemetry, extension marketplace, LSP-style completion/navigation) are
+//! intentionally absent so the settings UI and search stay free of dead
+//! entries.
 
 use serde_json::{json, Map, Value};
 
 /// Return the complete map of built-in default settings.
 pub fn builtin_defaults() -> Value {
     let mut m = Map::new();
+    add_file_browsing_defaults(&mut m);
     add_editor_defaults(&mut m);
-    add_workbench_defaults(&mut m);
-    add_file_defaults(&mut m);
-    add_terminal_defaults(&mut m);
-    add_search_defaults(&mut m);
-    add_window_defaults(&mut m);
-    add_explorer_defaults(&mut m);
-    add_extension_defaults(&mut m);
-    add_output_defaults(&mut m);
-    add_language_specific_defaults(&mut m);
+    add_appearance_defaults(&mut m);
+    add_keybinding_defaults(&mut m);
+    add_language_defaults(&mut m);
     Value::Object(m)
 }
 
@@ -25,8 +23,86 @@ fn ins(m: &mut Map<String, Value>, key: &str, value: Value) {
     m.insert(key.to_owned(), value);
 }
 
+// ---------------------------------------------------------------------------
+// Files & Browsing
+// ---------------------------------------------------------------------------
+
+#[allow(clippy::too_many_lines)]
+fn add_file_browsing_defaults(m: &mut Map<String, Value>) {
+    // Files
+    ins(m, "files.autoSave", json!("off"));
+    ins(m, "files.autoSaveDelay", json!(1000));
+    ins(m, "files.encoding", json!("utf8"));
+    ins(m, "files.eol", json!("auto"));
+    ins(m, "files.trimTrailingWhitespace", json!(false));
+    ins(m, "files.insertFinalNewline", json!(false));
+    ins(m, "files.trimFinalNewlines", json!(false));
+    ins(
+        m,
+        "files.exclude",
+        json!({"**/.git": true, "**/.svn": true, "**/.hg": true, "**/CVS": true, "**/.DS_Store": true, "**/Thumbs.db": true}),
+    );
+    ins(
+        m,
+        "files.watcherExclude",
+        json!({"**/.git/objects/**": true, "**/.git/subtree-cache/**": true, "**/node_modules/**": true, "**/.hg/store/**": true}),
+    );
+    ins(m, "files.hotExit", json!("onExit"));
+    ins(m, "files.defaultLanguage", json!(""));
+    ins(m, "files.maxMemoryForLargeFilesMB", json!(4096));
+    ins(m, "files.simpleDialog.enable", json!(false));
+    ins(m, "files.associations", json!({}));
+
+    // Explorer
+    ins(m, "explorer.openEditors.visible", json!(9));
+    ins(m, "explorer.autoReveal", json!(true));
+    ins(m, "explorer.enableDragAndDrop", json!(true));
+    ins(m, "explorer.confirmDragAndDrop", json!(true));
+    ins(m, "explorer.confirmDelete", json!(true));
+    ins(m, "explorer.sortOrder", json!("default"));
+    ins(
+        m,
+        "explorer.sortOrderLexicographicOptions",
+        json!("default"),
+    );
+    ins(m, "explorer.decorations.colors", json!(true));
+    ins(m, "explorer.decorations.badges", json!(true));
+    ins(m, "explorer.incrementalNaming", json!("simple"));
+    ins(m, "explorer.compactFolders", json!(true));
+
+    // Search
+    ins(
+        m,
+        "search.exclude",
+        json!({"**/node_modules": true, "**/bower_components": true, "**/*.code-search": true}),
+    );
+    ins(m, "search.useIgnoreFiles", json!(true));
+    ins(m, "search.useGlobalIgnoreFiles", json!(false));
+    ins(m, "search.useParentIgnoreFiles", json!(true));
+    ins(m, "search.followSymlinks", json!(true));
+    ins(m, "search.smartCase", json!(false));
+    ins(m, "search.showLineNumbers", json!(false));
+    ins(m, "search.seedOnFocus", json!(false));
+    ins(m, "search.seedWithNearestWord", json!(false));
+    ins(m, "search.mode", json!("view"));
+    ins(m, "search.collapseResults", json!("alwaysExpand"));
+    ins(m, "search.searchOnType", json!(true));
+    ins(m, "search.searchOnTypeDebouncePeriod", json!(300));
+    ins(m, "search.sortOrder", json!("default"));
+    ins(m, "search.defaultViewMode", json!("list"));
+    ins(m, "search.quickOpen.includeHistory", json!(true));
+
+    // Output
+    ins(m, "output.smartScroll.enabled", json!(true));
+}
+
+// ---------------------------------------------------------------------------
+// Editor
+// ---------------------------------------------------------------------------
+
 #[allow(clippy::too_many_lines)]
 fn add_editor_defaults(m: &mut Map<String, Value>) {
+    // Font & layout
     ins(m, "editor.fontSize", json!(14));
     ins(
         m,
@@ -37,28 +113,37 @@ fn add_editor_defaults(m: &mut Map<String, Value>) {
     ins(m, "editor.fontLigatures", json!(false));
     ins(m, "editor.lineHeight", json!(0));
     ins(m, "editor.letterSpacing", json!(0));
+    ins(m, "editor.padding.top", json!(0));
+    ins(m, "editor.padding.bottom", json!(0));
+    ins(m, "editor.lineDecorationsWidth", json!(10));
+    ins(m, "editor.rulers", json!([]));
+
+    // Indentation
     ins(m, "editor.tabSize", json!(4));
     ins(m, "editor.insertSpaces", json!(true));
     ins(m, "editor.detectIndentation", json!(true));
     ins(m, "editor.trimAutoWhitespace", json!(true));
-    ins(m, "editor.largeFileOptimizations", json!(true));
-    ins(m, "editor.wordBasedSuggestions", json!("matchingDocuments"));
-    ins(
-        m,
-        "editor.semanticHighlighting.enabled",
-        json!("configuredByTheme"),
-    );
-    ins(m, "editor.stablePeek", json!(false));
-    ins(m, "editor.maxTokenizationLineLength", json!(20000));
+    ins(m, "editor.autoIndent", json!("full"));
+
+    // Wrapping
     ins(m, "editor.wordWrap", json!("off"));
     ins(m, "editor.wordWrapColumn", json!(80));
     ins(m, "editor.wrappingIndent", json!("same"));
     ins(m, "editor.wrappingStrategy", json!("simple"));
+
+    // Display
     ins(m, "editor.lineNumbers", json!("on"));
     ins(m, "editor.renderWhitespace", json!("selection"));
     ins(m, "editor.renderControlCharacters", json!(true));
     ins(m, "editor.renderLineHighlight", json!("line"));
-    ins(m, "editor.renderLineHighlightOnlyWhenFocus", json!(false));
+    ins(m, "editor.scrollBeyondLastLine", json!(true));
+    ins(m, "editor.scrollBeyondLastColumn", json!(5));
+    ins(m, "editor.roundedSelection", json!(true));
+    ins(m, "editor.overviewRulerBorder", json!(true));
+    ins(m, "editor.overviewRulerLanes", json!(3));
+    ins(m, "editor.glyphMargin", json!(true));
+
+    // Cursor & scrolling
     ins(m, "editor.cursorStyle", json!("line"));
     ins(m, "editor.cursorBlinking", json!("blink"));
     ins(m, "editor.cursorWidth", json!(0));
@@ -67,27 +152,13 @@ fn add_editor_defaults(m: &mut Map<String, Value>) {
     ins(m, "editor.mouseWheelScrollSensitivity", json!(1));
     ins(m, "editor.fastScrollSensitivity", json!(5));
     ins(m, "editor.mouseWheelZoom", json!(false));
-    ins(m, "editor.minimap.enabled", json!(false));
-    ins(m, "editor.minimap.side", json!("right"));
-    ins(m, "editor.minimap.maxColumn", json!(120));
-    ins(m, "editor.minimap.renderCharacters", json!(true));
-    ins(m, "editor.minimap.showSlider", json!("mouseover"));
-    ins(m, "editor.minimap.scale", json!(1));
-    ins(m, "editor.minimap.autohide", json!(false));
-    ins(m, "editor.scrollBeyondLastLine", json!(true));
-    ins(m, "editor.scrollBeyondLastColumn", json!(5));
-    ins(m, "editor.roundedSelection", json!(true));
-    ins(m, "editor.overviewRulerBorder", json!(true));
-    ins(m, "editor.overviewRulerLanes", json!(3));
-    ins(m, "editor.formatOnSave", json!(false));
-    ins(m, "editor.formatOnPaste", json!(false));
-    ins(m, "editor.formatOnType", json!(false));
+
+    // Editing behavior
     ins(m, "editor.autoClosingBrackets", json!("languageDefined"));
     ins(m, "editor.autoClosingComments", json!("languageDefined"));
     ins(m, "editor.autoClosingQuotes", json!("languageDefined"));
     ins(m, "editor.autoClosingDelete", json!("auto"));
     ins(m, "editor.autoClosingOvertype", json!("auto"));
-    ins(m, "editor.autoIndent", json!("full"));
     ins(m, "editor.autoSurround", json!("languageDefined"));
     ins(m, "editor.dragAndDrop", json!(true));
     ins(m, "editor.emptySelectionClipboard", json!(true));
@@ -95,103 +166,23 @@ fn add_editor_defaults(m: &mut Map<String, Value>) {
     ins(m, "editor.multiCursorModifier", json!("alt"));
     ins(m, "editor.multiCursorMergeOverlapping", json!(true));
     ins(m, "editor.multiCursorPaste", json!("spread"));
-    ins(m, "editor.accessibilitySupport", json!("auto"));
-    ins(m, "editor.suggest.showIcons", json!(true));
-    ins(m, "editor.suggest.insertMode", json!("insert"));
-    ins(m, "editor.suggest.filterGraceful", json!(true));
-    ins(m, "editor.suggest.localityBonus", json!(false));
-    ins(m, "editor.suggest.shareSuggestSelections", json!(false));
-    ins(m, "editor.suggest.showMethods", json!(true));
-    ins(m, "editor.suggest.showFunctions", json!(true));
-    ins(m, "editor.suggest.showConstructors", json!(true));
-    ins(m, "editor.suggest.showFields", json!(true));
-    ins(m, "editor.suggest.showVariables", json!(true));
-    ins(m, "editor.suggest.showClasses", json!(true));
-    ins(m, "editor.suggest.showStructs", json!(true));
-    ins(m, "editor.suggest.showInterfaces", json!(true));
-    ins(m, "editor.suggest.showModules", json!(true));
-    ins(m, "editor.suggest.showProperties", json!(true));
-    ins(m, "editor.suggest.showEvents", json!(true));
-    ins(m, "editor.suggest.showOperators", json!(true));
-    ins(m, "editor.suggest.showUnits", json!(true));
-    ins(m, "editor.suggest.showValues", json!(true));
-    ins(m, "editor.suggest.showConstants", json!(true));
-    ins(m, "editor.suggest.showEnumMembers", json!(true));
-    ins(m, "editor.suggest.showEnums", json!(true));
-    ins(m, "editor.suggest.showKeywords", json!(true));
-    ins(m, "editor.suggest.showWords", json!(true));
-    ins(m, "editor.suggest.showColors", json!(true));
-    ins(m, "editor.suggest.showFiles", json!(true));
-    ins(m, "editor.suggest.showReferences", json!(true));
-    ins(m, "editor.suggest.showSnippets", json!(true));
-    ins(m, "editor.suggest.showUsers", json!(true));
-    ins(m, "editor.suggest.showIssues", json!(true));
-    ins(
-        m,
-        "editor.quickSuggestions",
-        json!({"other": true, "comments": false, "strings": false}),
-    );
-    ins(m, "editor.quickSuggestionsDelay", json!(10));
-    ins(m, "editor.suggestOnTriggerCharacters", json!(true));
-    ins(m, "editor.acceptSuggestionOnEnter", json!("on"));
-    ins(m, "editor.acceptSuggestionOnCommitCharacter", json!(true));
-    ins(m, "editor.snippetSuggestions", json!("inline"));
-    ins(m, "editor.tabCompletion", json!("off"));
-    ins(
-        m,
-        "editor.wordBasedSuggestionsMode",
-        json!("matchingDocuments"),
-    );
-    ins(m, "editor.suggestSelection", json!("first"));
-    ins(m, "editor.suggestFontSize", json!(0));
-    ins(m, "editor.suggestLineHeight", json!(0));
-    ins(m, "editor.parameterHints.enabled", json!(false));
-    ins(m, "editor.parameterHints.cycle", json!(false));
-    ins(m, "editor.hover.enabled", json!(true));
-    ins(m, "editor.hover.delay", json!(300));
-    ins(m, "editor.hover.sticky", json!(true));
+    ins(m, "editor.columnSelection", json!(false));
     ins(m, "editor.links", json!(true));
-    ins(m, "editor.colorDecorators", json!(false));
-    ins(
-        m,
-        "editor.colorDecoratorsActivatedOn",
-        json!("clickAndHover"),
-    );
-    ins(m, "editor.lightbulb.enabled", json!("on"));
-    ins(m, "editor.codeActionsOnSave", json!({}));
     ins(m, "editor.selectionHighlight", json!(true));
     ins(m, "editor.occurrencesHighlight", json!("singleFile"));
-    ins(m, "editor.codeLens", json!(false));
-    ins(m, "editor.codeLensFontFamily", json!(""));
-    ins(m, "editor.codeLensFontSize", json!(0));
-    ins(m, "editor.showFoldingControls", json!("mouseover"));
-    ins(m, "editor.folding", json!(true));
-    ins(m, "editor.foldingStrategy", json!("auto"));
-    ins(m, "editor.foldingHighlight", json!(true));
-    ins(m, "editor.foldingImportsByDefault", json!(false));
-    ins(m, "editor.foldingMaximumRegions", json!(5000));
-    ins(m, "editor.unfoldOnClickAfterEndOfLine", json!(false));
-    ins(m, "editor.matchBrackets", json!("always"));
-    ins(m, "editor.glyphMargin", json!(true));
-    ins(m, "editor.rulers", json!([]));
-    ins(m, "editor.columnSelection", json!(false));
     ins(
         m,
-        "editor.find.seedSearchStringFromSelection",
-        json!("always"),
+        "editor.wordSeparators",
+        json!("`~!@#$%^&*()-=+[{]}\\|;:'\",.<>/?"),
     );
-    ins(m, "editor.find.autoFindInSelection", json!("never"));
-    ins(m, "editor.find.addExtraSpaceOnTop", json!(true));
-    ins(m, "editor.find.loop", json!(true));
-    ins(m, "editor.defaultFormatter", Value::Null);
-    ins(m, "editor.linkedEditing", json!(false));
-    ins(m, "editor.rename.enablePreview", json!(true));
-    ins(m, "editor.definitionLinkOpensInPeek", json!(false));
-    ins(m, "editor.showDeprecated", json!(true));
-    ins(m, "editor.inlayHints.enabled", json!("off"));
-    ins(m, "editor.inlayHints.fontSize", json!(0));
-    ins(m, "editor.inlayHints.fontFamily", json!(""));
-    ins(m, "editor.inlayHints.padding", json!(false));
+
+    // Accessibility & large files
+    ins(m, "editor.accessibilitySupport", json!("auto"));
+    ins(m, "editor.largeFileOptimizations", json!(true));
+    ins(m, "editor.maxTokenizationLineLength", json!(20000));
+
+    // Brackets & folding
+    ins(m, "editor.matchBrackets", json!("always"));
     ins(m, "editor.bracketPairColorization.enabled", json!(true));
     ins(
         m,
@@ -203,10 +194,27 @@ fn add_editor_defaults(m: &mut Map<String, Value>) {
     ins(m, "editor.guides.highlightActiveBracketPair", json!(true));
     ins(m, "editor.guides.indentation", json!(true));
     ins(m, "editor.guides.highlightActiveIndentation", json!(true));
-    ins(m, "editor.stickyScroll.enabled", json!(false));
-    ins(m, "editor.stickyScroll.maxLineCount", json!(5));
-    ins(m, "editor.stickyScroll.defaultModel", json!("outlineModel"));
-    ins(m, "editor.stickyScroll.scrollWithEditor", json!(true));
+    ins(m, "editor.folding", json!(true));
+    ins(m, "editor.foldingStrategy", json!("auto"));
+    ins(m, "editor.foldingMaximumRegions", json!(5000));
+    ins(m, "editor.showFoldingControls", json!("mouseover"));
+
+    // Find
+    ins(
+        m,
+        "editor.find.seedSearchStringFromSelection",
+        json!("always"),
+    );
+    ins(m, "editor.find.autoFindInSelection", json!("never"));
+    ins(m, "editor.find.addExtraSpaceOnTop", json!(true));
+    ins(m, "editor.find.loop", json!(true));
+
+    // Formatting
+    ins(m, "editor.formatOnSave", json!(false));
+    ins(m, "editor.formatOnPaste", json!(false));
+    ins(m, "editor.formatOnType", json!(false));
+
+    // Unicode highlighting
     ins(
         m,
         "editor.unicodeHighlight.ambiguousCharacters",
@@ -227,46 +235,84 @@ fn add_editor_defaults(m: &mut Map<String, Value>) {
         "editor.unicodeHighlight.includeComments",
         json!("inUntrustedWorkspace"),
     );
+
+    // Terminal
+    ins(m, "terminal.integrated.fontSize", json!(14));
+    ins(m, "terminal.integrated.fontFamily", json!(""));
+    ins(m, "terminal.integrated.fontWeight", json!("normal"));
+    ins(m, "terminal.integrated.fontWeightBold", json!("bold"));
+    ins(m, "terminal.integrated.lineHeight", json!(1));
+    ins(m, "terminal.integrated.letterSpacing", json!(0));
+    ins(m, "terminal.integrated.cursorBlinking", json!(false));
+    ins(m, "terminal.integrated.cursorStyle", json!("block"));
+    ins(m, "terminal.integrated.cursorWidth", json!(1));
+    ins(m, "terminal.integrated.scrollback", json!(1000));
     ins(
         m,
-        "editor.screenReaderAnnounceInlineSuggestion",
+        "terminal.integrated.rightClickBehavior",
+        json!("selectWord"),
+    );
+    ins(m, "terminal.integrated.copyOnSelection", json!(false));
+    ins(
+        m,
+        "terminal.integrated.drawBoldTextInBrightColors",
         json!(true),
     );
-    ins(m, "editor.gotoLocation.multiple", Value::Null);
-    ins(m, "editor.gotoLocation.multipleDefinitions", json!("peek"));
+    ins(m, "terminal.integrated.fastScrollSensitivity", json!(5));
     ins(
         m,
-        "editor.gotoLocation.multipleTypeDefinitions",
-        json!("peek"),
+        "terminal.integrated.mouseWheelScrollSensitivity",
+        json!(1),
     );
-    ins(m, "editor.gotoLocation.multipleDeclarations", json!("peek"));
+    ins(m, "terminal.integrated.enableBell", json!(false));
+    ins(m, "terminal.integrated.commandsToSkipShell", json!([]));
+    ins(m, "terminal.integrated.allowChords", json!(true));
+    ins(m, "terminal.integrated.allowMnemonics", json!(false));
+    ins(m, "terminal.integrated.inheritEnv", json!(true));
+    ins(m, "terminal.integrated.env.windows", json!({}));
+    ins(m, "terminal.integrated.showExitAlert", json!(true));
+    ins(m, "terminal.integrated.splitCwd", json!("inherited"));
+    ins(m, "terminal.integrated.tabs.enabled", json!(true));
     ins(
         m,
-        "editor.gotoLocation.multipleImplementations",
-        json!("peek"),
+        "terminal.integrated.tabs.hideCondition",
+        json!("singleTerminal"),
     );
-    ins(m, "editor.gotoLocation.multipleReferences", json!("goto"));
+    ins(m, "terminal.integrated.tabs.location", json!("right"));
+    ins(m, "terminal.integrated.defaultProfile.windows", Value::Null);
+    ins(m, "terminal.integrated.smoothScrolling", json!(false));
     ins(
         m,
-        "editor.wordSeparators",
-        json!("`~!@#$%^&*()-=+[{]}\\|;:'\",.<>/?"),
+        "terminal.integrated.enableMultiLinePasteWarning",
+        json!("auto"),
     );
-    ins(m, "editor.padding.top", json!(0));
-    ins(m, "editor.padding.bottom", json!(0));
-    ins(m, "editor.lineDecorationsWidth", json!(10));
-    ins(m, "editor.experimentalWhitespaceRendering", json!("svg"));
+    ins(m, "terminal.integrated.minimumContrastRatio", json!(4.5));
 }
 
+// ---------------------------------------------------------------------------
+// Theme & Appearance
+// ---------------------------------------------------------------------------
+
 #[allow(clippy::too_many_lines)]
-fn add_workbench_defaults(m: &mut Map<String, Value>) {
+fn add_appearance_defaults(m: &mut Map<String, Value>) {
+    // Theme
     ins(m, "workbench.colorTheme", json!("Default Dark+"));
     ins(m, "workbench.iconTheme", json!("vs-seti"));
     ins(m, "workbench.productIconTheme", json!("Default"));
+    ins(m, "workbench.colorCustomizations", json!({}));
+
+    // Layout
     ins(m, "workbench.startupEditor", json!("welcomePage"));
     ins(m, "workbench.sideBar.location", json!("left"));
     ins(m, "workbench.activityBar.visible", json!(true));
     ins(m, "workbench.activityBar.location", json!("top"));
     ins(m, "workbench.statusBar.visible", json!(true));
+    ins(m, "workbench.panel.defaultLocation", json!("bottom"));
+    ins(m, "workbench.panel.opensMaximized", json!("never"));
+    ins(m, "workbench.layoutControl.enabled", json!(true));
+    ins(m, "workbench.layoutControl.type", json!("both"));
+
+    // Editor tabs & groups
     ins(m, "workbench.editor.showTabs", json!("multiple"));
     ins(m, "workbench.editor.tabSizing", json!("fit"));
     ins(m, "workbench.editor.tabCloseButton", json!("right"));
@@ -274,11 +320,6 @@ fn add_workbench_defaults(m: &mut Map<String, Value>) {
     ins(
         m,
         "workbench.editor.enablePreviewFromQuickOpen",
-        json!(false),
-    );
-    ins(
-        m,
-        "workbench.editor.enablePreviewFromCodeNavigation",
         json!(false),
     );
     ins(m, "workbench.editor.highlightModifiedTabs", json!(false));
@@ -301,146 +342,16 @@ fn add_workbench_defaults(m: &mut Map<String, Value>) {
     ins(m, "workbench.editor.labelFormat", json!("default"));
     ins(m, "workbench.editor.untitled.labelFormat", json!("content"));
     ins(m, "workbench.editor.pinnedTabSizing", json!("normal"));
+
+    // Lists & trees
     ins(m, "workbench.tree.indent", json!(8));
     ins(m, "workbench.tree.renderIndentGuides", json!("onHover"));
     ins(m, "workbench.tree.expandMode", json!("singleClick"));
     ins(m, "workbench.list.smoothScrolling", json!(false));
     ins(m, "workbench.list.openMode", json!("singleClick"));
     ins(m, "workbench.list.multiSelectModifier", json!("ctrlCmd"));
-    ins(m, "workbench.panel.defaultLocation", json!("bottom"));
-    ins(m, "workbench.panel.opensMaximized", json!("never"));
-    ins(m, "workbench.colorCustomizations", json!({}));
-    ins(m, "workbench.layoutControl.enabled", json!(true));
-    ins(m, "workbench.layoutControl.type", json!("both"));
-}
 
-#[allow(clippy::too_many_lines)]
-fn add_file_defaults(m: &mut Map<String, Value>) {
-    ins(m, "files.autoSave", json!("off"));
-    ins(m, "files.autoSaveDelay", json!(1000));
-    ins(m, "files.encoding", json!("utf8"));
-    ins(m, "files.eol", json!("auto"));
-    ins(m, "files.trimTrailingWhitespace", json!(false));
-    ins(m, "files.insertFinalNewline", json!(false));
-    ins(m, "files.trimFinalNewlines", json!(false));
-    ins(
-        m,
-        "files.exclude",
-        json!({"**/.git": true, "**/.svn": true, "**/.hg": true, "**/CVS": true, "**/.DS_Store": true, "**/Thumbs.db": true}),
-    );
-    ins(
-        m,
-        "files.watcherExclude",
-        json!({"**/.git/objects/**": true, "**/.git/subtree-cache/**": true, "**/node_modules/**": true, "**/.hg/store/**": true}),
-    );
-    ins(m, "files.hotExit", json!("onExit"));
-    ins(m, "files.defaultLanguage", json!(""));
-    ins(m, "files.maxMemoryForLargeFilesMB", json!(4096));
-    ins(m, "files.restoreUndoStack", json!(true));
-    ins(m, "files.simpleDialog.enable", json!(false));
-    ins(m, "files.associations", json!({}));
-}
-
-#[allow(clippy::too_many_lines)]
-fn add_terminal_defaults(m: &mut Map<String, Value>) {
-    ins(m, "terminal.integrated.fontSize", json!(14));
-    ins(m, "terminal.integrated.fontFamily", json!(""));
-    ins(m, "terminal.integrated.fontWeight", json!("normal"));
-    ins(m, "terminal.integrated.fontWeightBold", json!("bold"));
-    ins(m, "terminal.integrated.lineHeight", json!(1));
-    ins(m, "terminal.integrated.letterSpacing", json!(0));
-    ins(m, "terminal.integrated.cursorBlinking", json!(false));
-    ins(m, "terminal.integrated.cursorStyle", json!("block"));
-    ins(m, "terminal.integrated.cursorWidth", json!(1));
-    ins(m, "terminal.integrated.scrollback", json!(1000));
-    ins(m, "terminal.integrated.detectLocale", json!("auto"));
-    ins(m, "terminal.integrated.gpuAcceleration", json!("auto"));
-    ins(
-        m,
-        "terminal.integrated.rightClickBehavior",
-        json!("selectWord"),
-    );
-    ins(m, "terminal.integrated.copyOnSelection", json!(false));
-    ins(
-        m,
-        "terminal.integrated.drawBoldTextInBrightColors",
-        json!(true),
-    );
-    ins(m, "terminal.integrated.fastScrollSensitivity", json!(5));
-    ins(
-        m,
-        "terminal.integrated.mouseWheelScrollSensitivity",
-        json!(1),
-    );
-    ins(m, "terminal.integrated.macOptionIsMeta", json!(false));
-    ins(
-        m,
-        "terminal.integrated.macOptionClickForcesSelection",
-        json!(false),
-    );
-    ins(m, "terminal.integrated.altClickMovesCursor", json!(true));
-    ins(m, "terminal.integrated.enableBell", json!(false));
-    ins(m, "terminal.integrated.commandsToSkipShell", json!([]));
-    ins(m, "terminal.integrated.allowChords", json!(true));
-    ins(m, "terminal.integrated.allowMnemonics", json!(false));
-    ins(m, "terminal.integrated.inheritEnv", json!(true));
-    ins(m, "terminal.integrated.env.linux", json!({}));
-    ins(m, "terminal.integrated.env.osx", json!({}));
-    ins(m, "terminal.integrated.env.windows", json!({}));
-    ins(m, "terminal.integrated.showExitAlert", json!(true));
-    ins(m, "terminal.integrated.splitCwd", json!("inherited"));
-    ins(m, "terminal.integrated.tabs.enabled", json!(true));
-    ins(
-        m,
-        "terminal.integrated.tabs.hideCondition",
-        json!("singleTerminal"),
-    );
-    ins(m, "terminal.integrated.tabs.location", json!("right"));
-    ins(m, "terminal.integrated.defaultProfile.linux", Value::Null);
-    ins(m, "terminal.integrated.defaultProfile.osx", Value::Null);
-    ins(m, "terminal.integrated.defaultProfile.windows", Value::Null);
-    ins(m, "terminal.integrated.enableImages", json!(false));
-    ins(m, "terminal.integrated.smoothScrolling", json!(false));
-    ins(
-        m,
-        "terminal.integrated.persistentSessionReviveProcess",
-        json!("onExitAndWindowClose"),
-    );
-    ins(
-        m,
-        "terminal.integrated.enableMultiLinePasteWarning",
-        json!("auto"),
-    );
-    ins(m, "terminal.integrated.minimumContrastRatio", json!(4.5));
-}
-
-#[allow(clippy::too_many_lines)]
-fn add_search_defaults(m: &mut Map<String, Value>) {
-    ins(
-        m,
-        "search.exclude",
-        json!({"**/node_modules": true, "**/bower_components": true, "**/*.code-search": true}),
-    );
-    ins(m, "search.useIgnoreFiles", json!(true));
-    ins(m, "search.useGlobalIgnoreFiles", json!(false));
-    ins(m, "search.useParentIgnoreFiles", json!(true));
-    ins(m, "search.followSymlinks", json!(true));
-    ins(m, "search.smartCase", json!(false));
-    ins(m, "search.showLineNumbers", json!(false));
-    ins(m, "search.seedOnFocus", json!(false));
-    ins(m, "search.seedWithNearestWord", json!(false));
-    ins(m, "search.mode", json!("view"));
-    ins(m, "search.collapseResults", json!("alwaysExpand"));
-    ins(m, "search.searchOnType", json!(true));
-    ins(m, "search.searchOnTypeDebouncePeriod", json!(300));
-    ins(m, "search.sortOrder", json!("default"));
-    ins(m, "search.defaultViewMode", json!("list"));
-    ins(m, "search.quickOpen.includeSymbols", json!(false));
-    ins(m, "search.quickOpen.includeHistory", json!(true));
-}
-
-#[allow(clippy::too_many_lines)]
-fn add_window_defaults(m: &mut Map<String, Value>) {
+    // Window
     ins(m, "window.zoomLevel", json!(0));
     ins(
         m,
@@ -461,91 +372,31 @@ fn add_window_defaults(m: &mut Map<String, Value>) {
     ins(m, "window.commandCenter", json!(true));
 }
 
-#[allow(clippy::too_many_lines)]
-fn add_explorer_defaults(m: &mut Map<String, Value>) {
-    ins(m, "explorer.openEditors.visible", json!(9));
-    ins(m, "explorer.autoReveal", json!(true));
-    ins(m, "explorer.enableDragAndDrop", json!(true));
-    ins(m, "explorer.confirmDragAndDrop", json!(true));
-    ins(m, "explorer.confirmDelete", json!(true));
-    ins(m, "explorer.sortOrder", json!("default"));
-    ins(
-        m,
-        "explorer.sortOrderLexicographicOptions",
-        json!("default"),
-    );
-    ins(m, "explorer.decorations.colors", json!(true));
-    ins(m, "explorer.decorations.badges", json!(true));
-    ins(m, "explorer.incrementalNaming", json!("simple"));
-    ins(m, "explorer.compactFolders", json!(true));
-    ins(m, "explorer.fileNesting.enabled", json!(false));
-    ins(m, "explorer.fileNesting.expand", json!(true));
+// ---------------------------------------------------------------------------
+// Keybindings
+// ---------------------------------------------------------------------------
+
+fn add_keybinding_defaults(m: &mut Map<String, Value>) {
+    ins(m, "keyboard.dispatch", json!("code"));
+    ins(m, "keyboard.mapAltGrToCtrlAlt", json!(false));
 }
 
-#[allow(clippy::too_many_lines)]
-fn add_extension_defaults(m: &mut Map<String, Value>) {
-    ins(m, "extensions.autoUpdate", json!(false));
-    ins(m, "extensions.autoCheckUpdates", json!(false));
-    ins(m, "extensions.ignoreRecommendations", json!(false));
-    ins(
-        m,
-        "extensions.closeExtensionDetailsOnViewChange",
-        json!(false),
-    );
-    ins(m, "extensions.confirmedUriHandlerExtensionIds", json!([]));
-}
+// ---------------------------------------------------------------------------
+// Language overrides
+// ---------------------------------------------------------------------------
 
 #[allow(clippy::too_many_lines)]
-fn add_output_defaults(m: &mut Map<String, Value>) {
-    ins(m, "output.smartScroll.enabled", json!(true));
-}
-
-#[allow(clippy::too_many_lines)]
-fn add_language_specific_defaults(m: &mut Map<String, Value>) {
-    ins(
-        m,
-        "[rust]",
-        json!({
-            "editor.tabSize": 4,
-            "editor.formatOnSave": true,
-            "editor.defaultFormatter": "rust-analyzer"
-        }),
-    );
-    ins(
-        m,
-        "[typescript]",
-        json!({
-            "editor.tabSize": 2,
-            "editor.formatOnSave": false,
-            "editor.defaultFormatter": "esbenp.prettier-vscode"
-        }),
-    );
-    ins(
-        m,
-        "[typescriptreact]",
-        json!({
-            "editor.tabSize": 2,
-            "editor.formatOnSave": false,
-            "editor.defaultFormatter": "esbenp.prettier-vscode"
-        }),
-    );
-    ins(
-        m,
-        "[javascript]",
-        json!({
-            "editor.tabSize": 2,
-            "editor.formatOnSave": false,
-            "editor.defaultFormatter": "esbenp.prettier-vscode"
-        }),
-    );
+fn add_language_defaults(m: &mut Map<String, Value>) {
+    ins(m, "[rust]", json!({ "editor.tabSize": 4 }));
+    ins(m, "[typescript]", json!({ "editor.tabSize": 2 }));
+    ins(m, "[typescriptreact]", json!({ "editor.tabSize": 2 }));
+    ins(m, "[javascript]", json!({ "editor.tabSize": 2 }));
     ins(
         m,
         "[python]",
         json!({
             "editor.tabSize": 4,
-            "editor.formatOnSave": false,
-            "editor.insertSpaces": true,
-            "editor.wordBasedSuggestions": "off"
+            "editor.insertSpaces": true
         }),
     );
     ins(
@@ -553,71 +404,54 @@ fn add_language_specific_defaults(m: &mut Map<String, Value>) {
         "[go]",
         json!({
             "editor.tabSize": 4,
-            "editor.insertSpaces": false,
-            "editor.formatOnSave": true
+            "editor.insertSpaces": false
         }),
     );
-    ins(
-        m,
-        "[json]",
-        json!({
-            "editor.tabSize": 2,
-            "editor.quickSuggestions": {"strings": true}
-        }),
-    );
-    ins(
-        m,
-        "[jsonc]",
-        json!({
-            "editor.tabSize": 2,
-            "editor.quickSuggestions": {"strings": true}
-        }),
-    );
+    ins(m, "[json]", json!({ "editor.tabSize": 2 }));
+    ins(m, "[jsonc]", json!({ "editor.tabSize": 2 }));
     ins(
         m,
         "[yaml]",
         json!({
             "editor.tabSize": 2,
-            "editor.insertSpaces": true,
-            "editor.autoIndent": "advanced"
+            "editor.insertSpaces": true
         }),
     );
-    ins(
-        m,
-        "[html]",
-        json!({
-            "editor.tabSize": 2,
-            "editor.suggest.insertMode": "replace"
-        }),
-    );
-    ins(
-        m,
-        "[css]",
-        json!({
-            "editor.tabSize": 2,
-            "editor.suggest.insertMode": "replace"
-        }),
-    );
-    ins(
-        m,
-        "[markdown]",
-        json!({
-            "editor.wordWrap": "on",
-            "editor.quickSuggestions": {"comments": "off", "strings": "off", "other": "off"}
-        }),
-    );
-    ins(
-        m,
-        "[makefile]",
-        json!({
-            "editor.insertSpaces": false
-        }),
-    );
+    ins(m, "[html]", json!({ "editor.tabSize": 2 }));
+    ins(m, "[css]", json!({ "editor.tabSize": 2 }));
+    ins(m, "[markdown]", json!({ "editor.wordWrap": "on" }));
+    ins(m, "[makefile]", json!({ "editor.insertSpaces": false }));
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Settings that belong to features SideX removed must not reappear.
+    const REMOVED_KEY_PREFIXES: &[&str] = &[
+        "debug.",
+        "git.",
+        "scm.",
+        "notebook.",
+        "remote.",
+        "tasks.",
+        "testing.",
+        "chat.",
+        "update.",
+        "telemetry.",
+        "problems.",
+        "extensions.",
+        "editor.suggest.",
+        "editor.quickSuggestions",
+        "editor.parameterHints.",
+        "editor.hover.",
+        "editor.codeLens",
+        "editor.gotoLocation.",
+        "editor.inlayHints.",
+        "editor.lightbulb.",
+        "editor.codeActionsOnSave",
+        "editor.semanticHighlighting.",
+    ];
 
     #[test]
     fn defaults_is_object() {
@@ -668,17 +502,41 @@ mod tests {
     }
 
     #[test]
+    fn has_keybinding_defaults() {
+        let d = builtin_defaults();
+        assert_eq!(d["keyboard.dispatch"], "code");
+    }
+
+    #[test]
     fn has_language_overrides() {
         let d = builtin_defaults();
-        let rust = &d["[rust]"];
-        assert_eq!(rust["editor.tabSize"], 4);
-        assert_eq!(rust["editor.formatOnSave"], true);
+        assert_eq!(d["[rust]"]["editor.tabSize"], 4);
+        assert_eq!(d["[python]"]["editor.insertSpaces"], true);
+    }
+
+    #[test]
+    fn removed_features_have_no_defaults() {
+        let d = builtin_defaults();
+        let keys: Vec<&String> = d.as_object().unwrap().keys().collect();
+        for key in keys {
+            for prefix in REMOVED_KEY_PREFIXES {
+                assert!(
+                    !key.starts_with(prefix),
+                    "removed-feature setting leaked into defaults: {key}"
+                );
+            }
+        }
     }
 
     #[test]
     fn count_defaults() {
         let d = builtin_defaults();
         let count = d.as_object().unwrap().len();
-        assert!(count >= 300, "Expected 300+ defaults, got {count}");
+        // Before convergence the catalog held 328 entries. Keep the curated
+        // catalog well below that so the settings surface stays small.
+        assert!(
+            (200..=230).contains(&count),
+            "Expected 200-230 curated defaults, got {count}"
+        );
     }
 }

@@ -2,6 +2,18 @@ type Translations = Record<string, string>;
 
 const sidexTranslations: Record<string, Translations> = {
 	'zh-cn': {
+		fileAndBrowsing: '文件与浏览',
+		themeAndAppearance: '主题与外观',
+		searchGroup: '搜索',
+		theme: '主题',
+		layout: '布局',
+		imagePreview: '图片预览',
+		mediaPreviewTitle: '媒体预览',
+		'mediaPreview.maxZoom': '图片预览的最大缩放比例（%）。例如 `1200` 表示 1200%。',
+		'mediaPreview.showInfo': '在图片预览下方显示信息栏（尺寸、文件大小、缩放比例）。',
+		'keyboard.layout.config': '控制 Web 端使用的键盘布局。',
+		'missing.keyboardlayout': '无法找到匹配的键盘布局',
+		'keyboardLayoutMissing.configure': '配置',
 		'remote.pick.placeholder': '选择一个选项来打开远程窗口',
 		'remote.pick.connectToTunnel': '连接到隧道…',
 		'remote.pick.tunnelsProvider': '远程隧道',

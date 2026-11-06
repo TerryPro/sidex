@@ -4,7 +4,6 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { localize } from '../../../../nls.js';
-import { ISetting, ISettingsGroup } from '../../../services/preferences/common/preferences.js';
 
 export interface ITOCFilter {
 	include?: {
@@ -26,44 +25,6 @@ export interface ITOCEntry<T> {
 	hide?: boolean;
 }
 
-const COMMONLY_USED_SETTINGS: readonly string[] = [
-	'editor.fontSize',
-	'editor.formatOnSave',
-	'files.autoSave',
-	'editor.defaultFormatter',
-	'editor.fontFamily',
-	'editor.wordWrap',
-	'explorer.confirmDelete',
-	'files.exclude',
-	'workbench.colorTheme',
-	'editor.tabSize',
-	'editor.mouseWheelZoom',
-	'editor.formatOnPaste'
-];
-
-export function getCommonlyUsedData(settingGroups: ISettingsGroup[]): ITOCEntry<ISetting> {
-	const allSettings = new Map<string, ISetting>();
-	for (const group of settingGroups) {
-		for (const section of group.sections) {
-			for (const s of section.settings) {
-				allSettings.set(s.key, s);
-			}
-		}
-	}
-	const settings: ISetting[] = [];
-	for (const id of COMMONLY_USED_SETTINGS) {
-		const setting = allSettings.get(id);
-		if (setting) {
-			settings.push(setting);
-		}
-	}
-	return {
-		id: 'commonlyUsed',
-		label: localize('commonlyUsed', 'Commonly Used'),
-		settings
-	};
-}
-
 /**
  * SideX settings layout is intentionally limited to five groups:
  * files & browsing, editor, theme & appearance, keybindings and extensions.
@@ -75,7 +36,7 @@ export const tocData: ITOCEntry<string> = {
 		{
 			id: 'files',
 			label: localize('fileAndBrowsing', 'Files & Browsing'),
-			settings: ['files.*', 'explorer.*', 'search.*', 'problems.*', 'output.*'],
+			settings: ['files.*', 'explorer.*', 'search.*', 'output.*'],
 			children: [
 				{
 					id: 'features/explorer',
@@ -84,13 +45,8 @@ export const tocData: ITOCEntry<string> = {
 				},
 				{
 					id: 'features/search',
-					label: localize('search', 'Search'),
+					label: localize('searchGroup', 'Search'),
 					settings: ['search.*']
-				},
-				{
-					id: 'features/problems',
-					label: localize('problems', 'Problems'),
-					settings: ['problems.*']
 				},
 				{
 					id: 'features/output',
@@ -102,7 +58,7 @@ export const tocData: ITOCEntry<string> = {
 		{
 			id: 'editor',
 			label: localize('textEditor', 'Text Editor'),
-			settings: ['editor.*', 'diffEditor.*', 'terminal.*'],
+			settings: ['editor.*', 'terminal.*'],
 			children: [
 				{
 					id: 'editor/cursor',
@@ -125,19 +81,9 @@ export const tocData: ITOCEntry<string> = {
 					settings: ['editor.format*']
 				},
 				{
-					id: 'editor/diffEditor',
-					label: localize('diffEditor', 'Diff Editor'),
-					settings: ['diffEditor.*']
-				},
-				{
 					id: 'editor/minimap',
 					label: localize('minimap', 'Minimap'),
 					settings: ['editor.minimap.*']
-				},
-				{
-					id: 'editor/suggestions',
-					label: localize('suggestions', 'Suggestions'),
-					settings: ['editor.*suggest*']
 				},
 				{
 					id: 'editor/terminal',
