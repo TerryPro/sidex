@@ -706,7 +706,9 @@ pub fn run() {
             commands::rename,
             commands::exists,
             commands::copy_path,
+            commands::move_path,
             commands::move_to_trash,
+            commands::restore_from_trash,
             // Path operations
             commands::parse_path,
             commands::join_paths,
@@ -761,6 +763,7 @@ pub fn run() {
             commands::secret_delete,
             commands::secret_keys,
             commands::get_all_env,
+            commands::get_modifier_keys,
             commands::get_user_data_dir,
             commands::storage_get,
             commands::storage_list,

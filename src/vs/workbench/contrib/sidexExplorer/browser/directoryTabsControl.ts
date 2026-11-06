@@ -7,6 +7,7 @@ import { Disposable, DisposableStore } from '../../../../base/common/lifecycle.j
 import { localize } from '../../../../nls.js';
 import { IDirectoryService, normalizeLocation } from './directoryService.js';
 import { driveIconSvg, folderIconSvg, pcIconSvg } from './explorerIcons.js';
+import { IFileOperationService, SIDEX_FILES_MIME } from './fileOperationService.js';
 
 export class DirectoryTabsControl extends Disposable {
 
@@ -14,7 +15,8 @@ export class DirectoryTabsControl extends Disposable {
 
 	constructor(
 		private readonly container: HTMLElement,
-		@IDirectoryService private readonly directoryService: IDirectoryService
+		@IDirectoryService private readonly directoryService: IDirectoryService,
+		@IFileOperationService private readonly fileOperationService: IFileOperationService
 	) {
 		super();
 
@@ -44,6 +46,7 @@ export class DirectoryTabsControl extends Disposable {
 			tabElement.setAttribute('role', 'tab');
 			tabElement.setAttribute('aria-selected', active ? 'true' : 'false');
 			tabElement.title = tab.title || tab.location;
+			tabElement.dataset.location = tab.location;
 
 			const icon = $('span.sidex-directory-tab-icon');
 			icon.innerHTML = this.iconFor(tab.location);
@@ -74,6 +77,52 @@ export class DirectoryTabsControl extends Disposable {
 					event.preventDefault();
 					this.directoryService.closeTab(tab.id);
 				}
+			}));
+
+			// 拖到目录标签：把文件移动/复制到该标签的目录并切换过去。
+			this.renderDisposables.add(addDisposableListener(tabElement, EventType.DRAG_OVER, event => {
+				if (!tab.location || !event.dataTransfer) {
+					return;
+				}
+				if (!Array.from(event.dataTransfer.types).includes(SIDEX_FILES_MIME)) {
+					return;
+				}
+				event.preventDefault();
+				event.stopPropagation();
+				event.dataTransfer.dropEffect = event.ctrlKey ? 'copy' : 'move';
+				tabElement.classList.add('drop-target');
+			}));
+			this.renderDisposables.add(addDisposableListener(tabElement, EventType.DRAG_LEAVE, () => {
+				tabElement.classList.remove('drop-target');
+			}));
+			this.renderDisposables.add(addDisposableListener(tabElement, EventType.DROP, event => {
+				tabElement.classList.remove('drop-target');
+				if (!tab.location || !event.dataTransfer) {
+					return;
+				}
+				const raw = event.dataTransfer.getData(SIDEX_FILES_MIME);
+				if (!raw) {
+					return;
+				}
+				event.preventDefault();
+				event.stopPropagation();
+				let paths: string[] = [];
+				try {
+					const parsed = JSON.parse(raw);
+					if (Array.isArray(parsed)) {
+						paths = parsed.filter((item): item is string => typeof item === 'string');
+					}
+				} catch {
+					return;
+				}
+				if (!paths.length) {
+					return;
+				}
+				const mode = event.ctrlKey ? 'copy' : event.shiftKey ? 'move' : 'auto';
+				void this.fileOperationService.moveOrCopy(paths, tab.location, mode).then(() => {
+					this.directoryService.refreshTab(tab.id);
+					this.directoryService.activateTab(tab.id);
+				});
 			}));
 
 			this.container.appendChild(tabElement);

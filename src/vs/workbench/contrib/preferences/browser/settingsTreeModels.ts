@@ -55,6 +55,7 @@ import {
 } from '../common/preferences.js';
 import { SettingsTarget } from './preferencesWidgets.js';
 import { ITOCEntry, tocData } from './settingsLayout.js';
+import { sidexSettingTitles } from './sidexSettingTitles.js';
 
 export const ONLINE_SERVICES_SETTING_TAG = 'usesOnlineServices';
 
@@ -253,7 +254,7 @@ export class SettingsTreeSettingElement extends SettingsTreeElement {
 			this.parent!.id,
 			this.setting.isLanguageTagSetting
 		);
-		this._displayLabel = displayKeyFormat.label;
+		this._displayLabel = sidexSettingTitles[this.setting.key] ?? displayKeyFormat.label;
 		this._displayCategory = displayKeyFormat.category;
 	}
 

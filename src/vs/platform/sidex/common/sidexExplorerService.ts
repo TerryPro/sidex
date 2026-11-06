@@ -47,6 +47,14 @@ export interface ISideXExplorerService {
 	createFile(path: string, content?: string): Promise<void>;
 	createFolder(path: string): Promise<void>;
 	rename(oldPath: string, newPath: string): Promise<void>;
-	moveToTrash(path: string): Promise<void>;
+	/** 移动到回收站，返回回收站条目 id（不可用时为 undefined）。 */
+	moveToTrash(path: string): Promise<string | undefined>;
+	/** 从回收站恢复指定条目；id 不可用时按原始路径回退。 */
+	restoreFromTrash(id: string | undefined, path: string): Promise<void>;
 	copy(source: string, destination: string, recursive?: boolean): Promise<void>;
+	/** 移动文件或目录；跨盘时由 Rust 侧回退为复制后删除。 */
+	movePath(source: string, destination: string): Promise<void>;
+	/** 永久删除，不进回收站。 */
+	remove(path: string, recursive: boolean): Promise<void>;
+	exists(path: string): Promise<boolean>;
 }

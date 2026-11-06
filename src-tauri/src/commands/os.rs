@@ -47,6 +47,37 @@ pub fn log_frontend_error(message: String) {
     log::error!("[frontend] {message}");
 }
 
+#[derive(serde::Serialize)]
+pub struct ModifierKeys {
+    pub control: bool,
+    pub shift: bool,
+}
+
+/// 读取拖放时的修饰键状态；系统拖入事件本身不携带键盘信息。
+#[tauri::command]
+#[allow(unsafe_code)]
+pub fn get_modifier_keys() -> ModifierKeys {
+    #[cfg(windows)]
+    {
+        unsafe {
+            use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
+                GetAsyncKeyState, VK_CONTROL, VK_SHIFT,
+            };
+            let control = GetAsyncKeyState(VK_CONTROL as i32) < 0;
+            let shift = GetAsyncKeyState(VK_SHIFT as i32) < 0;
+            return ModifierKeys { control, shift };
+        }
+    }
+
+    #[cfg(not(windows))]
+    {
+        ModifierKeys {
+            control: false,
+            shift: false,
+        }
+    }
+}
+
 pub(crate) fn resolve_user_data_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     #[cfg(target_os = "linux")]
     if let Some(config_dir) = dirs::config_dir() {

@@ -80,6 +80,7 @@ import {
 } from './searchResultsView.js';
 import { SearchWidget } from './searchWidget.js';
 import * as Constants from '../common/constants.js';
+import { IDirectoryService } from '../../sidexExplorer/browser/directoryService.js';
 import { IReplaceService } from './replace.js';
 import { getOutOfWorkspaceEditorResources, SearchStateKey, SearchUIState } from '../common/search.js';
 import { ISearchHistoryService, ISearchHistoryValues, SearchHistoryService } from '../common/searchHistoryService.js';
@@ -259,6 +260,8 @@ export class SearchView extends ViewPane {
 	private _cachedResults: ISearchComplete | undefined;
 	private _cachedKeywords: string[] = [];
 	public _pendingSemanticSearchPromise: Promise<ISearchComplete> | undefined;
+	/** 上一次触发搜索时所在的目录标签，用于标签切换后自动更新范围。 */
+	private lastSearchLocation: string | undefined;
 	constructor(
 		options: IViewPaneOptions,
 		@IFileService private readonly fileService: IFileService,
@@ -290,7 +293,8 @@ export class SearchView extends ViewPane {
 		@INotebookService private readonly notebookService: INotebookService,
 		@ILogService private readonly logService: ILogService,
 		@IAccessibilitySignalService private readonly accessibilitySignalService: IAccessibilitySignalService,
-		@ITelemetryService private readonly telemetryService: ITelemetryService
+		@ITelemetryService private readonly telemetryService: ITelemetryService,
+		@IDirectoryService private readonly directoryService: IDirectoryService
 	) {
 		super(
 			options,
@@ -682,7 +686,9 @@ export class SearchView extends ViewPane {
 		this._register(this.inputPatternExcludes.onSubmit(onFilePatternSubmit));
 
 		this.messagesElement = dom.append(this.container, $('.messages.text-search-provider-messages'));
-		if (this.contextService.getWorkbenchState() === WorkbenchState.EMPTY) {
+		this.lastSearchLocation = this.directoryService.activeLocation;
+		this._register(this.directoryService.onDidChange(() => this.onDirectoryLocationChange()));
+		if (this.contextService.getWorkbenchState() === WorkbenchState.EMPTY && !this.directoryService.activeLocation) {
 			this.showSearchWithoutFolderMessage();
 		}
 
@@ -1695,7 +1701,7 @@ export class SearchView extends ViewPane {
 	clearSearchResults(clearInput = true): void {
 		this.viewModel.searchResult.clear();
 		this.showEmptyStage(true);
-		if (this.contextService.getWorkbenchState() === WorkbenchState.EMPTY) {
+		if (this.contextService.getWorkbenchState() === WorkbenchState.EMPTY && !this.directoryService.activeLocation) {
 			this.showSearchWithoutFolderMessage();
 		}
 		if (clearInput) {
@@ -1874,6 +1880,22 @@ export class SearchView extends ViewPane {
 		this.searchWidget.focus(false);
 	}
 
+	/** 目录标签切换后，若搜索框已有内容则按新目录范围重新搜索。 */
+	private onDirectoryLocationChange(): void {
+		const location = this.directoryService.activeLocation;
+		if (location === this.lastSearchLocation) {
+			return;
+		}
+		this.lastSearchLocation = location;
+		if (!this.viewletVisible.get()) {
+			return;
+		}
+		if (!this.searchWidget.searchInput?.getValue()) {
+			return;
+		}
+		this.triggerQueryChange({ shouldKeepAIResults: false });
+	}
+
 	triggerQueryChange(_options?: {
 		preserveFocus?: boolean;
 		triggeredOnType?: boolean;
@@ -1978,6 +2000,10 @@ export class SearchView extends ViewPane {
 			expandPatterns: true
 		};
 		const folderResources = this.contextService.getWorkspace().folders;
+		// SideX 没有工作区概念时，默认搜索当前目录标签；切换标签后范围随之变化。
+		const folderUris = folderResources.length
+			? folderResources.map(folder => folder.uri)
+			: (this.directoryService.activeLocation ? [URI.file(this.directoryService.activeLocation)] : []);
 
 		const onQueryValidationError = (err: Error) => {
 			this.searchWidget.searchInput?.showMessage({ content: err.message, type: MessageType.ERROR });
@@ -1988,7 +2014,7 @@ export class SearchView extends ViewPane {
 		try {
 			query = this.queryBuilder.text(
 				content,
-				folderResources.map(folder => folder.uri),
+				folderUris,
 				options
 			);
 		} catch (err) {

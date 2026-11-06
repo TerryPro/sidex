@@ -12,6 +12,8 @@
 
 import { $, addDisposableListener, append, EventType, reset } from '../../../../base/browser/dom.js';
 import { DomScrollableElement } from '../../../../base/browser/ui/scrollbar/scrollableElement.js';
+import { toAction } from '../../../../base/common/actions.js';
+import { Codicon } from '../../../../base/common/codicons.js';
 import { DisposableStore } from '../../../../base/common/lifecycle.js';
 import { ScrollbarVisibility } from '../../../../base/common/scrollable.js';
 import { localize } from '../../../../nls.js';
@@ -21,6 +23,7 @@ import { IContextMenuService } from '../../../../platform/contextview/browser/co
 import { IHoverService } from '../../../../platform/hover/browser/hover.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
 import { IKeybindingService } from '../../../../platform/keybinding/common/keybinding.js';
+import { INotificationService, Severity } from '../../../../platform/notification/common/notification.js';
 import { IOpenerService } from '../../../../platform/opener/common/opener.js';
 import { IThemeService } from '../../../../platform/theme/common/themeService.js';
 import { ISideXExplorerService } from '../../../../platform/sidex/common/sidexExplorerService.js';
@@ -59,9 +62,11 @@ export class NavigationView extends ViewPane {
 	static readonly ID = 'sidex.view.navigation';
 
 	private viewsRoot: HTMLElement | undefined;
+	private placesHost: HTMLElement | undefined;
 	private readonly states = new Map<string, NavigationTabState>();
 	private activeTabId: string | undefined;
 	private readonly viewDisposables = this._register(new DisposableStore());
+	private readonly placesDisposables = this._register(new DisposableStore());
 
 	constructor(
 		options: IViewPaneOptions,
@@ -75,7 +80,8 @@ export class NavigationView extends ViewPane {
 		@IThemeService themeService: IThemeService,
 		@IHoverService hoverService: IHoverService,
 		@IDirectoryService private readonly directoryService: IDirectoryService,
-		@ISideXExplorerService private readonly explorerService: ISideXExplorerService
+		@ISideXExplorerService private readonly explorerService: ISideXExplorerService,
+		@INotificationService private readonly notificationService: INotificationService
 	) {
 		super(
 			options,
@@ -90,14 +96,19 @@ export class NavigationView extends ViewPane {
 			hoverService
 		);
 
-		this.viewDisposables.add(this.directoryService.onDidChange(() => this.syncTabs()));
+		this.viewDisposables.add(this.directoryService.onDidChange(() => {
+			this.syncTabs();
+			this.renderPlaces();
+		}));
 		this.viewDisposables.add(this.directoryService.onDidChangeDrives(() => this.onDrivesChange()));
+		this.viewDisposables.add(this.directoryService.onDidChangePlaces(() => this.renderPlaces()));
 	}
 
 	protected override renderBody(container: HTMLElement): void {
 		super.renderBody(container);
 
 		const root = append(container, $('.sidex-navigation-view'));
+		this.placesHost = append(root, $('.sidex-navigation-places'));
 		this.viewsRoot = append(root, $('.sidex-navigation-views'));
 
 		// 视图可能在标签创建之后才渲染，把已建好的树挂回容器。
@@ -105,12 +116,115 @@ export class NavigationView extends ViewPane {
 			this.viewsRoot.appendChild(state.scrollableNode);
 		}
 
+		this.renderPlaces();
 		this.syncTabs();
 	}
 
 	protected override layoutBody(height: number, width: number): void {
 		super.layoutBody(height, width);
 		this.activeState?.scrollable.scanDomNode();
+	}
+
+	/** 渲染收藏与最近目录入口，固定显示在导航树上方。 */
+	private renderPlaces(): void {
+		const host = this.placesHost;
+		if (!host) {
+			return;
+		}
+		this.placesDisposables.clear();
+		reset(host);
+		this.renderPlaceSection(
+			host,
+			localize('sidex.places.favorites', '收藏'),
+			this.directoryService.favorites,
+			true
+		);
+		this.renderPlaceSection(
+			host,
+			localize('sidex.places.recent', '最近'),
+			this.directoryService.recentLocations,
+			false
+		);
+	}
+
+	private renderPlaceSection(
+		parent: HTMLElement,
+		title: string,
+		locations: readonly string[],
+		favorite: boolean
+	): void {
+		if (!locations.length) {
+			return;
+		}
+		const section = append(parent, $('.sidex-navigation-section'));
+		const header = append(section, $('.sidex-navigation-section-header'));
+		header.textContent = title;
+
+		const activeLocation = normalizeLocation(this.directoryService.activeLocation).toLowerCase();
+		for (const location of locations) {
+			const row = append(section, $('.sidex-navigation-place'));
+			row.tabIndex = 0;
+			if (normalizeLocation(location).toLowerCase() === activeLocation) {
+				row.classList.add('active');
+			}
+
+			const icon = append(row, $('span.sidex-navigation-place-icon'));
+			icon.classList.add('codicon', favorite ? Codicon.starFull.id : Codicon.history.id);
+
+			const label = append(row, $('span.sidex-navigation-place-label'));
+			label.textContent = this.directoryService.titleForLocation(location);
+			label.title = location;
+
+			const remove = append(row, $('span.sidex-navigation-place-remove'));
+			remove.textContent = '×';
+			remove.title = localize('sidex.places.remove', '移除');
+			remove.setAttribute('role', 'button');
+
+			this.placesDisposables.add(addDisposableListener(row, EventType.CLICK, () => {
+				void this.openPlace(location, favorite);
+			}));
+			this.placesDisposables.add(addDisposableListener(row, EventType.KEY_DOWN, event => {
+				if (event.key === 'Enter' || event.key === ' ') {
+					event.preventDefault();
+					void this.openPlace(location, favorite);
+				}
+			}));
+			this.placesDisposables.add(addDisposableListener(remove, EventType.CLICK, event => {
+				event.stopPropagation();
+				if (favorite) {
+					this.directoryService.removeFavorite(location);
+				} else {
+					this.directoryService.removeRecent(location);
+				}
+			}));
+		}
+	}
+
+	private async openPlace(location: string, favorite: boolean): Promise<void> {
+		try {
+			const stat = await this.explorerService.stat(location);
+			if (!stat.isDir) {
+				throw new Error('not a directory');
+			}
+			this.directoryService.navigate(location);
+		} catch {
+			const remove = () => favorite
+				? this.directoryService.removeFavorite(location)
+				: this.directoryService.removeRecent(location);
+			this.notificationService.notify({
+				severity: Severity.Warning,
+				message: localize('sidex.places.missing', '目录不存在或无法访问：{0}', location),
+				actions: {
+					primary: [
+						toAction({
+							id: 'sidex.places.removeMissing',
+							label: localize('sidex.places.remove', '移除'),
+							run: remove
+						})
+					]
+				}
+			});
+		}
 	}
 
 	override dispose(): void {

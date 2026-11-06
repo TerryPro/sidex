@@ -313,7 +313,8 @@ pub fn copy_path(source: String, dest: String, recursive: bool) -> Result<(), St
     validate_path(&dest)?;
     let src = Path::new(&source);
     let dst = Path::new(&dest);
-    if src.is_dir() {
+    let existed = dst.exists();
+    let result = if src.is_dir() {
         if !recursive {
             return Err("复制文件夹需要 recursive=true".to_string());
         }
@@ -322,12 +323,112 @@ pub fn copy_path(source: String, dest: String, recursive: bool) -> Result<(), St
         std::fs::copy(src, dst)
             .map(|_| ())
             .map_err(|e| format!("{source}: {e}"))
+    };
+    // 复制失败时清掉本次新建的不完整目标，避免留下半完成状态。
+    if result.is_err() && !existed {
+        if dst.is_dir() {
+            let _ = std::fs::remove_dir_all(dst);
+        } else {
+            let _ = std::fs::remove_file(dst);
+        }
+    }
+    result
+}
+
+/// 把条目移到回收站，并尽量返回回收站条目 id，供撤销时精确恢复。
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
+pub fn move_to_trash(path: String) -> Result<Option<String>, String> {
+    validate_path(&path)?;
+    trash::delete(&path).map_err(|e| format!("move to trash: {e}"))?;
+    Ok(find_trash_item_id(&path))
+}
+
+#[cfg(windows)]
+fn find_trash_item_id(path: &str) -> Option<String> {
+    let source = Path::new(path);
+    let parent = source.parent()?;
+    let name = source.file_name()?;
+    let items = trash::os_limited::list().ok()?;
+    items
+        .into_iter()
+        .filter(|item| item.name == name && item.original_parent == parent)
+        .max_by_key(|item| item.time_deleted)
+        .map(|item| item.id.to_string_lossy().to_string())
+}
+
+#[cfg(not(windows))]
+fn find_trash_item_id(_path: &str) -> Option<String> {
+    None
+}
+
+/// 从回收站恢复条目；优先按 id 精确匹配，找不到时按原始路径回退。
+#[tauri::command]
+pub fn restore_from_trash(id: Option<String>, path: Option<String>) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        let items = trash::os_limited::list().map_err(|e| format!("read trash: {e}"))?;
+        let mut matched: Vec<_> = match &id {
+            Some(target) => items
+                .iter()
+                .filter(|item| item.id.to_string_lossy() == *target)
+                .cloned()
+                .collect(),
+            None => Vec::new(),
+        };
+        if matched.is_empty() {
+            if let Some(target) = &path {
+                matched = items
+                    .into_iter()
+                    .filter(|item| item.original_path().to_string_lossy() == *target)
+                    .collect();
+            }
+        }
+        if matched.is_empty() {
+            return Err("回收站中找不到该项目，可能已被清空".to_string());
+        }
+        trash::os_limited::restore_all(matched).map_err(|e| format!("restore from trash: {e}"))
+    }
+
+    #[cfg(not(windows))]
+    {
+        let _ = (id, path);
+        Err("当前平台不支持从回收站恢复".to_string())
     }
 }
 
+/// 移动文件或目录；跨盘时回退为「复制后删除」。
 #[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
-pub fn move_to_trash(path: String) -> Result<(), String> {
-    validate_path(&path)?;
-    trash::delete(&path).map_err(|e| format!("move to trash: {e}"))
+pub fn move_path(source: String, dest: String) -> Result<(), String> {
+    validate_path(&source)?;
+    validate_path(&dest)?;
+    let src = Path::new(&source);
+    let dst = Path::new(&dest);
+    let existed = dst.exists();
+    let result = if src.is_dir() {
+        if std::fs::rename(src, dst).is_ok() {
+            return Ok(());
+        }
+        copy_dir_recursive(src, dst)
+            .and_then(|()| std::fs::remove_dir_all(src))
+            .map_err(|e| format!("{source} -> {dest}: {e}"))
+    } else {
+        if std::fs::rename(src, dst).is_ok() {
+            return Ok(());
+        }
+        std::fs::copy(src, dst)
+            .and_then(|_| std::fs::remove_file(src))
+            .map(|_| ())
+            .map_err(|e| format!("{source} -> {dest}: {e}"))
+    };
+    // 跨盘回退失败时清掉新建的不完整目标；源文件保持不变。
+    if result.is_err() && !existed {
+        if dst.is_dir() {
+            let _ = std::fs::remove_dir_all(dst);
+        } else {
+            let _ = std::fs::remove_file(dst);
+        }
+    }
+    result
 }

@@ -25,6 +25,7 @@ import { ITelemetryService } from '../../../../platform/telemetry/common/telemet
 import { IThemeService } from '../../../../platform/theme/common/themeService.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
 import { IQuickInputService } from '../../../../platform/quickinput/common/quickInput.js';
+import { IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
 import { IDialogService } from '../../../../platform/dialogs/common/dialogs.js';
 import { INotificationService } from '../../../../platform/notification/common/notification.js';
 import { ISideXExplorerService, SideXDriveInfo, SideXExplorerEntry } from '../../../../platform/sidex/common/sidexExplorerService.js';
@@ -35,6 +36,8 @@ import { IEditorService } from '../../../services/editor/common/editorService.js
 import { IDirectoryService } from './directoryService.js';
 import { DirectoryViewEditorInput } from './directoryViewEditorInput.js';
 import { driveIconSvg } from './explorerIcons.js';
+import { FILE_LIST_FOCUS_CONTEXT, IFileListCommandHost, setActiveFileListHost } from './fileListCommands.js';
+import { fileName, IFileOperationService, joinPath, parentDirectory, SIDEX_FILES_MIME } from './fileOperationService.js';
 import { IThumbnailService } from './thumbnailService.js';
 
 /** 一个目录标签对应的独立视图，切换标签时保留内容与滚动位置。 */
@@ -56,13 +59,34 @@ interface DirectoryTabView {
 const FILE_ROW_HEIGHT = 28;
 const FILE_LIST_OVERSCAN = 8;
 
-/** 虚拟文件列表对编辑器暴露的最小回调集合。 */
-interface IFileListHost {
+/** 虚拟文件列表对编辑器暴露的回调集合。 */
+interface IFileListHost extends IFileListCommandHost {
 	renderRow(entry: SideXExplorerEntry): HTMLElement;
 	activateEntry(entry: SideXExplorerEntry): void;
-	selectEntry(entry: SideXExplorerEntry): void;
+	selectionChanged(entries: readonly SideXExplorerEntry[], primary: SideXExplorerEntry | undefined): void;
 	showContextMenu(event: MouseEvent, entry?: SideXExplorerEntry): void;
-	moveEntry(sourcePath: string, targetDirectory: string): void;
+	dropEntries(sources: readonly string[], targetDirectory: string, mode: 'copy' | 'move' | 'auto'): void;
+	onFocusChange(focused: boolean): void;
+	getLocation(): string;
+}
+
+/** 读取应用内拖拽携带的路径列表。 */
+function readDraggedPaths(dataTransfer: DataTransfer | null): string[] {
+	if (!dataTransfer) {
+		return [];
+	}
+	const raw = dataTransfer.getData(SIDEX_FILES_MIME);
+	if (raw) {
+		try {
+			const parsed = JSON.parse(raw);
+			if (Array.isArray(parsed)) {
+				return parsed.filter((item): item is string => typeof item === 'string' && item.length > 0);
+			}
+		} catch {
+			// 忽略无法解析的拖拽数据。
+		}
+	}
+	return [];
 }
 
 /**
@@ -75,11 +99,14 @@ class VirtualFileList extends Disposable {
 	private readonly rows = new Map<number, HTMLElement>();
 	private readonly rowIdPrefix: string;
 	private entries: readonly SideXExplorerEntry[];
-	private selectedPath: string | undefined;
+	private selectedPaths = new Set<string>();
+	private primaryPath: string | undefined;
+	private anchorIndex = -1;
 	private firstRendered = -1;
 	private lastRendered = -1;
 	private updateHandle: number | undefined;
 	private dropTarget: HTMLElement | undefined;
+	private listDropTarget = false;
 
 	constructor(
 		parent: HTMLElement,
@@ -88,16 +115,17 @@ class VirtualFileList extends Disposable {
 		private readonly host: IFileListHost,
 		tabId: string,
 		entries: readonly SideXExplorerEntry[],
-		selectedPath: string | undefined
+		selectedPaths: readonly string[],
+		primaryPath: string | undefined
 	) {
 		super();
 		this.entries = entries;
-		this.selectedPath = selectedPath;
 		this.rowIdPrefix = `sidex-file-row-${tabId}`;
 
 		const list = append(parent, $('div.sidex-file-list'));
 		list.tabIndex = 0;
 		list.setAttribute('role', 'listbox');
+		list.setAttribute('aria-multiselectable', 'true');
 		list.setAttribute('aria-label', localize('sidex.fileList.ariaLabel', '文件列表'));
 		this.list = list;
 
@@ -110,14 +138,29 @@ class VirtualFileList extends Disposable {
 		this._register(addDisposableListener(list, EventType.DRAG_OVER, event => this.onDragOver(event)));
 		this._register(addDisposableListener(list, EventType.DRAG_LEAVE, event => this.onDragLeave(event)));
 		this._register(addDisposableListener(list, EventType.DROP, event => this.onDrop(event)));
+		this._register(addDisposableListener(list, EventType.FOCUS_IN, () => this.host.onFocusChange(true)));
+		this._register(addDisposableListener(list, EventType.FOCUS_OUT, event => {
+			const related = (event as FocusEvent).relatedTarget as Node | null;
+			if (!related || !list.contains(related)) {
+				this.host.onFocusChange(false);
+			}
+		}));
 		this._register(toDisposable(() => this.cancelUpdate()));
 
-		this.setEntries(entries, selectedPath);
+		this.setEntries(entries, selectedPaths, primaryPath);
 	}
 
-	setEntries(entries: readonly SideXExplorerEntry[], selectedPath: string | undefined): void {
+	setEntries(
+		entries: readonly SideXExplorerEntry[],
+		selectedPaths: readonly string[],
+		primaryPath: string | undefined
+	): void {
 		this.entries = entries;
-		this.selectedPath = selectedPath;
+		this.selectedPaths = new Set(selectedPaths);
+		this.primaryPath = primaryPath && this.selectedPaths.has(primaryPath) ? primaryPath : selectedPaths[0];
+		this.anchorIndex = this.primaryPath
+			? entries.findIndex(entry => entry.path === this.primaryPath)
+			: -1;
 		for (const row of this.rows.values()) {
 			row.remove();
 		}
@@ -164,12 +207,32 @@ class VirtualFileList extends Disposable {
 		this.syncSelection();
 	}
 
-	/** 让当前选中项回到可见区域，用于键盘导航或重新排序后的定位。 */
-	revealSelection(): void {
-		if (!this.selectedPath) {
+	focus(): void {
+		this.list.focus();
+	}
+
+	getSelectedEntries(): SideXExplorerEntry[] {
+		return this.entries.filter(entry => this.selectedPaths.has(entry.path));
+	}
+
+	getPrimaryEntry(): SideXExplorerEntry | undefined {
+		return this.entries.find(entry => entry.path === this.primaryPath) ?? this.getSelectedEntries()[0];
+	}
+
+	selectAll(): void {
+		if (!this.entries.length) {
 			return;
 		}
-		const index = this.entries.findIndex(entry => entry.path === this.selectedPath);
+		this.anchorIndex = 0;
+		this.setSelection(this.entries.map(entry => entry.path), this.getPrimaryEntry() ?? this.entries[0]);
+	}
+
+	/** 让当前选中项回到可见区域，用于键盘导航或重新排序后的定位。 */
+	revealSelection(): void {
+		if (!this.primaryPath) {
+			return;
+		}
+		const index = this.entries.findIndex(entry => entry.path === this.primaryPath);
 		if (index >= 0) {
 			this.revealIndex(index);
 		}
@@ -198,8 +261,8 @@ class VirtualFileList extends Disposable {
 		row.id = `${this.rowIdPrefix}-${index}`;
 		row.dataset.index = String(index);
 		row.setAttribute('role', 'option');
-		row.setAttribute('aria-selected', entry.path === this.selectedPath ? 'true' : 'false');
-		row.classList.toggle('selected', entry.path === this.selectedPath);
+		row.setAttribute('aria-selected', this.selectedPaths.has(entry.path) ? 'true' : 'false');
+		row.classList.toggle('selected', this.selectedPaths.has(entry.path));
 		row.style.top = `${index * FILE_ROW_HEIGHT}px`;
 		row.tabIndex = -1;
 		return row;
@@ -208,10 +271,11 @@ class VirtualFileList extends Disposable {
 	private syncSelection(): void {
 		let activeDescendant: string | undefined;
 		for (const [index, row] of this.rows) {
-			const selected = this.entries[index]?.path === this.selectedPath;
+			const entry = this.entries[index];
+			const selected = !!entry && this.selectedPaths.has(entry.path);
 			row.classList.toggle('selected', selected);
 			row.setAttribute('aria-selected', selected ? 'true' : 'false');
-			if (selected) {
+			if (entry?.path === this.primaryPath) {
 				activeDescendant = row.id;
 			}
 		}
@@ -222,14 +286,36 @@ class VirtualFileList extends Disposable {
 		}
 	}
 
-	private selectIndex(index: number, reveal: boolean): void {
+	private setSelection(paths: readonly string[], primary: SideXExplorerEntry | undefined): void {
+		this.selectedPaths = new Set(paths);
+		const nextPrimary = primary?.path ?? paths[0];
+		this.primaryPath = nextPrimary;
+		if (nextPrimary) {
+			const index = this.entries.findIndex(entry => entry.path === nextPrimary);
+			if (index >= 0) {
+				this.anchorIndex = index;
+			}
+		}
+		this.syncSelection();
+		this.host.selectionChanged(this.getSelectedEntries(), this.getPrimaryEntry());
+	}
+
+	private selectIndex(index: number, reveal: boolean, extend = false): void {
 		const entry = this.entries[index];
 		if (!entry) {
 			return;
 		}
-		this.selectedPath = entry.path;
-		this.host.selectEntry(entry);
-		this.syncSelection();
+		if (extend && this.anchorIndex >= 0) {
+			const from = Math.min(this.anchorIndex, index);
+			const to = Math.max(this.anchorIndex, index);
+			this.setSelection(
+				this.entries.slice(from, to + 1).map(item => item.path),
+				entry
+			);
+		} else {
+			this.anchorIndex = index;
+			this.setSelection([entry.path], entry);
+		}
 		if (reveal) {
 			this.revealIndex(index);
 		}
@@ -267,13 +353,35 @@ class VirtualFileList extends Disposable {
 	private onClick(event: MouseEvent): void {
 		const row = this.rowFromEvent(event);
 		if (!row) {
+			this.list.focus();
 			return;
 		}
 		const index = Number(row.dataset.index);
-		if (Number.isInteger(index)) {
-			this.list.focus();
-			this.selectIndex(index, false);
+		const entry = this.entries[index];
+		if (!entry) {
+			return;
 		}
+		this.list.focus();
+
+		if (event.shiftKey && this.anchorIndex >= 0) {
+			const from = Math.min(this.anchorIndex, index);
+			const to = Math.max(this.anchorIndex, index);
+			this.setSelection(this.entries.slice(from, to + 1).map(item => item.path), entry);
+			return;
+		}
+		if (event.ctrlKey || event.metaKey) {
+			const next = new Set(this.selectedPaths);
+			if (next.has(entry.path)) {
+				next.delete(entry.path);
+			} else {
+				next.add(entry.path);
+			}
+			this.anchorIndex = index;
+			this.setSelection([...next], next.has(entry.path) ? entry : undefined);
+			return;
+		}
+		this.anchorIndex = index;
+		this.setSelection([entry.path], entry);
 	}
 
 	private onDoubleClick(event: MouseEvent): void {
@@ -284,7 +392,12 @@ class VirtualFileList extends Disposable {
 	}
 
 	private onContextMenu(event: MouseEvent): void {
+		event.preventDefault();
 		const entry = this.entryFromRow(this.rowFromEvent(event));
+		if (entry && !this.selectedPaths.has(entry.path)) {
+			this.anchorIndex = Number(this.rowFromEvent(event)?.dataset.index ?? -1);
+			this.setSelection([entry.path], entry);
+		}
 		this.host.showContextMenu(event, entry);
 	}
 
@@ -293,8 +406,8 @@ class VirtualFileList extends Disposable {
 		if (!total) {
 			return;
 		}
-		let index = this.selectedPath
-			? this.entries.findIndex(entry => entry.path === this.selectedPath)
+		let index = this.primaryPath
+			? this.entries.findIndex(entry => entry.path === this.primaryPath)
 			: -1;
 		const page = Math.max(1, Math.floor(this.content.clientHeight / FILE_ROW_HEIGHT) - 1);
 
@@ -317,10 +430,8 @@ class VirtualFileList extends Disposable {
 			case 'End':
 				index = total - 1;
 				break;
-			case 'Enter':
-				if (index >= 0) {
-					this.host.activateEntry(this.entries[index]);
-				}
+			case 'Escape':
+				this.setSelection([], undefined);
 				event.preventDefault();
 				return;
 			default:
@@ -329,7 +440,7 @@ class VirtualFileList extends Disposable {
 
 		event.preventDefault();
 		event.stopPropagation();
-		this.selectIndex(index, true);
+		this.selectIndex(index, true, event.shiftKey);
 	}
 
 	private onDragStart(event: DragEvent): void {
@@ -338,52 +449,97 @@ class VirtualFileList extends Disposable {
 		if (!row || !entry || !event.dataTransfer) {
 			return;
 		}
-		event.dataTransfer.setData('text/plain', entry.path);
+		if (!this.selectedPaths.has(entry.path)) {
+			this.anchorIndex = Number(row.dataset.index ?? -1);
+			this.setSelection([entry.path], entry);
+		}
+		const paths = this.getSelectedEntries().map(item => item.path);
+		event.dataTransfer.effectAllowed = 'copyMove';
+		event.dataTransfer.setData(SIDEX_FILES_MIME, JSON.stringify(paths));
+		event.dataTransfer.setData('text/plain', paths.join('\n'));
 		event.dataTransfer.setDragImage(row, 12, 12);
+
+		// 拖到 Windows 资源管理器等外部应用时作为文件下载（复制语义）。
+		// 该格式只能携带单个文件，目录与多选时仅提供应用内拖放。
+		const first = paths.length === 1 ? this.entries.find(item => item.path === paths[0]) : undefined;
+		if (first && !first.isDir) {
+			event.dataTransfer.setData(
+				'DownloadURL',
+				`application/octet-stream:${fileName(first.path)}:${assetUrl(first.path)}`
+			);
+		}
 	}
 
 	private onDragOver(event: DragEvent): void {
-		const entry = this.entryFromRow(this.rowFromEvent(event));
-		if (!entry?.isDir) {
+		if (!event.dataTransfer) {
 			return;
 		}
-		event.preventDefault();
 		const row = this.rowFromEvent(event);
-		if (row && this.dropTarget !== row) {
+		if (row) {
+			const entry = this.entryFromRow(row);
+			if (!entry?.isDir) {
+				return;
+			}
+			event.preventDefault();
+			event.stopPropagation();
+			event.dataTransfer.dropEffect = event.ctrlKey ? 'copy' : 'move';
+			if (this.dropTarget !== row) {
+				this.clearDropTarget();
+				row.classList.add('drop-target');
+				this.dropTarget = row;
+			}
+			return;
+		}
+		// 列表空白区域：拖到当前目录。
+		event.preventDefault();
+		event.dataTransfer.dropEffect = event.ctrlKey ? 'copy' : 'move';
+		if (!this.listDropTarget) {
 			this.clearDropTarget();
-			row.classList.add('drop-target');
-			this.dropTarget = row;
+			this.list.classList.add('drop-target-list');
+			this.listDropTarget = true;
 		}
 	}
 
 	private onDragLeave(event: DragEvent): void {
-		const row = this.rowFromEvent(event);
-		if (!row || this.dropTarget !== row) {
+		const related = event.relatedTarget as Node | null;
+		if (related && this.list.contains(related)) {
 			return;
 		}
-		const related = event.relatedTarget as Node | null;
-		if (!related || !row.contains(related)) {
-			this.clearDropTarget();
-		}
+		this.clearDropTarget();
 	}
 
 	private onDrop(event: DragEvent): void {
-		const entry = this.entryFromRow(this.rowFromEvent(event));
-		if (!entry?.isDir) {
+		const row = this.rowFromEvent(event);
+		const entry = this.entryFromRow(row);
+		if (row && !entry?.isDir) {
+			return;
+		}
+		const sources = readDraggedPaths(event.dataTransfer);
+		if (!sources.length) {
 			return;
 		}
 		event.preventDefault();
+		event.stopPropagation();
 		this.clearDropTarget();
-		const source = event.dataTransfer?.getData('text/plain');
-		if (source && source !== entry.path) {
-			this.host.moveEntry(source, entry.path);
-		}
+		const target = entry?.isDir ? entry.path : this.host.getLocation();
+		const mode = event.ctrlKey ? 'copy' : event.shiftKey ? 'move' : 'auto';
+		this.host.dropEntries(sources, target, mode);
 	}
 
 	private clearDropTarget(): void {
 		this.dropTarget?.classList.remove('drop-target');
 		this.dropTarget = undefined;
+		if (this.listDropTarget) {
+			this.list.classList.remove('drop-target-list');
+			this.listDropTarget = false;
+		}
 	}
+}
+
+/** sidex-asset 协议的绝对地址，供拖出到外部应用时使用。 */
+function assetUrl(path: string): string {
+	const normalized = path.replace(/\\/g, '/').split('/').map(segment => encodeURIComponent(segment)).join('/');
+	return `https://sidex-asset.localhost/${normalized}`;
 }
 
 export class DirectoryViewEditor extends EditorPane {
@@ -396,10 +552,10 @@ export class DirectoryViewEditor extends EditorPane {
 	private activeTabId: string | undefined;
 	private readonly viewDisposables = this._register(new DisposableStore());
 	private contextMenu: HTMLElement | undefined;
-	private copiedPath: string | undefined;
 	private sortKey: 'name' | 'modified' | 'type' | 'size' = 'name';
 	private sortAscending = true;
 	private readonly columnWidths = [260, 170, 130, 110];
+	private readonly fileListFocus: ReturnType<typeof FILE_LIST_FOCUS_CONTEXT.bindTo>;
 
 	constructor(
 		group: IEditorGroup,
@@ -414,10 +570,13 @@ export class DirectoryViewEditor extends EditorPane {
 		@IQuickInputService private readonly quickInputService: IQuickInputService,
 		@IDialogService private readonly dialogService: IDialogService,
 		@INotificationService private readonly notificationService: INotificationService,
-		@IThumbnailService private readonly thumbnailService: IThumbnailService
+		@IThumbnailService private readonly thumbnailService: IThumbnailService,
+		@IFileOperationService private readonly fileOperationService: IFileOperationService,
+		@IContextKeyService contextKeyService: IContextKeyService
 	) {
 		super(DirectoryViewEditor.ID, group, telemetryService, themeService, storageService);
 
+		this.fileListFocus = FILE_LIST_FOCUS_CONTEXT.bindTo(contextKeyService);
 		this.restoreViewPreferences();
 
 		this.viewDisposables.add(this.directoryService.onDidChange(() => this.onDirectoryChange()));
@@ -547,6 +706,12 @@ export class DirectoryViewEditor extends EditorPane {
 
 	/** 切换当前显示的目录视图；同一编辑器标签内完成，不新建编辑器标签。 */
 	private async activateView(tabId: string | undefined, restoreScroll: boolean): Promise<void> {
+		const hadListFocus = !!this.activeView?.container.contains(document.activeElement);
+		if (this.activeTabId !== tabId) {
+			// 视图被隐藏时浏览器不会可靠地派发 blur，主动清掉命令路由。
+			this.fileListFocus.reset();
+			setActiveFileListHost(undefined);
+		}
 		this.activeTabId = tabId;
 		for (const [otherTabId, view] of this.views) {
 			view.container.style.display = otherTabId === tabId ? '' : 'none';
@@ -556,32 +721,38 @@ export class DirectoryViewEditor extends EditorPane {
 		}
 
 		const view = this.ensureView(tabId);
-		view.scrollable.scanDomNode();
-		view.virtualList?.update();
+		try {
+			view.scrollable.scanDomNode();
+			view.virtualList?.update();
 
-		const persisted = Number(this.storageService.get(`sidex.directory.scroll:${tabId}`, StorageScope.PROFILE) ?? '0');
-		const restoreTop = this.savedScrollTops.get(tabId) ?? persisted;
-		const query = this.directoryService.searchQuery;
+			const persisted = Number(this.storageService.get(`sidex.directory.scroll:${tabId}`, StorageScope.PROFILE) ?? '0');
+			const restoreTop = this.savedScrollTops.get(tabId) ?? persisted;
+			const query = this.directoryService.searchQuery;
 
-		const tab = this.directoryService.getTab(tabId);
-		if (tab && tab.location === view.renderedLocation && tab.refreshToken === view.renderedRefreshToken) {
-			// 内容已是最新：搜索词变化时只重绘，不重新读取目录。
-			if (query !== view.renderedQuery && view.entries) {
+			const tab = this.directoryService.getTab(tabId);
+			if (tab && tab.location === view.renderedLocation && tab.refreshToken === view.renderedRefreshToken) {
+				// 内容已是最新：搜索词变化时只重绘，不重新读取目录。
+				if (query !== view.renderedQuery && view.entries) {
+					this.savedScrollTops.delete(tabId);
+					this.rerenderDirectory(view, restoreScroll ? restoreTop : 0);
+					return;
+				}
+				// 复用已有 DOM，并恢复被其他编辑器遮挡时记录的滚动位置。
+				if (restoreScroll && restoreTop) {
+					view.scrollable.setScrollPosition({ scrollTop: restoreTop });
+					view.virtualList?.update();
+				}
 				this.savedScrollTops.delete(tabId);
-				this.rerenderDirectory(view, restoreScroll ? restoreTop : 0);
 				return;
 			}
-			// 复用已有 DOM，并恢复被其他编辑器遮挡时记录的滚动位置。
-			if (restoreScroll && restoreTop) {
-				view.scrollable.setScrollPosition({ scrollTop: restoreTop });
-				view.virtualList?.update();
-			}
-			this.savedScrollTops.delete(tabId);
-			return;
-		}
 
-		this.savedScrollTops.delete(tabId);
-		await this.reload(view, restoreScroll ? restoreTop : 0);
+			this.savedScrollTops.delete(tabId);
+			await this.reload(view, restoreScroll ? restoreTop : 0);
+		} finally {
+			if (hadListFocus) {
+				view.virtualList?.focus();
+			}
+		}
 	}
 
 	private onDirectoryChange(): void {
@@ -908,11 +1079,43 @@ export class DirectoryViewEditor extends EditorPane {
 		const host: IFileListHost = {
 			renderRow: entry => this.renderFileRow(entry),
 			activateEntry: entry => this.openEntry(entry),
-			selectEntry: entry => this.selectEntry(entry),
+			selectionChanged: (entries, primary) => this.selectionChanged(view, entries, primary),
 			showContextMenu: (event, entry) => this.showContextMenu(event, view, location, entry),
-			moveEntry: (source, targetDirectory) => void this.moveEntry(source, targetDirectory)
+			dropEntries: (sources, targetDirectory, mode) => void this.dropEntries(view, sources, targetDirectory, mode),
+			onFocusChange: focused => this.onFileListFocusChange(host, focused),
+			getLocation: () => location,
+			rename: async () => {
+				const entries = view.virtualList?.getSelectedEntries() ?? [];
+				if (entries.length === 1) {
+					await this.renameEntry(entries[0]);
+				}
+			},
+			delete: async permanent => {
+				await this.deleteEntries(view, view.virtualList?.getSelectedEntries() ?? [], permanent);
+			},
+			copy: cut => this.copySelection(view, cut),
+			paste: async () => {
+				await this.pasteEntry(location);
+			},
+			open: () => {
+				const entries = view.virtualList?.getSelectedEntries() ?? [];
+				if (entries.length === 1) {
+					this.openEntry(entries[0]);
+				}
+			},
+			goUp: () => this.directoryService.goUp(),
+			properties: async () => {
+				await this.showProperties(view.virtualList?.getSelectedEntries() ?? []);
+			},
+			undo: async () => {
+				await this.fileOperationService.undo();
+				this.directoryService.refresh();
+			},
+			refresh: () => this.directoryService.refresh(),
+			selectAll: () => view.virtualList?.selectAll()
 		};
-		const selection = this.directoryService.getSelection(view.tabId);
+		const selectedPaths = this.directoryService.getSelectionPaths(view.tabId);
+		const primary = this.directoryService.getSelection(view.tabId)?.path;
 		const virtualList = new VirtualFileList(
 			view.content,
 			view.content,
@@ -920,7 +1123,8 @@ export class DirectoryViewEditor extends EditorPane {
 			host,
 			view.tabId,
 			sorted,
-			selection?.path
+			selectedPaths,
+			primary
 		);
 		view.virtualList = virtualList;
 		view.renderDisposables.add(virtualList);
@@ -955,6 +1159,7 @@ export class DirectoryViewEditor extends EditorPane {
 	private renderFileRow(entry: SideXExplorerEntry): HTMLElement {
 		const row = $('div.sidex-file-row');
 		row.setAttribute('data-path', entry.path);
+		row.dataset.isDir = entry.isDir ? 'true' : 'false';
 		row.draggable = true;
 
 		const nameCell = append(row, $('span.sidex-file-name'));
@@ -989,14 +1194,34 @@ export class DirectoryViewEditor extends EditorPane {
 		}
 	}
 
-	private selectEntry(entry: SideXExplorerEntry): void {
-		this.directoryService.select({
-			path: entry.path,
-			name: entry.name,
-			isDir: entry.isDir,
-			size: entry.size,
-			modified: entry.modified
-		});
+	private selectionChanged(
+		_view: DirectoryTabView,
+		entries: readonly SideXExplorerEntry[],
+		primary: SideXExplorerEntry | undefined
+	): void {
+		if (!primary) {
+			return;
+		}
+		this.directoryService.select(
+			{
+				path: primary.path,
+				name: primary.name,
+				isDir: primary.isDir,
+				size: primary.size,
+				modified: primary.modified
+			},
+			entries.map(entry => entry.path)
+		);
+	}
+
+	private onFileListFocusChange(host: IFileListHost, focused: boolean): void {
+		if (focused) {
+			setActiveFileListHost(host);
+			this.fileListFocus.set(true);
+		} else {
+			setActiveFileListHost(undefined);
+			this.fileListFocus.reset();
+		}
 	}
 
 	private showContextMenu(event: MouseEvent, view: DirectoryTabView, location: string, entry?: SideXExplorerEntry): void {
@@ -1027,26 +1252,61 @@ export class DirectoryViewEditor extends EditorPane {
 			});
 		};
 
-		if (entry) {
+		const selected = entry ? view.virtualList?.getSelectedEntries() ?? [] : [];
+		const entries = selected.length ? selected : entry ? [entry] : [];
+		const clipboard = this.fileOperationService.clipboard;
+
+		if (entries.length) {
+			const single = entries.length === 1 ? entries[0] : undefined;
 			addItem(localize('sidex.menu.open', '打开'), () => {
-				if (entry.isDir) {
-					this.directoryService.navigate(entry.path);
-				} else {
-					void this.editorService.openEditor({ resource: URI.file(entry.path), options: { pinned: true } });
+				if (single) {
+					this.openEntry(single);
 				}
+			}, !!single);
+			addItem(localize('sidex.menu.rename', '重命名'), () => {
+				if (single) {
+					void this.renameEntry(single);
+				}
+			}, !!single);
+			addItem(localize('sidex.menu.copy', '复制'), () => this.copySelection(view, false));
+			addItem(localize('sidex.menu.cut', '剪切'), () => this.copySelection(view, true));
+			addItem(localize('sidex.menu.paste', '粘贴'), () => void this.pasteEntry(location), !!clipboard && !!location);
+			addItem(localize('sidex.menu.trash', '移到回收站'), () => void this.deleteEntries(view, entries, false));
+			addItem(localize('sidex.menu.deletePermanent', '永久删除'), () => void this.deleteEntries(view, entries, true));
+			addItem(localize('sidex.menu.copyPath', '复制路径'), () => {
+				void navigator.clipboard.writeText(entries.map(item => item.path).join('\n'));
 			});
-			addItem(localize('sidex.menu.rename', '重命名'), () => void this.renameEntry(entry));
-			addItem(localize('sidex.menu.copy', '复制'), () => {
-				this.copiedPath = entry.path;
-				this.notificationService.info(localize('sidex.copy.done', '已复制“{0}”', entry.name));
-			});
-			addItem(localize('sidex.menu.trash', '移到回收站'), () => void this.deleteEntry(entry));
-			addItem(localize('sidex.menu.copyPath', '复制路径'), () => void navigator.clipboard.writeText(entry.path));
+			addItem(localize('sidex.menu.properties', '属性'), () => void this.showProperties(entries));
+			if (single?.isDir) {
+				addItem(
+					this.directoryService.isFavorite(single.path)
+						? localize('sidex.menu.removeFavorite', '取消收藏')
+						: localize('sidex.menu.addFavorite', '添加到收藏'),
+					() => this.directoryService.toggleFavorite(single.path)
+				);
+			}
+			addItem(
+				localize('sidex.menu.undo', '撤销文件操作'),
+				() => void this.undo(),
+				this.fileOperationService.canUndo()
+			);
 		} else {
 			addItem(localize('sidex.menu.newFile', '新建文件'), () => void this.createEntry(location, false));
 			addItem(localize('sidex.menu.newFolder', '新建文件夹'), () => void this.createEntry(location, true));
-			addItem(localize('sidex.menu.paste', '粘贴'), () => void this.pasteEntry(location), !!this.copiedPath);
+			addItem(localize('sidex.menu.paste', '粘贴'), () => void this.pasteEntry(location), !!clipboard && !!location);
 			addItem(localize('sidex.menu.refresh', '刷新'), () => this.directoryService.refresh());
+			addItem(
+				location && this.directoryService.isFavorite(location)
+					? localize('sidex.menu.removeFavorite', '取消收藏')
+					: localize('sidex.menu.addFavorite', '添加到收藏'),
+				() => this.directoryService.toggleFavorite(location),
+				!!location
+			);
+			addItem(
+				localize('sidex.menu.undo', '撤销文件操作'),
+				() => void this.undo(),
+				this.fileOperationService.canUndo()
+			);
 		}
 
 		const rect = menu.getBoundingClientRect();
@@ -1075,6 +1335,9 @@ export class DirectoryViewEditor extends EditorPane {
 	}
 
 	private async createEntry(location: string, folder: boolean): Promise<void> {
+		if (!location) {
+			return;
+		}
 		const name = await this.quickInputService.input({
 			prompt: folder
 				? localize('sidex.newFolder.prompt', '新建文件夹名称')
@@ -1084,7 +1347,7 @@ export class DirectoryViewEditor extends EditorPane {
 		if (!name) {
 			return;
 		}
-		const target = `${location.endsWith('\\') ? location : `${location}\\`}${name}`;
+		const target = joinPath(location, name);
 		try {
 			if (folder) {
 				await this.explorerService.createFolder(target);
@@ -1105,58 +1368,148 @@ export class DirectoryViewEditor extends EditorPane {
 		if (!name || name === entry.name) {
 			return;
 		}
-		const parent = entry.path.slice(0, entry.path.lastIndexOf('\\'));
+		const parent = parentDirectory(entry.path);
+		const target = joinPath(parent, name);
+		if (await this.explorerService.exists(target).catch(() => false)) {
+			this.notificationService.warn(localize('sidex.rename.exists', '已存在同名项目：{0}', name));
+			return;
+		}
 		try {
-			await this.explorerService.rename(entry.path, `${parent}\\${name}`);
+			await this.fileOperationService.rename(entry.path, target);
 			this.directoryService.refresh();
 		} catch (error) {
 			this.notificationService.error(String(error));
 		}
 	}
 
-	private async deleteEntry(entry: SideXExplorerEntry): Promise<void> {
-		const { confirmed } = await this.dialogService.confirm({
-			message: localize('sidex.trash.confirm', '将“{0}”移到回收站？', entry.name),
-			primaryButton: localize('sidex.trash.action', '移到回收站')
-		});
-		if (!confirmed) {
+	private copySelection(view: DirectoryTabView, cut: boolean): void {
+		const entries = view.virtualList?.getSelectedEntries() ?? [];
+		if (!entries.length) {
 			return;
 		}
-		try {
-			await this.explorerService.moveToTrash(entry.path);
-			this.directoryService.refresh();
-		} catch (error) {
-			this.notificationService.error(String(error));
+		this.fileOperationService.setClipboard(entries.map(entry => entry.path), cut);
+		this.notificationService.info(
+			cut
+				? localize('sidex.cut.done', '已剪切 {0} 个项目', entries.length)
+				: localize('sidex.copy.done', '已复制 {0} 个项目', entries.length)
+		);
+	}
+
+	private async deleteEntries(
+		view: DirectoryTabView,
+		entries: readonly SideXExplorerEntry[],
+		permanent: boolean
+	): Promise<void> {
+		if (!entries.length) {
+			return;
 		}
+		if (permanent) {
+			const { confirmed } = await this.dialogService.confirm({
+				type: 'warning',
+				message: entries.length === 1
+					? localize('sidex.deletePermanent.confirm', '永久删除“{0}”？此操作无法撤销。', entries[0].name)
+					: localize('sidex.deletePermanent.confirmMany', '永久删除选中的 {0} 个项目？此操作无法撤销。', entries.length),
+				primaryButton: localize('sidex.deletePermanent.action', '永久删除')
+			});
+			if (!confirmed) {
+				return;
+			}
+			const result = await this.fileOperationService.deletePermanently(entries.map(entry => entry.path));
+			if (result.failed.length) {
+				this.notificationService.error(result.failed.map(item => `${item.path}: ${item.error}`).join('\n'));
+			}
+		} else {
+			const { confirmed } = await this.dialogService.confirm({
+				message: entries.length === 1
+					? localize('sidex.trash.confirm', '将“{0}”移到回收站？', entries[0].name)
+					: localize('sidex.trash.confirmMany', '将选中的 {0} 个项目移到回收站？', entries.length),
+				primaryButton: localize('sidex.trash.action', '移到回收站')
+			});
+			if (!confirmed) {
+				return;
+			}
+			const result = await this.fileOperationService.trash(entries.map(entry => entry.path));
+			if (result.failed.length) {
+				this.notificationService.error(result.failed.map(item => `${item.path}: ${item.error}`).join('\n'));
+			}
+		}
+		this.directoryService.refreshTab(view.tabId);
 	}
 
 	private async pasteEntry(targetDirectory: string): Promise<void> {
-		const source = this.copiedPath;
-		if (!source) {
+		if (!this.fileOperationService.clipboard) {
 			return;
 		}
-		const name = source.slice(source.lastIndexOf('\\') + 1);
-		const destination = `${targetDirectory.endsWith('\\') ? targetDirectory : `${targetDirectory}\\`}${name}`;
-		try {
-			await this.explorerService.copy(source, destination, true);
+		await this.fileOperationService.paste(targetDirectory);
+		this.refreshAfterOperation(targetDirectory);
+	}
+
+	private async dropEntries(
+		view: DirectoryTabView,
+		sources: readonly string[],
+		targetDirectory: string,
+		mode: 'copy' | 'move' | 'auto'
+	): Promise<void> {
+		if (!targetDirectory || !sources.length) {
+			return;
+		}
+		await this.fileOperationService.moveOrCopy(sources, targetDirectory, mode);
+		this.directoryService.refreshTab(view.tabId);
+		this.refreshAfterOperation(targetDirectory);
+	}
+
+	/** 刷新活动视图对应的标签，以及目标目录所属的目录标签。 */
+	private refreshAfterOperation(targetDirectory: string): void {
+		const normalized = targetDirectory.toLowerCase();
+		const targetTab = this.directoryService.tabs.find(tab => tab.location.toLowerCase() === normalized);
+		if (targetTab) {
+			this.directoryService.refreshTab(targetTab.id);
+		} else {
 			this.directoryService.refresh();
-		} catch (error) {
-			this.notificationService.error(String(error));
 		}
 	}
 
-	private async moveEntry(source: string, targetDirectory: string): Promise<void> {
-		const name = source.slice(source.lastIndexOf('\\') + 1);
-		const destination = `${targetDirectory.endsWith('\\') ? targetDirectory : `${targetDirectory}\\`}${name}`;
-		if (source === destination) {
+	private async undo(): Promise<void> {
+		await this.fileOperationService.undo();
+		this.directoryService.refresh();
+	}
+
+	private async showProperties(entries: readonly SideXExplorerEntry[]): Promise<void> {
+		if (!entries.length) {
 			return;
 		}
-		try {
-			await this.explorerService.rename(source, destination);
-			this.directoryService.refresh();
-		} catch (error) {
-			this.notificationService.error(String(error));
+		if (entries.length > 1) {
+			const totalSize = entries.reduce((sum, entry) => sum + (entry.isDir ? 0 : entry.size), 0);
+			await this.dialogService.info(
+				localize('sidex.properties.multipleTitle', '属性 — {0} 个项目', entries.length),
+				[
+					localize('sidex.properties.totalSize', '总大小：{0}', formatBytes(totalSize)),
+					'',
+					...entries.slice(0, 50).map(entry => entry.path),
+					...(entries.length > 50 ? ['…'] : [])
+				].join('\n')
+			);
+			return;
 		}
+
+		const entry = entries[0];
+		const lines: string[] = [];
+		try {
+			const stat = await this.explorerService.stat(entry.path);
+			lines.push(localize('sidex.properties.type', '类型：{0}', entry.isDir ? localize('sidex.fileList.folder', '文件夹') : localize('sidex.fileList.file', '文件')));
+			lines.push(localize('sidex.properties.size', '大小：{0}', entry.isDir ? '—' : formatBytes(stat.size)));
+			lines.push(localize('sidex.properties.modified', '修改时间：{0}', new Date(stat.modified * 1000).toLocaleString()));
+			lines.push(localize('sidex.properties.created', '创建时间：{0}', new Date(stat.created * 1000).toLocaleString()));
+			lines.push(localize('sidex.properties.readonly', '只读：{0}', stat.readOnly ? localize('sidex.yes', '是') : localize('sidex.no', '否')));
+		} catch {
+			// 文件已被删除时只展示路径。
+		}
+		lines.push('');
+		lines.push(localize('sidex.properties.path', '位置：{0}', entry.path));
+		await this.dialogService.info(
+			localize('sidex.properties.title', '属性 — {0}', entry.name),
+			lines.join('\n')
+		);
 	}
 
 	/**

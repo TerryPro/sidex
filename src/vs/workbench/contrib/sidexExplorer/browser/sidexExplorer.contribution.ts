@@ -8,6 +8,11 @@
  *--------------------------------------------------------------------------------------------*/
 
 import './media/sidexExplorer.css';
+import './fileOperationService.js';
+import './fileListCommands.js';
+import './systemDragDrop.contribution.js';
+import './directoryLayout.contribution.js';
+import './terminalTabIsolation.js';
 
 import { toAction } from '../../../../base/common/actions.js';
 import { Codicon } from '../../../../base/common/codicons.js';

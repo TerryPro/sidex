@@ -348,6 +348,78 @@
 	min-height: 0;
 }
 
+/* 收藏与最近目录固定在导航树上方，不占用滚动区域。 */
+.sidex-navigation-places {
+	flex: 0 0 auto;
+	padding: 4px 0 2px;
+	border-bottom: 1px solid var(--vscode-editorGroup-border, rgba(128, 128, 128, 0.2));
+	max-height: 45%;
+	overflow-y: auto;
+}
+
+.sidex-navigation-section {
+	padding: 2px 0;
+}
+
+.sidex-navigation-section-header {
+	padding: 4px 12px 2px;
+	font-size: 11px;
+	font-weight: 600;
+	opacity: 0.7;
+	text-transform: uppercase;
+}
+
+.sidex-navigation-place {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	height: 26px;
+	padding: 0 8px 0 20px;
+	white-space: nowrap;
+	cursor: default;
+	color: var(--vscode-foreground);
+	user-select: none;
+	-webkit-user-select: none;
+}
+
+.sidex-navigation-place:hover {
+	background-color: var(--vscode-list-hoverBackground);
+}
+
+.sidex-navigation-place.active {
+	background-color: var(--vscode-list-activeSelectionBackground);
+	color: var(--vscode-list-activeSelectionForeground);
+}
+
+.sidex-navigation-place-icon {
+	flex: 0 0 auto;
+	font-size: 14px;
+	opacity: 0.9;
+}
+
+.sidex-navigation-place-label {
+	flex: 1 1 auto;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.sidex-navigation-place-remove {
+	flex: 0 0 auto;
+	width: 16px;
+	text-align: center;
+	border-radius: 3px;
+	opacity: 0;
+}
+
+.sidex-navigation-place:hover .sidex-navigation-place-remove {
+	opacity: 0.75;
+}
+
+.sidex-navigation-place-remove:hover {
+	background-color: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.25));
+	opacity: 1;
+}
+
 .sidex-navigation-tree {
 	height: 100%;
 	box-sizing: border-box;
@@ -654,6 +726,21 @@
 
 .sidex-file-row.drop-target {
 	box-shadow: inset 0 0 0 1px var(--vscode-focusBorder);
+}
+
+.sidex-file-list.drop-target-list {
+	outline: 1px dashed var(--vscode-focusBorder);
+	outline-offset: -1px;
+}
+
+.sidex-directory-content.drop-target {
+	outline: 1px dashed var(--vscode-focusBorder);
+	outline-offset: -1px;
+}
+
+.sidex-directory-tab.drop-target {
+	outline: 1px solid var(--vscode-focusBorder);
+	outline-offset: -1px;
 }
 
 .sidex-file-list {

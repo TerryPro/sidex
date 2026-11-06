@@ -41,6 +41,7 @@ export interface IDirectoryService {
 	readonly onDidChange: Event<void>;
 	readonly onDidChangeDrives: Event<void>;
 	readonly onDidChangeSelection: Event<void>;
+	readonly onDidChangePlaces: Event<void>;
 
 	readonly tabs: readonly DirectoryTab[];
 	readonly activeTab: DirectoryTab | undefined;
@@ -48,13 +49,24 @@ export interface IDirectoryService {
 	readonly drivesError: string | undefined;
 	readonly activeLocation: string;
 
+	/** 最近打开过的目录，最近使用的在前。 */
+	readonly recentLocations: readonly string[];
+	/** 收藏的目录；可固定显示在导航区域。 */
+	readonly favorites: readonly string[];
+	isFavorite(location: string): boolean;
+	toggleFavorite(location: string): void;
+	removeFavorite(location: string): void;
+	removeRecent(location: string): void;
+
 	getTab(id: string): DirectoryTab | undefined;
 
 	/** 当前目录标签（或指定标签）的选中项。 */
 	getSelection(tabId?: string): DirectorySelection | undefined;
+	/** 当前目录标签（或指定标签）的全部选中路径。 */
+	getSelectionPaths(tabId?: string): readonly string[];
 	/** 单击文件列表项时调用；导航或刷新会清空选中项。 */
-	select(entry: DirectorySelection): void;
-	/** 当前目录内的名称过滤词；空字符串表示不过滤。 */
+	select(entry: DirectorySelection, paths?: readonly string[]): void;
+	/** 当前目录内的名称过滤词；空字符串表示不过滤。每个标签各存一份。 */
 	readonly searchQuery: string;
 	setSearch(query: string): void;
 
@@ -69,6 +81,8 @@ export interface IDirectoryService {
 	goForward(): void;
 	goUp(): void;
 	refresh(): void;
+	/** 只刷新指定标签的目录内容，不切换活动标签。 */
+	refreshTab(tabId: string): void;
 
 	canGoBack(): boolean;
 	canGoForward(): boolean;
@@ -140,14 +154,24 @@ export class DirectoryService extends Disposable implements IDirectoryService {
 	private readonly _onDidChangeSelection = this._register(new Emitter<void>());
 	readonly onDidChangeSelection = this._onDidChangeSelection.event;
 
+	private readonly _onDidChangePlaces = this._register(new Emitter<void>());
+	readonly onDidChangePlaces = this._onDidChangePlaces.event;
+
+	private static readonly FAVORITES_KEY = 'sidex.directory.favorites';
+	private static readonly RECENT_KEY = 'sidex.directory.recent';
+	private static readonly MAX_RECENT = 12;
+
 	private readonly _selectionByTab = new Map<string, DirectorySelection>();
+	private readonly _selectionPathsByTab = new Map<string, string[]>();
+	private readonly _searchByTab = new Map<string, string>();
+	private _favorites: string[] = [];
+	private _recent: string[] = [];
 	private _tabs: DirectoryTab[] = [];
 	private _activeTabId: string | undefined;
 	private _drives: SideXDriveInfo[] = [];
 	private _drivesError: string | undefined;
 	private _tabCounter = 0;
 	private _initialized = false;
-	private _searchQuery = '';
 
 	constructor(
 		@ISideXExplorerService private readonly explorerService: ISideXExplorerService,
@@ -201,17 +225,120 @@ export class DirectoryService extends Disposable implements IDirectoryService {
 		}
 	}
 
-	/** 当前目录内的名称过滤词；空字符串表示不过滤。 */
+	/** 当前目录内的名称过滤词；每个目录标签各存一份。 */
 	get searchQuery(): string {
-		return this._searchQuery;
+		return this._activeTabId ? this._searchByTab.get(this._activeTabId) ?? '' : '';
 	}
 
 	setSearch(query: string): void {
-		if (this._searchQuery === query) {
+		const tabId = this._activeTabId;
+		if (!tabId || (this._searchByTab.get(tabId) ?? '') === query) {
 			return;
 		}
-		this._searchQuery = query;
+		if (query) {
+			this._searchByTab.set(tabId, query);
+		} else {
+			this._searchByTab.delete(tabId);
+		}
 		this._onDidChange.fire();
+	}
+
+	get recentLocations(): readonly string[] {
+		return this._recent;
+	}
+
+	get favorites(): readonly string[] {
+		return this._favorites;
+	}
+
+	isFavorite(location: string): boolean {
+		const normalized = normalizeLocation(location).toLowerCase();
+		return this._favorites.some(item => item.toLowerCase() === normalized);
+	}
+
+	toggleFavorite(location: string): void {
+		const normalized = normalizeLocation(location);
+		if (!normalized) {
+			return;
+		}
+		if (this.isFavorite(normalized)) {
+			this._favorites = this._favorites.filter(item => item.toLowerCase() !== normalized.toLowerCase());
+		} else {
+			this._favorites = [normalized, ...this._favorites];
+		}
+		this.persistPlaces();
+		this._onDidChangePlaces.fire();
+	}
+
+	removeFavorite(location: string): void {
+		const normalized = location.toLowerCase();
+		const next = this._favorites.filter(item => item.toLowerCase() !== normalized);
+		if (next.length === this._favorites.length) {
+			return;
+		}
+		this._favorites = next;
+		this.persistPlaces();
+		this._onDidChangePlaces.fire();
+	}
+
+	removeRecent(location: string): void {
+		const normalized = location.toLowerCase();
+		const next = this._recent.filter(item => item.toLowerCase() !== normalized);
+		if (next.length === this._recent.length) {
+			return;
+		}
+		this._recent = next;
+		this.persistPlaces();
+		this._onDidChangePlaces.fire();
+	}
+
+	private restorePlaces(): void {
+		try {
+			const favorites = JSON.parse(this.storageService.get(DirectoryService.FAVORITES_KEY, StorageScope.PROFILE) ?? '[]');
+			if (Array.isArray(favorites)) {
+				this._favorites = favorites
+					.filter((item): item is string => typeof item === 'string' && !!normalizeLocation(item))
+					.map(item => normalizeLocation(item));
+			}
+		} catch {
+			// 损坏的收藏数据忽略即可。
+		}
+		try {
+			const recent = JSON.parse(this.storageService.get(DirectoryService.RECENT_KEY, StorageScope.PROFILE) ?? '[]');
+			if (Array.isArray(recent)) {
+				this._recent = recent
+					.filter((item): item is string => typeof item === 'string' && !!normalizeLocation(item))
+					.map(item => normalizeLocation(item))
+					.slice(0, DirectoryService.MAX_RECENT);
+			}
+		} catch {
+			// 损坏的最近记录忽略即可。
+		}
+	}
+
+	private persistPlaces(): void {
+		this.storageService.store(
+			DirectoryService.FAVORITES_KEY,
+			JSON.stringify(this._favorites),
+			StorageScope.PROFILE,
+			StorageTarget.MACHINE
+		);
+		this.storageService.store(
+			DirectoryService.RECENT_KEY,
+			JSON.stringify(this._recent),
+			StorageScope.PROFILE,
+			StorageTarget.MACHINE
+		);
+	}
+
+	private recordRecent(location: string): void {
+		const normalized = normalizeLocation(location);
+		if (!normalized) {
+			return;
+		}
+		const next = [normalized, ...this._recent.filter(item => item.toLowerCase() !== normalized.toLowerCase())];
+		this._recent = next.slice(0, DirectoryService.MAX_RECENT);
+		this.persistPlaces();
 	}
 
 	get tabs(): readonly DirectoryTab[] {
@@ -230,12 +357,25 @@ export class DirectoryService extends Disposable implements IDirectoryService {
 		return tabId ? this._selectionByTab.get(tabId) : undefined;
 	}
 
-	select(entry: DirectorySelection): void {
+	getSelectionPaths(tabId = this._activeTabId): readonly string[] {
+		if (!tabId) {
+			return [];
+		}
+		const paths = this._selectionPathsByTab.get(tabId);
+		if (paths?.length) {
+			return paths;
+		}
+		const primary = this._selectionByTab.get(tabId);
+		return primary ? [primary.path] : [];
+	}
+
+	select(entry: DirectorySelection, paths?: readonly string[]): void {
 		const tabId = this._activeTabId;
 		if (!tabId) {
 			return;
 		}
 		this._selectionByTab.set(tabId, entry);
+		this._selectionPathsByTab.set(tabId, paths?.length ? [...paths] : [entry.path]);
 		this._onDidChangeSelection.fire();
 	}
 
@@ -266,6 +406,7 @@ export class DirectoryService extends Disposable implements IDirectoryService {
 			console.error('[SideX] list_drives failed', error);
 		}
 		this._onDidChangeDrives.fire();
+		this.restorePlaces();
 
 		if (!this._tabs.length) {
 			if (!this.restoreTabs()) {
@@ -277,6 +418,9 @@ export class DirectoryService extends Disposable implements IDirectoryService {
 		} else {
 			this._retitleTabs();
 			this._onDidChange.fire();
+		}
+		if (this.activeTab?.location) {
+			this.recordRecent(this.activeTab.location);
 		}
 	}
 
@@ -292,6 +436,7 @@ export class DirectoryService extends Disposable implements IDirectoryService {
 		};
 		this._tabs = [...this._tabs, tab];
 		this._activeTabId = tab.id;
+		this.recordRecent(normalized);
 		this._onDidChange.fire();
 		this.persistTabs();
 		return tab;
@@ -306,6 +451,8 @@ export class DirectoryService extends Disposable implements IDirectoryService {
 		const wasActive = this._activeTabId === id;
 		this._tabs = this._tabs.filter(tab => tab.id !== id);
 		this._selectionByTab.delete(id);
+		this._selectionPathsByTab.delete(id);
+		this._searchByTab.delete(id);
 
 		if (!this._tabs.length) {
 			this._activeTabId = undefined;
@@ -347,8 +494,11 @@ export class DirectoryService extends Disposable implements IDirectoryService {
 		}
 
 		this._selectionByTab.delete(tab.id);
+		this._selectionPathsByTab.delete(tab.id);
+		this._searchByTab.delete(tab.id);
 		const history = tab.history.slice(0, tab.historyIndex + 1);
 		history.push(normalized);
+		this.recordRecent(normalized);
 		this._updateTab(tab.id, {
 			location: normalized,
 			title: this.titleForLocation(normalized),
@@ -365,6 +515,9 @@ export class DirectoryService extends Disposable implements IDirectoryService {
 		const historyIndex = tab.historyIndex - 1;
 		const location = tab.history[historyIndex];
 		this._selectionByTab.delete(tab.id);
+		this._selectionPathsByTab.delete(tab.id);
+		this._searchByTab.delete(tab.id);
+		this.recordRecent(location);
 		this._updateTab(tab.id, {
 			location,
 			title: this.titleForLocation(location),
@@ -380,6 +533,9 @@ export class DirectoryService extends Disposable implements IDirectoryService {
 		const historyIndex = tab.historyIndex + 1;
 		const location = tab.history[historyIndex];
 		this._selectionByTab.delete(tab.id);
+		this._selectionPathsByTab.delete(tab.id);
+		this._searchByTab.delete(tab.id);
+		this.recordRecent(location);
 		this._updateTab(tab.id, {
 			location,
 			title: this.titleForLocation(location),
@@ -402,6 +558,15 @@ export class DirectoryService extends Disposable implements IDirectoryService {
 		}
 		this._updateTab(tab.id, { refreshToken: tab.refreshToken + 1 });
 		// 刷新后文件可能已变化，让预览面板重新读取。
+		this._onDidChangeSelection.fire();
+	}
+
+	refreshTab(tabId: string): void {
+		const tab = this.getTab(tabId);
+		if (!tab) {
+			return;
+		}
+		this._updateTab(tab.id, { refreshToken: tab.refreshToken + 1 });
 		this._onDidChangeSelection.fire();
 	}
 

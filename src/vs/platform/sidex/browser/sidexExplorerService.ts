@@ -83,12 +83,29 @@ export class SideXExplorerService implements ISideXExplorerService {
 		await invoke('rename', { oldPath, newPath });
 	}
 
-	async moveToTrash(path: string): Promise<void> {
-		await invoke('move_to_trash', { path });
+	async moveToTrash(path: string): Promise<string | undefined> {
+		const id = await invoke<string | null>('move_to_trash', { path });
+		return typeof id === 'string' ? id : undefined;
+	}
+
+	async restoreFromTrash(id: string | undefined, path: string): Promise<void> {
+		await invoke('restore_from_trash', { id: id ?? null, path });
 	}
 
 	async copy(source: string, destination: string, recursive = true): Promise<void> {
 		await invoke('copy_path', { source, dest: destination, recursive });
+	}
+
+	async movePath(source: string, destination: string): Promise<void> {
+		await invoke('move_path', { source, dest: destination });
+	}
+
+	async remove(path: string, recursive: boolean): Promise<void> {
+		await invoke('remove', { path, recursive });
+	}
+
+	async exists(path: string): Promise<boolean> {
+		return invoke<boolean>('exists', { path });
 	}
 }
 
