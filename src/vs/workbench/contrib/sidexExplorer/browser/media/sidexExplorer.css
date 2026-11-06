@@ -720,6 +720,28 @@
 	vertical-align: top;
 }
 
+/* 缩略图就绪后替换文件图标；生成失败时保持主题图标不变。 */
+.sidex-file-icon.has-thumbnail {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 20px;
+	height: 20px;
+	flex-basis: 20px;
+}
+
+.sidex-file-icon.has-thumbnail::before {
+	display: none;
+}
+
+.sidex-file-thumb {
+	width: 20px;
+	height: 20px;
+	object-fit: contain;
+	border-radius: 2px;
+	pointer-events: none;
+}
+
 .sidex-file-name-text {
 	overflow: hidden;
 	text-overflow: ellipsis;

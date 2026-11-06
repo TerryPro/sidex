@@ -34,11 +34,8 @@ serde_json = "1.0"
 log = "0.4"
 notify = { version = "7", features = ["macos_fsevent"] }
 portable-pty = "0.8"
-walkdir = "2"
-ignore = { workspace = true }
 rusqlite = { version = "0.31", features = ["bundled"] }
 tokio = { version = "1", features = ["full"] }
-hostname = "0.4"
 dirs = "5"
 reqwest = { version = "0.12", features = [
   "rustls-tls",
@@ -48,14 +45,11 @@ reqwest = { version = "0.12", features = [
   "brotli",
 ] }
 
-# Compression & encoding
-flate2 = "1"
-zip = "2"
+# Encoding
 base64 = "0.22"
 
 # Crypto
 sha2 = "0.10"
-hmac = "0.12"
 dotenvy = "0.15"
 md5 = "0.7"
 uuid = { version = "1", features = ["v4"] }
@@ -63,33 +57,19 @@ rand = "0.8"
 chrono = "0.4"
 
 # Path utilities
-pathdiff = "0.2"
-dunce = "1"
 glob = "0.3"
 globset = "0.4"
 
 # Search indexing
-dashmap = "6"
-rayon = "1.10"
 regex = "1"
 memchr = "2"
 
 # Process & terminal management
 which = "6"
-crossbeam = "0.8"
-
-# WebSocket for orchestration
-tokio-tungstenite = { version = "0.24", features = ["native-tls"] }
-futures-util = "0.3"
 
 # Extension API helpers
-arboard = "3"
-open = "5"
-url = "2"
 trash = "5"
 
-anyhow = "1"
-sidex-db = { path = "../crates/sidex-db" }
 sidex-settings = { path = "../crates/sidex-settings" }
 sidex-theme = { path = "../crates/sidex-theme" }
 

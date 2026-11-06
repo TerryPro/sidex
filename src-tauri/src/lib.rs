@@ -1,12 +1,12 @@
 mod app_dirs;
 mod commands;
 
-use commands::db_state::SidexDbState;
 use commands::settings::SettingsStore;
 use commands::storage::StorageDb;
 use commands::terminal::TerminalStore;
 use commands::watch::WatchStore;
 use commands::window::restore_and_show;
+use std::io::{Read, Seek, SeekFrom};
 use std::sync::Arc;
 #[cfg(target_os = "macos")]
 use tauri::menu::{Menu, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
@@ -354,6 +354,38 @@ fn fix_macos_path() {
     }
 }
 
+/// Parses a single `bytes=start-end` range. Multi-range requests fall back to
+/// the full response, which is acceptable for thumbnails and previews.
+fn parse_range_header(value: &str, total: u64) -> Option<(u64, u64)> {
+    let spec = value.strip_prefix("bytes=")?;
+    if spec.contains(',') {
+        return None;
+    }
+    let (start_text, end_text) = spec.split_once('-')?;
+
+    if start_text.is_empty() {
+        let suffix: u64 = end_text.parse().ok()?;
+        if suffix == 0 || total == 0 {
+            return None;
+        }
+        return Some((total.saturating_sub(suffix), total - 1));
+    }
+
+    let start: u64 = start_text.parse().ok()?;
+    if start >= total {
+        return None;
+    }
+    let end = if end_text.is_empty() {
+        total - 1
+    } else {
+        end_text.parse::<u64>().ok()?.min(total - 1)
+    };
+    if end < start {
+        return None;
+    }
+    Some((start, end))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 #[allow(clippy::too_many_lines)]
 pub fn run() {
@@ -490,17 +522,6 @@ pub fn run() {
                     return;
                 }
 
-                let Ok(data) = std::fs::read(&canonical) else {
-                    responder.respond(
-                        tauri::http::Response::builder()
-                            .status(404)
-                            .header("Access-Control-Allow-Origin", "*")
-                            .body(Vec::new())
-                            .unwrap(),
-                    );
-                    return;
-                };
-
                 let mime = match std::path::Path::new(decoded.as_ref())
                     .extension()
                     .and_then(|e| e.to_str())
@@ -510,7 +531,15 @@ pub fn run() {
                     Some("gif") => "image/gif",
                     Some("svg") => "image/svg+xml",
                     Some("webp") => "image/webp",
+                    Some("bmp") => "image/bmp",
                     Some("ico") => "image/x-icon",
+                    Some("pdf") => "application/pdf",
+                    Some("mp4" | "m4v") => "video/mp4",
+                    Some("webm") => "video/webm",
+                    Some("mkv") => "video/x-matroska",
+                    Some("mov") => "video/quicktime",
+                    Some("avi") => "video/x-msvideo",
+                    Some("wmv") => "video/x-ms-wmv",
                     Some("woff") => "font/woff",
                     Some("woff2") => "font/woff2",
                     Some("ttf") => "font/ttf",
@@ -522,10 +551,55 @@ pub fn run() {
                     _ => "application/octet-stream",
                 };
 
+                // Media elements (video thumbnails) probe with Range requests; serve
+                // only the requested slice instead of reading the whole file.
+                let total_size = std::fs::metadata(&canonical).map(|m| m.len()).unwrap_or(0);
+                let range = request
+                    .headers()
+                    .get("range")
+                    .and_then(|value| value.to_str().ok())
+                    .and_then(|value| parse_range_header(value, total_size));
+
+                if let Some((start, end)) = range {
+                    if let Ok(mut file) = std::fs::File::open(&canonical) {
+                        if file.seek(SeekFrom::Start(start)).is_ok() {
+                            let length = (end - start + 1) as usize;
+                            let mut buffer = vec![0u8; length];
+                            if file.read_exact(&mut buffer).is_ok() {
+                                let _ = responder.respond(
+                                    tauri::http::Response::builder()
+                                        .status(206)
+                                        .header("Content-Type", mime)
+                                        .header("Content-Range", format!("bytes {start}-{end}/{total_size}"))
+                                        .header("Accept-Ranges", "bytes")
+                                        .header("Content-Length", length.to_string())
+                                        .header("Access-Control-Allow-Origin", "*")
+                                        .body(buffer)
+                                        .unwrap(),
+                                );
+                                return;
+                            }
+                        }
+                    }
+                }
+
+                let Ok(data) = std::fs::read(&canonical) else {
+                    responder.respond(
+                        tauri::http::Response::builder()
+                            .status(404)
+                            .header("Access-Control-Allow-Origin", "*")
+                            .body(Vec::new())
+                            .unwrap(),
+                    );
+                    return;
+                };
+
                 responder.respond(
                     tauri::http::Response::builder()
                         .status(200)
                         .header("Content-Type", mime)
+                        .header("Accept-Ranges", "bytes")
+                        .header("Content-Length", data.len().to_string())
                         .header("Access-Control-Allow-Origin", "*")
                         .body(data)
                         .unwrap(),
@@ -576,19 +650,6 @@ pub fn run() {
                     }
                 }
             }
-
-            let sidex_db_path = app_data.join("sidex_state.db");
-            // Same graceful-recreate policy as the storage DB above.
-            let sidex_db = match sidex_db::Database::open(&sidex_db_path) {
-                Ok(db) => db,
-                Err(e) => {
-                    log::error!("state DB open failed ({e}); recreating {}", sidex_db_path.display());
-                    let _ = std::fs::remove_file(&sidex_db_path);
-                    sidex_db::Database::open(&sidex_db_path)
-                        .map_err(|e| format!("failed to initialize sidex-db state database: {e}"))?
-                }
-            };
-            app.manage(Arc::new(SidexDbState::new(sidex_db)));
 
             if let Err(err) = commands::profiles::initialize(app.handle()) {
                 log::warn!("profile storage disabled: {err}");
@@ -682,7 +743,6 @@ pub fn run() {
             commands::terminal_resize,
             commands::terminal_kill,
             commands::terminal_get_pid,
-            commands::exec,
             commands::get_default_shell,
             commands::check_shell_exists,
             commands::get_available_shells,
@@ -690,11 +750,7 @@ pub fn run() {
             commands::setup_zsh_dotdir,
             commands::search_files,
             commands::search_text,
-            commands::create_window,
-            commands::close_window,
-            commands::set_window_title,
             commands::frontend_ready,
-            commands::get_monitors,
             commands::save_window_state,
             commands::profiles_load,
             commands::profiles_save,
@@ -704,11 +760,10 @@ pub fn run() {
             commands::secret_set,
             commands::secret_delete,
             commands::secret_keys,
-            commands::get_os_info,
-            commands::get_env,
             commands::get_all_env,
             commands::get_user_data_dir,
             commands::storage_get,
+            commands::storage_list,
             commands::storage_set,
             commands::storage_delete,
             // Layered settings
@@ -719,11 +774,6 @@ pub fn run() {
             commands::settings_modify_jsonc,
             commands::proxy_request,
             commands::proxy_request_full,
-            commands::clipboard_read_text,
-            commands::clipboard_write_text,
-            commands::open_external_url,
-            commands::env_shell,
-            commands::env_app_host,
             // File watching
             commands::watch_start,
             commands::watch_stop,
@@ -767,4 +817,32 @@ pub fn run() {
                 // PTY cleanup is handled by the terminal store's drop path.
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_range_header;
+
+    #[test]
+    fn parses_bounded_and_open_ranges() {
+        assert_eq!(parse_range_header("bytes=0-4", 10), Some((0, 4)));
+        assert_eq!(parse_range_header("bytes=5-", 10), Some((5, 9)));
+        assert_eq!(parse_range_header("bytes=5-20", 10), Some((5, 9)));
+    }
+
+    #[test]
+    fn parses_suffix_ranges() {
+        assert_eq!(parse_range_header("bytes=-3", 10), Some((7, 9)));
+        assert_eq!(parse_range_header("bytes=-20", 10), Some((0, 9)));
+    }
+
+    #[test]
+    fn rejects_invalid_ranges() {
+        assert_eq!(parse_range_header("items=0-1", 10), None);
+        assert_eq!(parse_range_header("bytes=9-3", 10), None);
+        assert_eq!(parse_range_header("bytes=10-", 10), None);
+        assert_eq!(parse_range_header("bytes=0-1,3-4", 10), None);
+        assert_eq!(parse_range_header("bytes=-0", 10), None);
+        assert_eq!(parse_range_header("bytes=0-", 0), None);
+    }
 }

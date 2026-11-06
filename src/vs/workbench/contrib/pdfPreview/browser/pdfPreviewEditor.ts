@@ -22,6 +22,7 @@ import { PdfPreviewEditorInput } from './pdfPreviewEditorInput.js';
 // 只在打开 PDF 时才动态加载 pdf.js 内核与 viewer，避免进入启动主包。
 import type * as PdfjsLib from 'pdfjs-dist';
 import type * as PdfViewerModule from 'pdfjs-dist/web/pdf_viewer.mjs';
+import { loadPdfjsCore, loadPdfViewerModule } from './pdfjsRuntime.js';
 import './media/pdfPreview.css';
 
 const ZOOM_FACTOR = 1.25;
@@ -405,14 +406,9 @@ export class PdfPreviewEditor extends EditorPane {
 
 	private async initializePdfjs(): Promise<void> {
 		try {
-			const pdfjs = await import('pdfjs-dist');
-			// worker 由 scripts/copy-pdfjs-assets.js 复制到 public/pdfjs/，用 .js 后缀
-			// 保证任何静态服务都会返回 JS 的 MIME 类型
-			pdfjs.GlobalWorkerOptions.workerSrc = new URL('pdfjs/pdf.worker.min.js', document.baseURI).href;
-			(globalThis as unknown as { pdfjsLib: typeof pdfjs }).pdfjsLib = pdfjs;
-
+			const pdfjs = await loadPdfjsCore();
 			// pdf_viewer 在模块求值时会从 globalThis.pdfjsLib 解构内核 API，因此必须后加载
-			const viewerModule = await import('pdfjs-dist/web/pdf_viewer.mjs');
+			const viewerModule = await loadPdfViewerModule();
 			await import('pdfjs-dist/web/pdf_viewer.css');
 
 			if (this.disposed) {

@@ -35,6 +35,7 @@ import { IEditorService } from '../../../services/editor/common/editorService.js
 import { IDirectoryService } from './directoryService.js';
 import { DirectoryViewEditorInput } from './directoryViewEditorInput.js';
 import { driveIconSvg } from './explorerIcons.js';
+import { IThumbnailService } from './thumbnailService.js';
 
 /** 一个目录标签对应的独立视图，切换标签时保留内容与滚动位置。 */
 interface DirectoryTabView {
@@ -412,7 +413,8 @@ export class DirectoryViewEditor extends EditorPane {
 		@ILanguageService private readonly languageService: ILanguageService,
 		@IQuickInputService private readonly quickInputService: IQuickInputService,
 		@IDialogService private readonly dialogService: IDialogService,
-		@INotificationService private readonly notificationService: INotificationService
+		@INotificationService private readonly notificationService: INotificationService,
+		@IThumbnailService private readonly thumbnailService: IThumbnailService
 	) {
 		super(DirectoryViewEditor.ID, group, telemetryService, themeService, storageService);
 
@@ -958,6 +960,7 @@ export class DirectoryViewEditor extends EditorPane {
 		const nameCell = append(row, $('span.sidex-file-name'));
 		const icon = append(nameCell, $('span.sidex-file-icon'));
 		this.applyFileIcon(icon, entry);
+		this.attachThumbnail(icon, entry);
 		const text = append(nameCell, $('span.sidex-file-name-text'));
 		text.textContent = entry.name;
 
@@ -1154,6 +1157,28 @@ export class DirectoryViewEditor extends EditorPane {
 		} catch (error) {
 			this.notificationService.error(String(error));
 		}
+	}
+
+	/**
+	 * 异步获取缩略图；行被虚拟滚动回收或目录已切换时直接丢弃结果。
+	 * 失败时保持主题图标，不改变现有回退行为。
+	 */
+	private attachThumbnail(icon: HTMLElement, entry: SideXExplorerEntry): void {
+		if (entry.isDir) {
+			return;
+		}
+		void this.thumbnailService.getThumbnail(entry).then(dataUrl => {
+			if (!dataUrl || !icon.isConnected) {
+				return;
+			}
+			const image = document.createElement('img');
+			image.className = 'sidex-file-thumb';
+			image.src = dataUrl;
+			image.alt = '';
+			image.draggable = false;
+			icon.classList.add('has-thumbnail');
+			icon.appendChild(image);
+		});
 	}
 
 	/** 优先使用文件图标主题；没有配置图标主题时回退到 codicon。 */

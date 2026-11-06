@@ -29,11 +29,15 @@ import { IViewsService } from '../../../services/views/common/viewsService.js';
 import { INotificationService } from '../../../../platform/notification/common/notification.js';
 import { ConfigurationTarget, IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { IStorageService, StorageScope } from '../../../../platform/storage/common/storage.js';
+import { InstantiationType, registerSingleton } from '../../../../platform/instantiation/common/extensions.js';
 import { IDirectoryService } from './directoryService.js';
 import { DirectoryViewEditor } from './directoryViewEditor.js';
 import { DirectoryViewEditorInput } from './directoryViewEditorInput.js';
 import { NavigationView } from './navigationView.js';
 import { SideXPreviewPane } from './previewPane.js';
+import { IThumbnailService, ThumbnailService } from './thumbnailService.js';
+
+registerSingleton(IThumbnailService, ThumbnailService, InstantiationType.Delayed);
 
 Registry.as<IEditorPaneRegistry>(EditorExtensions.EditorPane).registerEditorPane(
 	EditorPaneDescriptor.create(DirectoryViewEditor, DirectoryViewEditor.ID, localize('sidex.directoryView', '文件列表')),
