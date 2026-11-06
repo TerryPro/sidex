@@ -20,7 +20,6 @@ import {
 	DynamicWorkbenchSecurityConfiguration,
 	Extensions,
 	IConfigurationMigrationRegistry,
-	problemsConfigurationNodeBase,
 	windowConfigurationNodeBase,
 	workbenchConfigurationNodeBase
 } from '../common/configuration.js';
@@ -1582,21 +1581,6 @@ const registry = Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Con
 
 	// Dynamic Window Configuration
 	registerWorkbenchContribution2(DynamicWindowConfiguration.ID, DynamicWindowConfiguration, WorkbenchPhase.Eventually);
-
-	// Problems
-	registry.registerConfiguration({
-		...problemsConfigurationNodeBase,
-		properties: {
-			'problems.visibility': {
-				type: 'boolean',
-				default: true,
-				description: localize(
-					'problems.visibility',
-					'Controls whether the problems are visible throughout the editor and workbench.'
-				)
-			}
-		}
-	});
 
 	// Zen Mode
 	registry.registerConfiguration({

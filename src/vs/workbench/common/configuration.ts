@@ -54,13 +54,6 @@ export const securityConfigurationNodeBase = Object.freeze<IConfigurationNode>({
 	order: 7
 });
 
-export const problemsConfigurationNodeBase = Object.freeze<IConfigurationNode>({
-	id: 'problems',
-	title: localize('problemsConfigurationTitle', 'Problems'),
-	type: 'object',
-	order: 101
-});
-
 export const windowConfigurationNodeBase = Object.freeze<IConfigurationNode>({
 	id: 'window',
 	order: 8,

@@ -216,9 +216,6 @@ import './contrib/sash/browser/sash.contribution.js';
 // Quick Diff：SideX 不提供源代码管理界面，只保留快速差异服务供编辑器使用。
 import './contrib/scm/browser/scmService.contribution.js';
 
-// Markers
-import './contrib/markers/browser/markers.contribution.js';
-
 // Commands
 import './contrib/commands/common/commands.contribution.js';
 

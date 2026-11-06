@@ -19,11 +19,9 @@ import { IEditorOpenContext } from '../../../common/editor.js';
 import { IEditorGroup } from '../../../services/editor/common/editorGroupsService.js';
 import { PdfPreviewEditorInput } from './pdfPreviewEditorInput.js';
 
-// 必须最先执行：把 pdf.js 内核挂到全局，供 pdf_viewer 在求值时取用
-import './pdfjsSetup.js';
-import * as pdfjsLib from 'pdfjs-dist';
-import { EventBus, FindState, PDFFindController, PDFLinkService, PDFViewer } from 'pdfjs-dist/web/pdf_viewer.mjs';
-import 'pdfjs-dist/web/pdf_viewer.css';
+// 只在打开 PDF 时才动态加载 pdf.js 内核与 viewer，避免进入启动主包。
+import type * as PdfjsLib from 'pdfjs-dist';
+import type * as PdfViewerModule from 'pdfjs-dist/web/pdf_viewer.mjs';
 import './media/pdfPreview.css';
 
 const ZOOM_FACTOR = 1.25;
@@ -72,12 +70,14 @@ export class PdfPreviewEditor extends EditorPane {
 	private messageContainer: HTMLElement | undefined;
 
 	private readonly viewerAbort = new AbortController();
-	private eventBus: EventBus | undefined;
-	private linkService: PDFLinkService | undefined;
-	private findController: PDFFindController | undefined;
-	private pdfViewer: PDFViewer | undefined;
-	private pdfDocument: pdfjsLib.PDFDocumentProxy | undefined;
-	private loadingTask: pdfjsLib.PDFDocumentLoadingTask | undefined;
+	private pdfjs: typeof import('pdfjs-dist') | undefined;
+	private pdfjsReady: Promise<void> | undefined;
+	private eventBus: PdfViewerModule.EventBus | undefined;
+	private linkService: PdfViewerModule.PDFLinkService | undefined;
+	private findController: PdfViewerModule.PDFFindController | undefined;
+	private pdfViewer: PdfViewerModule.PDFViewer | undefined;
+	private pdfDocument: PdfjsLib.PDFDocumentProxy | undefined;
+	private loadingTask: PdfjsLib.PDFDocumentLoadingTask | undefined;
 	private currentInput: PdfPreviewEditorInput | undefined;
 
 	private thumbnails: ThumbnailEntry[] = [];
@@ -130,7 +130,7 @@ export class PdfPreviewEditor extends EditorPane {
 
 		parent.appendChild(this.container);
 
-		this.createViewer();
+		this.pdfjsReady = this.initializePdfjs();
 
 		// 滚轮：Ctrl/⌘ 缩放，其余情况由我们自己滚动容器，
 		// 避免个别环境下嵌套滚动容器收不到原生的滚轮滚动
@@ -403,7 +403,37 @@ export class PdfPreviewEditor extends EditorPane {
 
 	// --- pdf.js 集成 ---
 
-	private createViewer(): void {
+	private async initializePdfjs(): Promise<void> {
+		try {
+			const pdfjs = await import('pdfjs-dist');
+			// worker 由 scripts/copy-pdfjs-assets.js 复制到 public/pdfjs/，用 .js 后缀
+			// 保证任何静态服务都会返回 JS 的 MIME 类型
+			pdfjs.GlobalWorkerOptions.workerSrc = new URL('pdfjs/pdf.worker.min.js', document.baseURI).href;
+			(globalThis as unknown as { pdfjsLib: typeof pdfjs }).pdfjsLib = pdfjs;
+
+			// pdf_viewer 在模块求值时会从 globalThis.pdfjsLib 解构内核 API，因此必须后加载
+			const viewerModule = await import('pdfjs-dist/web/pdf_viewer.mjs');
+			await import('pdfjs-dist/web/pdf_viewer.css');
+
+			if (this.disposed) {
+				return;
+			}
+			this.pdfjs = pdfjs;
+			this.createViewer(viewerModule);
+		} catch (error) {
+			this.showMessage(
+				localize(
+					'pdfPreview.runtimeError',
+					'加载 PDF 预览组件失败：{0}',
+					error instanceof Error ? error.message : String(error)
+				),
+				true
+			);
+		}
+	}
+
+	private createViewer(viewerModule: typeof import('pdfjs-dist/web/pdf_viewer.mjs')): void {
+		const { EventBus, FindState, PDFFindController, PDFLinkService, PDFViewer } = viewerModule;
 		const eventBus = new EventBus();
 		const linkService = new PDFLinkService({ eventBus });
 		const findController = new PDFFindController({ eventBus, linkService });
@@ -464,9 +494,11 @@ export class PdfPreviewEditor extends EditorPane {
 	}
 
 	private async loadDocument(token: CancellationToken): Promise<void> {
+		await this.pdfjsReady;
+
 		const resource = this.currentInput?.resource;
 		const viewer = this.pdfViewer;
-		if (!resource || !viewer) {
+		if (!resource || !viewer || !this.pdfjs) {
 			return;
 		}
 
@@ -489,7 +521,7 @@ export class PdfPreviewEditor extends EditorPane {
 			return;
 		}
 
-		const task = pdfjsLib.getDocument({
+		const task = this.pdfjs.getDocument({
 			data: bytes,
 			cMapUrl: new URL('pdfjs/cmaps/', document.baseURI).href,
 			cMapPacked: true,
@@ -603,7 +635,7 @@ export class PdfPreviewEditor extends EditorPane {
 		this.outlineContainer.classList.toggle('visible', showOutline);
 	}
 
-	private buildThumbnails(documentProxy: pdfjsLib.PDFDocumentProxy): void {
+	private buildThumbnails(documentProxy: PdfjsLib.PDFDocumentProxy): void {
 		this.disposeThumbnails();
 
 		this.thumbnailObserver = new IntersectionObserver(entries => {
@@ -695,7 +727,7 @@ export class PdfPreviewEditor extends EditorPane {
 		this.thumbnailsContainer.textContent = '';
 	}
 
-	private async loadOutline(documentProxy: pdfjsLib.PDFDocumentProxy): Promise<void> {
+	private async loadOutline(documentProxy: PdfjsLib.PDFDocumentProxy): Promise<void> {
 		if (!this.pdfDocument || this.pdfDocument !== documentProxy) {
 			return;
 		}

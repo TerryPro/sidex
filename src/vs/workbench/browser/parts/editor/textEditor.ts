@@ -153,7 +153,7 @@ export abstract class AbstractTextEditor<T extends IEditorViewState>
 		e: ITextResourceConfigurationChangeEvent,
 		resource: URI | undefined
 	): boolean {
-		return e.affectsConfiguration(resource, 'editor') || e.affectsConfiguration(resource, 'problems.visibility');
+		return e.affectsConfiguration(resource, 'editor');
 	}
 
 	private consumePendingConfigurationChangeEvent(): void {

@@ -389,7 +389,6 @@ function setupMenuActions() {
 		explorer: 'workbench.view.explorer',
 		search: 'workbench.view.search',
 		extensions: 'workbench.view.extensions',
-		problems: 'workbench.actions.view.problems',
 		output: 'workbench.action.output.toggleOutput',
 		terminal: 'workbench.action.terminal.toggleTerminal',
 		toggle_fullscreen: 'workbench.action.toggleFullScreen',

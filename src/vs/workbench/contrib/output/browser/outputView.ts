@@ -60,7 +60,6 @@ import { IModelDeltaDecoration, ITextModel } from '../../../../editor/common/mod
 import { Range } from '../../../../editor/common/core/range.js';
 import { FindDecorations } from '../../../../editor/contrib/find/browser/findDecorations.js';
 import { Memento } from '../../../common/memento.js';
-import { Markers } from '../../markers/common/markers.js';
 import { Action2, registerAction2 } from '../../../../platform/actions/common/actions.js';
 import { viewFilterSubmenu } from '../../../browser/parts/views/viewFilter.js';
 import { escapeRegExpCharacters } from '../../../../base/common/strings.js';
@@ -105,7 +104,7 @@ export class OutputViewPane extends FilterViewPane {
 		@IOutputService private readonly outputService: IOutputService,
 		@IStorageService storageService: IStorageService
 	) {
-		const memento = new Memento<IOutputViewState>(Markers.MARKERS_VIEW_STORAGE_ID, storageService);
+		const memento = new Memento<IOutputViewState>('workbench.panel.output', storageService);
 		const viewState = memento.getMemento(StorageScope.WORKSPACE, StorageTarget.MACHINE);
 		super(
 			{

@@ -165,11 +165,6 @@ fn build_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         )
         .separator()
         .item(
-            &MenuItemBuilder::with_id("problems", "Problems")
-                .accelerator("CmdOrCtrl+Shift+M")
-                .build(app)?,
-        )
-        .item(
             &MenuItemBuilder::with_id("output", "Output")
                 .accelerator("CmdOrCtrl+Shift+U")
                 .build(app)?,
