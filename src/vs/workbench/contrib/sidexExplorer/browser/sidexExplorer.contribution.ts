@@ -9,9 +9,11 @@
 
 import './media/sidexExplorer.css';
 
+import { toAction } from '../../../../base/common/actions.js';
 import { Codicon } from '../../../../base/common/codicons.js';
 import { isCancellationError } from '../../../../base/common/errors.js';
-import { Disposable } from '../../../../base/common/lifecycle.js';
+import { Disposable, DisposableStore, MutableDisposable } from '../../../../base/common/lifecycle.js';
+import { URI } from '../../../../base/common/uri.js';
 import { localize, localize2 } from '../../../../nls.js';
 import { SyncDescriptor } from '../../../../platform/instantiation/common/descriptors.js';
 import { Registry } from '../../../../platform/registry/common/platform.js';
@@ -26,10 +28,14 @@ import { IEditorGroup, IEditorGroupsService } from '../../../services/editor/com
 import { IEditorService } from '../../../services/editor/common/editorService.js';
 import { IWorkbenchLayoutService, Parts } from '../../../services/layout/browser/layoutService.js';
 import { IViewsService } from '../../../services/views/common/viewsService.js';
-import { INotificationService } from '../../../../platform/notification/common/notification.js';
+import { INotificationService, Severity } from '../../../../platform/notification/common/notification.js';
 import { ConfigurationTarget, IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
-import { IStorageService, StorageScope } from '../../../../platform/storage/common/storage.js';
+import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
 import { InstantiationType, registerSingleton } from '../../../../platform/instantiation/common/extensions.js';
+import { IFileService } from '../../../../platform/files/common/files.js';
+import { ISideXExplorerService } from '../../../../platform/sidex/common/sidexExplorerService.js';
+import { ILifecycleService } from '../../../services/lifecycle/common/lifecycle.js';
+import { ITextFileService } from '../../../services/textfile/common/textfiles.js';
 import { IDirectoryService } from './directoryService.js';
 import { DirectoryViewEditor } from './directoryViewEditor.js';
 import { DirectoryViewEditorInput } from './directoryViewEditorInput.js';
@@ -102,8 +108,37 @@ interface LiveEditor {
 /** 工作集中的编辑器，使用描述符保存，关闭后仍可重建。 */
 interface SessionEditor {
 	readonly input: IUntypedEditorInput;
+	/** 用于跨重启持久化；新建未命名编辑器也有 untitled 资源。 */
+	readonly resource: string | undefined;
 	readonly groupId: number;
 	readonly pinned: boolean;
+	readonly dirty: boolean;
+	/** 未命名缓冲区的文本内容；普通文件使用下面的热退出备份。 */
+	readonly contents?: string;
+	/** 仅记录活动编辑器的光标与滚动位置。 */
+	readonly viewState?: object;
+}
+
+/** 持久化到存储的编辑器条目。 */
+interface StoredSessionEditor {
+	readonly resource: string;
+	readonly groupId: number;
+	readonly pinned: boolean;
+	readonly dirty?: boolean;
+	/** 保存会话时磁盘文件的 mtime，用于启动时检测外部修改。 */
+	readonly diskMtime?: number;
+	readonly contents?: string;
+	readonly viewState?: object;
+}
+
+interface FileBackup {
+	readonly content: string;
+	readonly diskMtime?: number;
+}
+
+interface StoredSession {
+	readonly editors: readonly StoredSessionEditor[];
+	readonly activeIndex?: number;
 }
 
 /** 一个目录标签的编辑器工作集。 */
@@ -122,6 +157,10 @@ class SidexExplorerContribution extends Disposable implements IWorkbenchContribu
 
 	static readonly ID = 'workbench.contrib.sidexExplorer';
 
+	private static readonly SESSIONS_STORAGE_KEY = 'sidex.directory.editorSessions';
+	private static readonly FILE_BACKUPS_KEY = 'sidex.directory.fileBackups';
+	private static readonly MAX_BACKUP_BYTES = 5 * 1024 * 1024;
+
 	/** 全局唯一的文件列表编辑器：内部按目录标签缓存视图，不随标签切换新建编辑器。 */
 	private listInput = this.createListInput();
 	/** 每个目录标签的工作集。 */
@@ -131,6 +170,11 @@ class SidexExplorerContribution extends Disposable implements IWorkbenchContribu
 	private lastActiveLocation: string | undefined;
 	private syncQueue: Promise<void> = Promise.resolve();
 	private disposed = false;
+	private initialized = false;
+	private persistTimer: number | undefined;
+	private externalCheckEditors: readonly StoredSessionEditor[] = [];
+	private fileBackups = new Map<string, FileBackup>();
+	private readonly activeEditorListeners = this._register(new MutableDisposable<DisposableStore>());
 
 	constructor(
 		@IDirectoryService private readonly directoryService: IDirectoryService,
@@ -141,13 +185,25 @@ class SidexExplorerContribution extends Disposable implements IWorkbenchContribu
 		@IConfigurationService private readonly configurationService: IConfigurationService,
 		@IStorageService private readonly storageService: IStorageService,
 		@IEditorGroupsService private readonly editorGroupsService: IEditorGroupsService,
-		@IEditorService private readonly editorService: IEditorService
+		@IEditorService private readonly editorService: IEditorService,
+		@ISideXExplorerService private readonly explorerService: ISideXExplorerService,
+		@IFileService private readonly fileService: IFileService,
+		@ITextFileService private readonly textFileService: ITextFileService,
+		@ILifecycleService lifecycleService: ILifecycleService
 	) {
 		super();
 
 		this._register(this.directoryService.onDidChange(() => this.scheduleSync()));
 		this._register(this.directoryService.onDidChangeSelection(() => this.revealPreviewPane()));
+		this._register(this.editorService.onDidActiveEditorChange(() => {
+			this.trackActiveEditorViewState();
+			this.schedulePersistSessions();
+		}));
+		this._register(this.editorService.onDidEditorsChange(() => this.schedulePersistSessions()));
+		this._register(this.textFileService.files.onDidChangeDirty(() => this.schedulePersistSessions()));
+		this._register(this.textFileService.files.onDidSave(() => this.schedulePersistSessions()));
 		this._register(this.editorService.onDidCloseEditor(event => {
+			this.schedulePersistSessions();
 			if (this.disposed || !(event.editor instanceof DirectoryViewEditorInput)) {
 				return;
 			}
@@ -156,12 +212,22 @@ class SidexExplorerContribution extends Disposable implements IWorkbenchContribu
 				void this.openListEditor(false);
 			}
 		}));
+		this._register(lifecycleService.onWillShutdown(event => {
+			event.join(this.persistSessions(), {
+				id: 'join.sidex.directory.sessions',
+				label: localize('sidex.directory.persistSessions', '保存目录会话')
+			});
+		}));
 
 		void this.initialize();
 	}
 
 	override dispose(): void {
 		this.disposed = true;
+		if (this.persistTimer !== undefined) {
+			window.clearTimeout(this.persistTimer);
+			this.persistTimer = undefined;
+		}
 		super.dispose();
 	}
 
@@ -202,8 +268,47 @@ class SidexExplorerContribution extends Disposable implements IWorkbenchContribu
 			this.notificationService.warn(localize('sidex.navigation.errorNotice', '导航视图打开异常：{0}', String(error)));
 		}
 
-		await this.closeRestoredEditors();
-		await this.syncDirectoryEditors();
+		this.restorePersistedSessions();
+		this.restoreFileBackups();
+
+		const activeTab = this.directoryService.activeTab;
+		if (activeTab) {
+			const liveEditors = this.collectLiveEditors();
+			const persistedSession = this.sessions.get(activeTab.id);
+			const persistedActive = persistedSession?.activeIndex !== undefined
+				? persistedSession.editors[persistedSession.activeIndex]
+				: undefined;
+			if (liveEditors.length) {
+				// 先恢复自管理的文件备份，再采集工作集，确保脏状态被记录。
+				await this.applyFileBackups(persistedSession);
+				// 保留 VS Code 已恢复的编辑器（含未保存缓冲区），作为当前标签的工作集。
+				this.sessions.set(activeTab.id, this.buildSession(liveEditors, this.editorService.activeEditor));
+				this.lastActiveTabId = activeTab.id;
+				this.lastActiveLocation = activeTab.location;
+				await this.openListEditor(false);
+				if (persistedActive?.resource) {
+					const target = liveEditors.find(entry => entry.editor.resource?.toString() === persistedActive.resource);
+					if (target) {
+						await this.editorService.openEditor(target.editor, { inactive: false, preserveFocus: false });
+						if (persistedActive.viewState) {
+							this.editorService.activeTextEditorControl?.restoreViewState(persistedActive.viewState as never);
+						}
+					}
+				}
+			} else {
+				this.lastActiveTabId = activeTab.id;
+				this.lastActiveLocation = activeTab.location;
+				await this.openListEditor(true);
+				await this.restoreSession(activeTab.id);
+			}
+		} else {
+			await this.syncDirectoryEditors();
+		}
+
+		this.initialized = true;
+		await this.persistSessions();
+		await this.validateDirectoryLocations();
+		await this.notifyExternalFileChanges();
 	}
 
 	/** 单击文件后展开右侧辅助栏；辅助栏一旦显示就保持可见，由用户手动关闭。 */
@@ -243,22 +348,6 @@ class SidexExplorerContribution extends Disposable implements IWorkbenchContribu
 			'workbench.view.scm.numberOfVisibleViews'
 		]) {
 			this.storageService.remove(key, StorageScope.WORKSPACE);
-		}
-	}
-
-	/** 启动时清掉上一次会话恢复出来的编辑器，让主区域只显示「文件列表」。未保存内容保留。 */
-	private async closeRestoredEditors(): Promise<void> {
-		for (const group of this.editorGroupsService.groups) {
-			for (const editor of [...group.editors]) {
-				if (editor instanceof DirectoryViewEditorInput || editor.isDirty()) {
-					continue;
-				}
-				try {
-					await group.closeEditor(editor, { preserveFocus: true });
-				} catch {
-					// 关闭失败时保留该编辑器，不影响启动
-				}
-			}
 		}
 	}
 
@@ -322,6 +411,7 @@ class SidexExplorerContribution extends Disposable implements IWorkbenchContribu
 		if (!restoredFile && (tabChanged || locationChanged || !this.findGroup(this.listInput))) {
 			await this.openListEditor();
 		}
+		this.schedulePersistSessions();
 	}
 
 	/** 保存当前标签的工作集，关闭其编辑器，再恢复目标标签的工作集。 */
@@ -336,6 +426,290 @@ class SidexExplorerContribution extends Disposable implements IWorkbenchContribu
 		this.sessions.set(fromTabId, this.buildSession(live, activeEditor));
 		await this.closeEditors(live);
 		return this.restoreSession(toTabId);
+	}
+
+	/** 从存储恢复每个目录标签的工作集；仅保存资源描述符与活动光标状态。 */
+	private restorePersistedSessions(): void {
+		this.externalCheckEditors = [];
+		const raw = this.storageService.get(
+			SidexExplorerContribution.SESSIONS_STORAGE_KEY,
+			StorageScope.PROFILE
+		);
+		if (!raw) {
+			return;
+		}
+
+		try {
+			const data = JSON.parse(raw) as Record<string, StoredSession>;
+			const knownTabIds = new Set(this.directoryService.tabs.map(tab => tab.id));
+			for (const [tabId, stored] of Object.entries(data)) {
+				if (!stored?.editors?.length || !knownTabIds.has(tabId)) {
+					continue;
+				}
+				const editors: SessionEditor[] = [];
+				let activeIndex: number | undefined;
+				stored.editors.forEach((record, index) => {
+					if (!record?.resource) {
+						return;
+					}
+					try {
+						const resource = URI.parse(record.resource);
+						const input = { resource } as IUntypedEditorInput & { contents?: string };
+						if (record.contents !== undefined) {
+							input.contents = record.contents;
+						}
+						editors.push({
+							input,
+							resource: record.resource,
+							groupId: record.groupId,
+							pinned: record.pinned,
+							dirty: record.dirty === true,
+							contents: record.contents,
+							viewState: record.viewState
+						});
+						if (stored.activeIndex === index) {
+							activeIndex = editors.length - 1;
+						}
+						if (record.dirty && record.diskMtime !== undefined) {
+							this.externalCheckEditors = [...this.externalCheckEditors, record];
+						}
+					} catch {
+						// 无法解析的资源直接跳过，不影响其余标签。
+					}
+				});
+				if (editors.length) {
+					this.sessions.set(tabId, { editors, activeIndex });
+				}
+			}
+		} catch {
+			// 旧格式或损坏的会话数据直接忽略。
+		}
+	}
+
+	/** 把当前标签的实时编辑器写回工作集，并持久化所有标签。 */
+	private persistSessions(): Promise<void> {
+		if (!this.initialized || this.disposed) {
+			return Promise.resolve();
+		}
+
+		const activeTab = this.directoryService.activeTab;
+		if (activeTab) {
+			this.sessions.set(activeTab.id, this.buildSession(this.collectLiveEditors(), this.editorService.activeEditor));
+		}
+
+		return (async () => {
+			const data: Record<string, StoredSession> = {};
+			const backups: Record<string, FileBackup> = {};
+			const knownTabIds = new Set(this.directoryService.tabs.map(tab => tab.id));
+			for (const [tabId, session] of this.sessions) {
+				if (!knownTabIds.has(tabId)) {
+					continue;
+				}
+				const editors: StoredSessionEditor[] = [];
+				for (const editor of session.editors) {
+					if (!editor.resource) {
+						continue;
+					}
+					const resource = URI.parse(editor.resource);
+					let diskMtime: number | undefined;
+					if (editor.dirty) {
+						try {
+							diskMtime = (await this.fileService.stat(resource)).mtime;
+						} catch {
+							// 未命名或文件已删除时没有磁盘时间。
+						}
+						if (resource.scheme !== 'untitled') {
+							const model = this.textFileService.files.get(resource);
+							const content = model?.textEditorModel?.getValue();
+							if (typeof content === 'string' && content.length <= SidexExplorerContribution.MAX_BACKUP_BYTES) {
+								backups[editor.resource] = { content, diskMtime };
+							}
+						}
+					}
+					editors.push({
+						resource: editor.resource,
+						groupId: editor.groupId,
+						pinned: editor.pinned,
+						dirty: editor.dirty,
+						diskMtime,
+						contents: editor.contents,
+						viewState: editor.viewState
+					});
+				}
+				if (editors.length) {
+					data[tabId] = { editors, activeIndex: session.activeIndex };
+				}
+			}
+			this.fileBackups = new Map(Object.entries(backups));
+			this.storageService.store(
+				SidexExplorerContribution.SESSIONS_STORAGE_KEY,
+				JSON.stringify(data),
+				StorageScope.PROFILE,
+				StorageTarget.MACHINE
+			);
+			this.storageService.store(
+				SidexExplorerContribution.FILE_BACKUPS_KEY,
+				JSON.stringify(backups),
+				StorageScope.PROFILE,
+				StorageTarget.MACHINE
+			);
+		})();
+	}
+
+	private restoreFileBackups(): void {
+		this.fileBackups.clear();
+		const raw = this.storageService.get(SidexExplorerContribution.FILE_BACKUPS_KEY, StorageScope.PROFILE);
+		if (!raw) {
+			return;
+		}
+		try {
+			const data = JSON.parse(raw) as Record<string, FileBackup>;
+			for (const [resource, backup] of Object.entries(data)) {
+				if (backup && typeof backup.content === 'string') {
+					this.fileBackups.set(resource, backup);
+				}
+			}
+		} catch {
+			// 损坏的备份数据不影响正常启动。
+		}
+	}
+
+	/** 把未保存的文件内容写回模型；未命名缓冲区由 untyped input 的 contents 恢复。 */
+	private async applyFileBackups(session: DirectoryEditorSession | undefined): Promise<void> {
+		if (!session) {
+			return;
+		}
+		for (const editor of session.editors) {
+			if (!editor.dirty || !editor.resource) {
+				continue;
+			}
+			const resource = URI.parse(editor.resource);
+			if (resource.scheme === 'untitled') {
+				continue;
+			}
+			const backup = this.fileBackups.get(editor.resource);
+			if (!backup) {
+				continue;
+			}
+			try {
+				const model = await this.textFileService.files.resolve(resource);
+				const textModel = model.textEditorModel;
+				if (textModel && textModel.getValue() !== backup.content) {
+					textModel.setValue(backup.content);
+				}
+			} catch {
+				// 文件已删除或备份无法应用时保持磁盘内容。
+			}
+		}
+	}
+
+	/** 光标或滚动变化时也更新活动编辑器的 view state；此时不会触发 active editor 事件。 */
+	private trackActiveEditorViewState(): void {
+		this.activeEditorListeners.clear();
+		const pane = this.editorService.activeEditorPane;
+		if (!pane) {
+			return;
+		}
+		const listeners = new DisposableStore();
+		if (pane.onDidChangeSelection) {
+			listeners.add(pane.onDidChangeSelection(() => this.schedulePersistSessions()));
+		}
+		if (pane.onDidChangeScroll) {
+			listeners.add(pane.onDidChangeScroll(() => this.schedulePersistSessions()));
+		}
+		this.activeEditorListeners.value = listeners;
+	}
+
+	private schedulePersistSessions(): void {
+		if (!this.initialized || this.disposed) {
+			return;
+		}
+		if (this.persistTimer !== undefined) {
+			window.clearTimeout(this.persistTimer);
+		}
+		this.persistTimer = window.setTimeout(() => {
+			this.persistTimer = undefined;
+			void this.persistSessions();
+		}, 500);
+	}
+
+	/** 启动时校验目录是否仍存在；不可用也保留标签，只提示用户重新定位。 */
+	private async validateDirectoryLocations(): Promise<void> {
+		const missing: string[] = [];
+		for (const tab of this.directoryService.tabs) {
+			if (!tab.location) {
+				continue;
+			}
+			try {
+				const stat = await this.explorerService.stat(tab.location);
+				if (!stat.isDir) {
+					missing.push(tab.location);
+				}
+			} catch {
+				missing.push(tab.location);
+			}
+		}
+
+		if (missing.length) {
+			this.notificationService.warn(
+				localize(
+					'sidex.directory.missingLocations',
+					'以下目录不可用，标签已保留；请在地址栏重新定位：{0}',
+					missing.join('、')
+				)
+			);
+		}
+	}
+
+	/** 未保存且磁盘文件在会话期间被修改时，启动后提示保留或重新加载。 */
+	private async notifyExternalFileChanges(): Promise<void> {
+		for (const editor of this.externalCheckEditors) {
+			const resource = URI.parse(editor.resource);
+			if (resource.scheme === 'untitled') {
+				continue;
+			}
+			const model = this.textFileService.files.get(resource);
+			if (!model || !model.isDirty()) {
+				continue;
+			}
+
+			let diskMtime: number;
+			try {
+				diskMtime = (await this.fileService.stat(resource)).mtime;
+			} catch {
+				continue;
+			}
+
+			if (editor.diskMtime === undefined || diskMtime !== editor.diskMtime) {
+				this.notifyExternalChange(resource);
+			}
+		}
+	}
+
+	private notifyExternalChange(resource: URI): void {
+		this.notificationService.notify({
+			severity: Severity.Warning,
+			sticky: true,
+			message: localize('sidex.file.externalChanged', '文件已在应用外被修改：{0}', resource.path),
+			actions: {
+				primary: [
+					toAction({
+						id: 'sidex.file.keepChanges',
+						label: localize('sidex.file.keepChanges', '保留我的更改'),
+						run: () => { /* 保持当前脏缓冲区 */ }
+					}),
+					toAction({
+						id: 'sidex.file.reloadFromDisk',
+						label: localize('sidex.file.reloadFromDisk', '从磁盘重新加载'),
+						run: () => {
+							void this.textFileService.revert(resource).catch(error => {
+								this.notificationService.error(String(error));
+							});
+						}
+					})
+				]
+			}
+		});
 	}
 
 	private collectLiveEditors(): LiveEditor[] {
@@ -360,6 +734,7 @@ class SidexExplorerContribution extends Disposable implements IWorkbenchContribu
 	private buildSession(live: LiveEditor[], activeEditor: EditorInput | null): DirectoryEditorSession {
 		const editors: SessionEditor[] = [];
 		let activeIndex: number | undefined;
+		const activePane = this.editorService.activeEditorPane;
 
 		for (const entry of live) {
 			let input: IUntypedEditorInput | undefined;
@@ -379,7 +754,21 @@ class SidexExplorerContribution extends Disposable implements IWorkbenchContribu
 			if (entry.editor === activeEditor) {
 				activeIndex = editors.length;
 			}
-			editors.push({ input, groupId: entry.groupId, pinned: entry.pinned });
+			const viewState = activePane
+				&& activePane.group.id === entry.groupId
+				&& activePane.input
+				&& entry.editor.matches(activePane.input)
+				? activePane.getViewState()
+				: undefined;
+			editors.push({
+				input,
+				resource: entry.editor.resource?.toString(),
+				groupId: entry.groupId,
+				pinned: entry.pinned,
+				dirty: entry.editor.isDirty(),
+				contents: (input as IUntypedEditorInput & { contents?: string }).contents,
+				viewState
+			});
 		}
 
 		return { editors, activeIndex };
@@ -442,6 +831,8 @@ class SidexExplorerContribution extends Disposable implements IWorkbenchContribu
 			return 'restored-list';
 		}
 
+		await this.applyFileBackups(session);
+
 		const groupIndexes = new Map<number, number>();
 		for (const entry of session.editors) {
 			const group = this.editorGroupsService.getGroup(entry.groupId) ?? this.editorGroupsService.mainPart.activeGroup;
@@ -451,7 +842,8 @@ class SidexExplorerContribution extends Disposable implements IWorkbenchContribu
 				await this.editorService.openEditor(this.withOptions(entry.input, {
 					pinned: entry.pinned,
 					inactive: true,
-					index
+					index,
+					viewState: entry.viewState
 				}), group);
 			} catch {
 				// 单个编辑器恢复失败时跳过，不影响其余工作集。
@@ -478,7 +870,8 @@ class SidexExplorerContribution extends Disposable implements IWorkbenchContribu
 			await this.editorService.openEditor(this.withOptions(activeEntry.input, {
 				pinned: activeEntry.pinned,
 				inactive: false,
-				index: activeIndex
+				index: activeIndex,
+				viewState: activeEntry.viewState
 			}), group);
 			return 'restored-file';
 		} catch {
@@ -486,7 +879,7 @@ class SidexExplorerContribution extends Disposable implements IWorkbenchContribu
 		}
 	}
 
-	private withOptions(input: IUntypedEditorInput, options: { pinned: boolean; inactive: boolean; index?: number }): IUntypedEditorInput {
+	private withOptions(input: IUntypedEditorInput, options: { pinned: boolean; inactive: boolean; index?: number; viewState?: object }): IUntypedEditorInput {
 		return {
 			...input,
 			options: {

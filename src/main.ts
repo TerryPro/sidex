@@ -139,6 +139,8 @@ async function boot() {
 			'workbench.editor.showTabs': 'multiple',
 			'workbench.editor.enablePreview': false,
 			'workbench.editor.tabCloseButton': 'right',
+			// SideX 桌面应用关闭 web 端默认的自动保存，未保存缓冲区由热退出恢复。
+			'files.autoSave': 'off',
 			'window.menuBarVisibility': navigator.userAgent.includes('Mac') ? 'hidden' : 'classic',
 			'window.titleBarStyle': 'custom',
 			'window.commandCenter': true,
