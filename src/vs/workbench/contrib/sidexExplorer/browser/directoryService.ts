@@ -5,8 +5,10 @@
  *  目录内容与驱动器列表由 ISideXExplorerService 从 Rust 侧读取。
  *--------------------------------------------------------------------------------------------*/
 
+import { invoke } from '@tauri-apps/api/core';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { Emitter, Event } from '../../../../base/common/event.js';
-import { Disposable } from '../../../../base/common/lifecycle.js';
+import { Disposable, toDisposable } from '../../../../base/common/lifecycle.js';
 import { localize } from '../../../../nls.js';
 import { createDecorator } from '../../../../platform/instantiation/common/instantiation.js';
 import { InstantiationType, registerSingleton } from '../../../../platform/instantiation/common/extensions.js';
@@ -33,6 +35,12 @@ export interface DirectorySelection {
 	readonly isDir: boolean;
 	readonly size: number;
 	readonly modified: number;
+}
+
+/** Rust 侧 `watch-batch` 事件的载荷（只消费这些字段）。 */
+interface DirectoryWatchBatch {
+	readonly watch_id: number;
+	readonly events: readonly unknown[];
 }
 
 export const IDirectoryService = createDecorator<IDirectoryService>('sidexDirectoryService');
@@ -160,12 +168,26 @@ export class DirectoryService extends Disposable implements IDirectoryService {
 	private _tabCounter = 0;
 	private _initialized = false;
 
+	// —— 活动目录自动刷新：watcher 始终跟随活动标签的当前目录（非递归） ——
+	private _dirWatchId: number | undefined;
+	private _dirWatchLocation: string | undefined;
+	private _dirWatchGeneration = 0;
+	private _dirWatchUnlisten: UnlistenFn | undefined;
+	private _dirWatchListenPromise: Promise<void> | undefined;
+
 	constructor(
 		@ISideXExplorerService private readonly explorerService: ISideXExplorerService,
 		@IStorageService private readonly storageService: IStorageService,
 		@ISessionService private readonly sessionService: ISessionService
 	) {
 		super();
+		// 活动标签或其当前目录变化时同步 watcher 的监听目标。
+		this._register(this.onDidChange(() => this._syncDirectoryWatcher()));
+		this._register(toDisposable(() => {
+			this._teardownDirectoryWatcher();
+			this._dirWatchUnlisten?.();
+			this._dirWatchUnlisten = undefined;
+		}));
 	}
 
 	private persistTabs(): void {
@@ -544,6 +566,65 @@ export class DirectoryService extends Disposable implements IDirectoryService {
 		}
 		this._updateTab(tab.id, { refreshToken: tab.refreshToken + 1 });
 		this._onDidChangeSelection.fire();
+	}
+
+	/** 让后端 watcher 始终跟随活动标签的当前目录；「此电脑」不监听。 */
+	private _syncDirectoryWatcher(): void {
+		const location = this.activeLocation;
+		if (location === this._dirWatchLocation) {
+			return;
+		}
+		this._teardownDirectoryWatcher();
+		if (!location) {
+			return;
+		}
+		this._dirWatchLocation = location;
+		void this._startDirectoryWatch(location, ++this._dirWatchGeneration);
+	}
+
+	private async _startDirectoryWatch(location: string, generation: number): Promise<void> {
+		try {
+			await this._ensureWatchListener();
+			if (generation !== this._dirWatchGeneration) {
+				return;
+			}
+			const id = await invoke<number>('watch_start', {
+				paths: [location],
+				options: { recursive: false, debounce_ms: 300 }
+			});
+			if (generation !== this._dirWatchGeneration || this._dirWatchLocation !== location) {
+				// 启动期间用户已切换目录，立即回收。
+				await invoke('watch_stop', { id }).catch(() => { });
+				return;
+			}
+			this._dirWatchId = id;
+		} catch {
+			// 目录不可达或后端不可用时保持不监听，界面维持现有「重新定位」提示。
+		}
+	}
+
+	private _teardownDirectoryWatcher(): void {
+		this._dirWatchGeneration++;
+		const id = this._dirWatchId;
+		this._dirWatchId = undefined;
+		this._dirWatchLocation = undefined;
+		if (id !== undefined) {
+			invoke('watch_stop', { id }).catch(() => { });
+		}
+	}
+
+	private _ensureWatchListener(): Promise<void> {
+		this._dirWatchListenPromise ??= (async () => {
+			this._dirWatchUnlisten = await listen<DirectoryWatchBatch>('watch-batch', event => {
+				const batch = event.payload;
+				if (this._dirWatchId === undefined || batch.watch_id !== this._dirWatchId || !batch.events.length) {
+					return;
+				}
+				// 后端已防抖并按路径去重；refresh 保留排序、过滤、滚动与选中状态。
+				this.refresh();
+			});
+		})();
+		return this._dirWatchListenPromise;
 	}
 
 	canGoBack(): boolean {
