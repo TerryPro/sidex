@@ -39,7 +39,8 @@ import { driveIconSvg } from './explorerIcons.js';
 import { FILE_LIST_FOCUS_CONTEXT, IFileListCommandHost, setActiveFileListHost } from './fileListCommands.js';
 import { fileName, IFileOperationService, joinPath, parentDirectory, SIDEX_FILES_MIME } from './fileOperationService.js';
 import { assetUrl, formatBytes } from '../common/fileKind.js';
-import { FileSortKey, sortFileEntries } from '../common/fileListSort.js';
+import { type FileSortKey, sortFileEntries } from '../common/fileListSort.js';
+import { isDirectoryDataCurrent, isDirectoryViewCurrent } from '../common/directoryViewState.js';
 import { driveLabel } from '../common/driveLabel.js';
 import { IThumbnailService } from './thumbnailService.js';
 import { ISessionService } from './sessionService.js';
@@ -733,7 +734,7 @@ export class DirectoryViewEditor extends EditorPane {
 			const query = this.directoryService.searchQuery.trim();
 
 			const tab = this.directoryService.getTab(tabId);
-			if (tab && this.isViewCurrent(view, tab, query)) {
+			if (tab && isDirectoryViewCurrent(view, tab, query)) {
 				// 复用已有 DOM，并恢复被其他编辑器遮挡时记录的滚动位置。
 				if (restoreScroll && restoreTop) {
 					view.scrollable.setScrollPosition({ scrollTop: restoreTop });
@@ -793,26 +794,24 @@ export class DirectoryViewEditor extends EditorPane {
 
 		const query = this.directoryService.searchQuery.trim();
 
+		// 唯一的过期判据：位置、刷新版本、搜索词与搜索根任何一项对不上都要重绘。
+		if (isDirectoryViewCurrent(view, tab, query)) {
+			return;
+		}
+
 		// 非空搜索词：递归搜索当前目录，结果复用虚拟列表展示。
 		if (tab.location && query) {
-			if (this.isViewCurrent(view, tab, query)) {
-				return;
-			}
 			this.startSearch(view, tab.location, query);
 			return;
 		}
 
-		// 搜索词清空：若当前仍显示搜索结果，用已缓存的目录数据重绘。
+		// 搜索词清空：目录缓存仍属于当前标签时直接重绘，否则重新读取。
 		if (view.searchRoot !== undefined) {
-			if (tab.location === view.renderedLocation && tab.refreshToken === view.renderedRefreshToken && view.entries) {
+			if (view.entries && isDirectoryDataCurrent(view, tab)) {
 				this.rerenderDirectory(view, 0);
 			} else {
 				void this.reload(view, 0);
 			}
-			return;
-		}
-
-		if (tab.location === view.renderedLocation && tab.refreshToken === view.renderedRefreshToken) {
 			return;
 		}
 
@@ -821,17 +820,6 @@ export class DirectoryViewEditor extends EditorPane {
 			? view.scrollable.getScrollPosition().scrollTop
 			: 0;
 		void this.reload(view, scrollTop);
-	}
-
-	/** 视图已渲染的内容是否仍然对应当前标签、目录版本与搜索词。 */
-	private isViewCurrent(view: DirectoryTabView, tab: { location: string; refreshToken: number }, query: string): boolean {
-		if (tab.location !== view.renderedLocation || tab.refreshToken !== view.renderedRefreshToken) {
-			return false;
-		}
-		if (query !== view.renderedQuery) {
-			return false;
-		}
-		return query === '' || view.searchRoot === tab.location;
 	}
 
 	/** 在当前目录下递归搜索，结果替换文件列表内容。 */
