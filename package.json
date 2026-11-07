@@ -12,6 +12,7 @@
     "postbuild": "node scripts/postbuild.js",
     "preview": "vite preview",
     "test:unit": "node --test src/vs/workbench/contrib/sidexExplorer/common/test/fileKind.test.ts src/vs/workbench/contrib/sidexExplorer/common/test/sessionSnapshot.test.ts",
+    "verify": "npm run test:unit && npx tsc --noEmit -p tsconfig.json",
     "tauri": "cross-env PATH=\"$PWD/scripts/bin:$PATH\" tauri",
     "lint": "eslint 'src/**/*.ts'",
     "lint:fix": "eslint --fix 'src/**/*.ts'",
