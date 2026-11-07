@@ -607,7 +607,9 @@ export class BrowserTitlebarPart extends Part implements ITitlebarPart {
 					if (target === this.dragRegion || target === this.rootContainer) {
 						e.preventDefault();
 						import('@tauri-apps/api/window').then(({ getCurrentWindow }) => {
-							getCurrentWindow().toggleMaximize();
+							import('@tauri-apps/api/core').then(({ invoke }) => {
+								invoke('toggle_window_maximize', { label: getCurrentWindow().label }).catch(() => {});
+							});
 						});
 					}
 				})
@@ -682,14 +684,6 @@ export class BrowserTitlebarPart extends Part implements ITitlebarPart {
 			this.actionToolBarElement = append(this.rightContent, $('div.action-toolbar-container'));
 			this.createActionToolBar();
 			this.createActionToolBarMenus();
-			console.log('[SIDEX-DIAG] toolbar created', JSON.stringify({
-				type: this.configurationService.getValue('workbench.layoutControl.type'),
-				enabled: this.configurationService.getValue('workbench.layoutControl.enabled'),
-				sideBarLoc: this.configurationService.getValue('workbench.sideBar.location'),
-				layoutActions: this.layoutToolbarMenu?.getActions().length ?? -1,
-				globalActions: this.globalToolbarMenu?.getActions().length ?? -1,
-				rightChildren: Array.from(this.rightContent.children).map(c => c.className)
-			}));
 		}
 
 		// Window Controls Container
@@ -739,13 +733,26 @@ export class BrowserTitlebarPart extends Part implements ITitlebarPart {
 					import('@tauri-apps/api/window')
 						.then(({ getCurrentWindow }) => {
 							const win = getCurrentWindow();
+							const label = win.label;
 
 							this._register(addDisposableListener(minBtn, EventType.CLICK, () => win.minimize()));
-							this._register(addDisposableListener(maxBtn, EventType.CLICK, () => win.toggleMaximize()));
+							this._register(
+								addDisposableListener(maxBtn, EventType.CLICK, () => {
+									import('@tauri-apps/api/core')
+										.then(({ invoke }) => invoke('toggle_window_maximize', { label }))
+										.catch(() => {});
+								})
+							);
 							this._register(addDisposableListener(closeBtn, EventType.CLICK, () => win.close()));
 
 							const updateMaxIcon = async () => {
-								const maximized = await win.isMaximized();
+								let maximized = false;
+								try {
+									const { invoke } = await import('@tauri-apps/api/core');
+									maximized = !!(await invoke('is_window_maximized', { label }));
+								} catch {
+									/* not in Tauri context */
+								}
 								if (maximized) {
 									maxIcon.classList.remove('codicon-chrome-maximize');
 									maxIcon.classList.add('codicon-chrome-restore');

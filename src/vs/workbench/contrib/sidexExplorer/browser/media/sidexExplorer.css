@@ -77,6 +77,14 @@
 	z-index: 2500;
 }
 
+/*
+ * 关闭按钮要贴住窗口右上角：标题栏右侧的 4px 内边距会在按钮与窗口边缘
+ * 之间留出一条标题栏底色，窗口圆角处看起来像没有贴合。
+ */
+.monaco-workbench .part.titlebar.sidex-explorer-titlebar > .titlebar-container.has-center > .titlebar-right {
+	padding-right: 0;
+}
+
 .monaco-workbench .part.titlebar.sidex-explorer-titlebar > .titlebar-container > .titlebar-right > .action-toolbar-container {
 	display: flex;
 	-webkit-app-region: no-drag;
