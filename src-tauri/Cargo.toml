@@ -77,7 +77,6 @@ sidex-theme = { path = "../crates/sidex-theme" }
 sidex-workspace = { path = "../crates/sidex-workspace" }
 
 # Internal crates
-sidex-text = { path = "../crates/sidex-text" }
 sidex-syntax = { path = "../crates/sidex-syntax" }
 sidex-extensions = { path = "../crates/sidex-extensions" }
 sidex-keymap = { path = "../crates/sidex-keymap" }
@@ -96,6 +95,7 @@ libc = "0.2"
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.52", features = [
   "Win32_Foundation",
+  "Win32_Graphics_Dwm",
   "Win32_Storage_FileSystem",
   "Win32_System_WindowsProgramming",
   "Win32_UI_Input_KeyboardAndMouse",

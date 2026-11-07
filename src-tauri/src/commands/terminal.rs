@@ -3,7 +3,7 @@ use serde::Serialize;
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Emitter, State};
 
 pub struct PtyHandle {
     writer: Box<dyn Write + Send>,
@@ -586,90 +586,4 @@ pub struct ShellInfo {
     pub name: String,
     pub path: String,
     pub is_default: bool,
-}
-
-#[tauri::command]
-#[allow(clippy::needless_pass_by_value)]
-pub fn get_shell_integration_dir(app: tauri::AppHandle) -> Result<String, String> {
-    let resource_dir = app
-        .path()
-        .resource_dir()
-        .map_err(|e| format!("Failed to get resource dir: {e}"))?;
-    let scripts_dir = resource_dir.join("shell-integration");
-    Ok(scripts_dir.to_string_lossy().to_string())
-}
-
-#[tauri::command]
-#[allow(clippy::too_many_lines, clippy::needless_pass_by_value)]
-pub fn setup_zsh_dotdir(app: tauri::AppHandle) -> Result<String, String> {
-    let data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("Failed to get app data dir: {e}"))?;
-    let zdotdir = data_dir.join("zsh-integration");
-    std::fs::create_dir_all(&zdotdir).map_err(|e| format!("Failed to create zdotdir: {e}"))?;
-
-    let resource_dir = app
-        .path()
-        .resource_dir()
-        .map_err(|e| format!("Failed to get resource dir: {e}"))?;
-    let scripts_dir = resource_dir.join("shell-integration");
-
-    let zshrc_content = format!(
-        r#"# SideX Shell Integration - Auto-generated
-VSCODE_SHELL_INTEGRATION=1
-VSCODE_INJECTION=1
-if [[ -f "{scripts}/shellIntegration-rc.zsh" ]]; then
-    USER_ZDOTDIR="${{ZDOTDIR:-$HOME}}"
-    . "{scripts}/shellIntegration-rc.zsh"
-fi
-"#,
-        scripts = scripts_dir.to_string_lossy()
-    );
-
-    let zshrc_path = zdotdir.join(".zshrc");
-    std::fs::write(&zshrc_path, zshrc_content)
-        .map_err(|e| format!("Failed to write .zshrc: {e}"))?;
-
-    let zshenv_content = format!(
-        r#"# SideX Shell Integration - Auto-generated
-USER_ZDOTDIR="${{ZDOTDIR:-$HOME}}"
-if [[ -f "{scripts}/shellIntegration-env.zsh" ]]; then
-    . "{scripts}/shellIntegration-env.zsh"
-fi
-"#,
-        scripts = scripts_dir.to_string_lossy()
-    );
-
-    let zshenv_path = zdotdir.join(".zshenv");
-    std::fs::write(&zshenv_path, zshenv_content)
-        .map_err(|e| format!("Failed to write .zshenv: {e}"))?;
-
-    let zprofile_content = format!(
-        r#"# SideX Shell Integration - Auto-generated
-if [[ -f "{scripts}/shellIntegration-profile.zsh" ]]; then
-    . "{scripts}/shellIntegration-profile.zsh"
-fi
-"#,
-        scripts = scripts_dir.to_string_lossy()
-    );
-
-    let zprofile_path = zdotdir.join(".zprofile");
-    std::fs::write(&zprofile_path, zprofile_content)
-        .map_err(|e| format!("Failed to write .zprofile: {e}"))?;
-
-    let zlogin_content = format!(
-        r#"# SideX Shell Integration - Auto-generated
-if [[ -f "{scripts}/shellIntegration-login.zsh" ]]; then
-    . "{scripts}/shellIntegration-login.zsh"
-fi
-"#,
-        scripts = scripts_dir.to_string_lossy()
-    );
-
-    let zlogin_path = zdotdir.join(".zlogin");
-    std::fs::write(&zlogin_path, zlogin_content)
-        .map_err(|e| format!("Failed to write .zlogin: {e}"))?;
-
-    Ok(zdotdir.to_string_lossy().to_string())
 }

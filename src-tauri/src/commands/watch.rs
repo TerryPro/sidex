@@ -98,8 +98,6 @@ struct WatchSession {
     /// The notify watcher instance (kept alive for the duration of the session)
     #[allow(dead_code)]
     watcher: RecommendedWatcher,
-    /// Globset for ignore patterns
-    ignore_globset: Option<GlobSet>,
     /// File extensions to include (None = all, kept for reference)
     #[allow(dead_code)]
     file_extensions: Option<HashSet<String>>,
@@ -511,7 +509,6 @@ pub async fn watch_start(
     let session = WatchSession {
         paths: valid_paths,
         watcher,
-        ignore_globset,
         file_extensions,
         emit_content,
         event_sender,
@@ -538,39 +535,4 @@ pub fn watch_stop(state: State<'_, Arc<WatchStore>>, id: u32) -> Result<(), Stri
     } else {
         Err(format!("Watch session {id} not found"))
     }
-}
-
-/// Update ignore patterns for an existing watch session
-#[allow(clippy::needless_pass_by_value)]
-#[tauri::command]
-pub fn watch_update_patterns(
-    state: State<'_, Arc<WatchStore>>,
-    id: u32,
-    patterns: Vec<String>,
-) -> Result<(), String> {
-    let mut sessions = state.sessions.lock().map_err(|e| e.to_string())?;
-
-    if let Some(session) = sessions.get_mut(&id) {
-        let new_globset = build_ignore_globset(&patterns)?;
-        session.ignore_globset = new_globset;
-        Ok(())
-    } else {
-        Err(format!("Watch session {id} not found"))
-    }
-}
-
-/// Get information about active watch sessions (for debugging/monitoring)
-#[allow(clippy::needless_pass_by_value)]
-#[tauri::command]
-pub fn watch_list(state: State<'_, Arc<WatchStore>>) -> Result<Vec<u32>, String> {
-    let sessions = state.sessions.lock().map_err(|e| e.to_string())?;
-    Ok(sessions.keys().copied().collect())
-}
-
-/// Check if a specific watch session is still active
-#[allow(clippy::needless_pass_by_value)]
-#[tauri::command]
-pub fn watch_is_active(state: State<'_, Arc<WatchStore>>, id: u32) -> Result<bool, String> {
-    let sessions = state.sessions.lock().map_err(|e| e.to_string())?;
-    Ok(sessions.contains_key(&id))
 }

@@ -107,22 +107,6 @@ impl StorageDb {
 
 #[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
-pub fn storage_get(
-    state: State<'_, Arc<StorageDb>>,
-    key: String,
-) -> Result<Option<String>, String> {
-    let conn = state.conn.lock().map_err(|e| e.to_string())?;
-    let mut stmt = conn
-        .prepare("SELECT value FROM kv_store WHERE key = ?1")
-        .map_err(|e| format!("Failed to prepare query: {e}"))?;
-
-    let result = stmt.query_row([&key], |row| row.get::<_, String>(0)).ok();
-
-    Ok(result)
-}
-
-#[allow(clippy::needless_pass_by_value)]
-#[tauri::command]
 pub fn storage_set(
     state: State<'_, Arc<StorageDb>>,
     key: String,

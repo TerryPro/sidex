@@ -12,7 +12,6 @@ pub mod fuzzy_file_finder;
 pub mod index;
 pub mod multi_root;
 pub mod outline;
-pub mod path_util;
 pub mod search;
 pub mod trust;
 pub mod watcher;
@@ -47,7 +46,6 @@ pub use multi_root::{
     MultiRootWorkspace, WorkspaceConfig, WorkspaceExtensions, WorkspaceFolder,
 };
 pub use outline::{DocumentSymbol, OutlinePanel, OutlineSortOrder, SymbolKind};
-pub use path_util::PathInfo;
 pub use search::{
     CancellationToken, FileEdit, FileMatch, FileReplacement, FileSearchOptions, ReplaceReport,
     ReplacementEdit, SearchEngine, SearchMatchWithContext, SearchOptions, SearchProgress,

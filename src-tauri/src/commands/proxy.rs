@@ -135,49 +135,6 @@ async fn read_body_limited(response: reqwest::Response) -> Result<Vec<u8>, Strin
     Ok(bytes.to_vec())
 }
 
-#[allow(clippy::needless_pass_by_value)]
-#[tauri::command]
-pub async fn proxy_request(
-    url: String,
-    method: String,
-    headers: HashMap<String, String>,
-    body: Option<String>,
-) -> Result<String, String> {
-    let parsed = validate_url(&url)?;
-    if !is_host_allowed(&parsed) {
-        return Err(format!(
-            "proxy requests to '{}' are not allowed",
-            parsed.host_str().unwrap_or("unknown")
-        ));
-    }
-
-    let client = get_client();
-
-    let mut req = match method.to_uppercase().as_str() {
-        "POST" => client.post(parsed),
-        "PUT" => client.put(parsed),
-        "DELETE" => client.delete(parsed),
-        "PATCH" => client.patch(parsed),
-        _ => client.get(parsed),
-    };
-
-    for (key, value) in &headers {
-        req = req.header(key.as_str(), value.as_str());
-    }
-
-    if let Some(b) = body {
-        req = req.body(b);
-    }
-
-    let response = req
-        .send()
-        .await
-        .map_err(|e| format!("proxy request failed: {e}"))?;
-
-    let bytes = read_body_limited(response).await?;
-    String::from_utf8(bytes).map_err(|e| format!("invalid UTF-8 in proxy response: {e}"))
-}
-
 #[derive(Serialize)]
 pub struct ProxyResponse {
     pub status: u16,
