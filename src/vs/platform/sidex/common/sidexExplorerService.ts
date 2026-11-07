@@ -42,6 +42,8 @@ export interface ISideXExplorerService {
 
 	listDrives(): Promise<SideXDriveInfo[]>;
 	readDirectory(path: string): Promise<SideXExplorerEntry[]>;
+	/** 在 `root` 下递归按名称匹配文件与目录（不区分大小写）。 */
+	searchEntries(root: string, query: string, maxResults?: number): Promise<SideXExplorerEntry[]>;
 	stat(path: string): Promise<SideXFileStat>;
 
 	createFile(path: string, content?: string): Promise<void>;

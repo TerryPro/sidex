@@ -2,7 +2,8 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 
 use sidex_workspace::search::{
-    search_files as crate_search_files, FileSearchOptions as CrateFileSearchOptions, SearchEngine,
+    search_entries as crate_search_entries, search_files as crate_search_files,
+    EntryMatch, EntrySearchOptions, FileSearchOptions as CrateFileSearchOptions, SearchEngine,
     SearchOptions as CrateSearchOptions, SearchQuery as CrateSearchQuery,
 };
 
@@ -66,6 +67,16 @@ pub fn search_files(
             score: m.score,
         })
         .collect())
+}
+
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value)]
+pub fn search_entries(
+    root: String,
+    query: String,
+    options: Option<EntrySearchOptions>,
+) -> Vec<EntryMatch> {
+    crate_search_entries(Path::new(&root), &query, options.as_ref())
 }
 
 #[tauri::command]

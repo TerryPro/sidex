@@ -3,7 +3,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { $, addDisposableListener, append, EventType, reset } from '../../../../base/browser/dom.js';
-import { Disposable, DisposableStore } from '../../../../base/common/lifecycle.js';
+import { Disposable, DisposableStore, toDisposable } from '../../../../base/common/lifecycle.js';
 import { localize } from '../../../../nls.js';
 import { IDirectoryService, normalizeLocation } from './directoryService.js';
 
@@ -11,6 +11,8 @@ interface IBreadcrumbSegment {
 	readonly label: string;
 	readonly location: string;
 }
+
+const SEARCH_DEBOUNCE_MS = 300;
 
 export class DirectoryNavBarControl extends Disposable {
 
@@ -21,6 +23,7 @@ export class DirectoryNavBarControl extends Disposable {
 	private readonly breadcrumb: HTMLElement;
 	private readonly searchInput: HTMLInputElement;
 	private readonly renderDisposables = this._register(new DisposableStore());
+	private searchTimer: number | undefined;
 
 	constructor(
 		private readonly container: HTMLElement,
@@ -54,12 +57,21 @@ export class DirectoryNavBarControl extends Disposable {
 		this._register(addDisposableListener(this.searchInput, EventType.KEY_DOWN, event => {
 			if (event.key === 'Enter') {
 				event.preventDefault();
-				this.directoryService.setSearch(this.searchInput.value.trim());
+				this.commitSearch(this.searchInput.value.trim());
+			} else if (event.key === 'Escape') {
+				event.preventDefault();
+				this.searchInput.value = '';
+				this.commitSearch('');
 			}
 		}));
+		// 输入即搜：300ms 防抖后触发递归名称搜索。
 		this._register(addDisposableListener(this.searchInput, EventType.INPUT, () => {
-			if (!this.searchInput.value.trim()) {
-				this.directoryService.setSearch('');
+			this.scheduleSearch(this.searchInput.value.trim());
+		}));
+		this._register(toDisposable(() => {
+			if (this.searchTimer !== undefined) {
+				window.clearTimeout(this.searchTimer);
+				this.searchTimer = undefined;
 			}
 		}));
 
@@ -67,6 +79,29 @@ export class DirectoryNavBarControl extends Disposable {
 
 		this._register(this.directoryService.onDidChange(() => this.update()));
 		this.update();
+	}
+
+	private scheduleSearch(value: string): void {
+		if (this.searchTimer !== undefined) {
+			window.clearTimeout(this.searchTimer);
+			this.searchTimer = undefined;
+		}
+		if (!value) {
+			this.directoryService.setSearch('');
+			return;
+		}
+		this.searchTimer = window.setTimeout(() => {
+			this.searchTimer = undefined;
+			this.directoryService.setSearch(value);
+		}, SEARCH_DEBOUNCE_MS);
+	}
+
+	private commitSearch(value: string): void {
+		if (this.searchTimer !== undefined) {
+			window.clearTimeout(this.searchTimer);
+			this.searchTimer = undefined;
+		}
+		this.directoryService.setSearch(value);
 	}
 
 	private beginAddressEdit(): void {
@@ -151,6 +186,10 @@ export class DirectoryNavBarControl extends Disposable {
 		});
 
 		const title = tab?.title ?? '';
+		// 导航/切换标签会清空搜索词，同步清空输入框以免误导。
+		if (!this.directoryService.searchQuery && this.searchInput.value) {
+			this.searchInput.value = '';
+		}
 		this.searchInput.placeholder = title
 			? localize('sidex.search.inLocation', '在 {0} 中搜索', title)
 			: localize('sidex.search.here', '在此电脑中搜索');

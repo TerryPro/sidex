@@ -57,6 +57,12 @@ interface DirectoryTabView {
 	/** 目录完整数据集；排序、过滤和虚拟滚动都基于它，不再分页读取。 */
 	entries: readonly SideXExplorerEntry[] | undefined;
 	virtualList: VirtualFileList | undefined;
+	/** 当前渲染的是搜索结果时的搜索根目录；undefined 表示普通目录列表。 */
+	searchRoot: string | undefined;
+	/** 搜索结果的完整数据集，用于排序重绘。 */
+	searchResults: readonly SideXExplorerEntry[] | undefined;
+	/** 丢弃过期搜索结果的请求号。 */
+	searchRequestId: number;
 }
 
 const FILE_ROW_HEIGHT = 28;
@@ -691,7 +697,10 @@ export class DirectoryViewEditor extends EditorPane {
 			renderedQuery: '',
 			requestId: 0,
 			entries: undefined,
-			virtualList: undefined
+			virtualList: undefined,
+			searchRoot: undefined,
+			searchResults: undefined,
+			searchRequestId: 0
 		};
 		this.views.set(tabId, view);
 		return view;
@@ -720,16 +729,10 @@ export class DirectoryViewEditor extends EditorPane {
 
 			const persisted = this.sessionService.getScrollTop(tabId);
 			const restoreTop = this.savedScrollTops.get(tabId) ?? persisted;
-			const query = this.directoryService.searchQuery;
+			const query = this.directoryService.searchQuery.trim();
 
 			const tab = this.directoryService.getTab(tabId);
-			if (tab && tab.location === view.renderedLocation && tab.refreshToken === view.renderedRefreshToken) {
-				// 内容已是最新：搜索词变化时只重绘，不重新读取目录。
-				if (query !== view.renderedQuery && view.entries) {
-					this.savedScrollTops.delete(tabId);
-					this.rerenderDirectory(view, restoreScroll ? restoreTop : 0);
-					return;
-				}
+			if (tab && this.isViewCurrent(view, tab, query)) {
 				// 复用已有 DOM，并恢复被其他编辑器遮挡时记录的滚动位置。
 				if (restoreScroll && restoreTop) {
 					view.scrollable.setScrollPosition({ scrollTop: restoreTop });
@@ -740,6 +743,10 @@ export class DirectoryViewEditor extends EditorPane {
 			}
 
 			this.savedScrollTops.delete(tabId);
+			if (tab && tab.location && query) {
+				this.startSearch(view, tab.location, query);
+				return;
+			}
 			await this.reload(view, restoreScroll ? restoreTop : 0);
 		} finally {
 			if (hadListFocus) {
@@ -754,6 +761,7 @@ export class DirectoryViewEditor extends EditorPane {
 			if (!tabIds.has(tabId)) {
 				this.views.delete(tabId);
 				this.savedScrollTops.delete(tabId);
+				view.searchRequestId++;
 				view.renderDisposables.dispose();
 				view.scrollable.dispose();
 				view.container.remove();
@@ -782,12 +790,28 @@ export class DirectoryViewEditor extends EditorPane {
 			return;
 		}
 
-		// 目录内容未变时，搜索词变化只需基于缓存重绘，不重新读取磁盘。
-		if (tab.location === view.renderedLocation && tab.refreshToken === view.renderedRefreshToken) {
-			if (this.directoryService.searchQuery !== view.renderedQuery && view.entries) {
-				this.rerenderDirectory(view, 0);
-				view.virtualList?.revealSelection();
+		const query = this.directoryService.searchQuery.trim();
+
+		// 非空搜索词：递归搜索当前目录，结果复用虚拟列表展示。
+		if (tab.location && query) {
+			if (this.isViewCurrent(view, tab, query)) {
+				return;
 			}
+			this.startSearch(view, tab.location, query);
+			return;
+		}
+
+		// 搜索词清空：若当前仍显示搜索结果，用已缓存的目录数据重绘。
+		if (view.searchRoot !== undefined) {
+			if (tab.location === view.renderedLocation && tab.refreshToken === view.renderedRefreshToken && view.entries) {
+				this.rerenderDirectory(view, 0);
+			} else {
+				void this.reload(view, 0);
+			}
+			return;
+		}
+
+		if (tab.location === view.renderedLocation && tab.refreshToken === view.renderedRefreshToken) {
 			return;
 		}
 
@@ -798,9 +822,65 @@ export class DirectoryViewEditor extends EditorPane {
 		void this.reload(view, scrollTop);
 	}
 
+	/** 视图已渲染的内容是否仍然对应当前标签、目录版本与搜索词。 */
+	private isViewCurrent(view: DirectoryTabView, tab: { location: string; refreshToken: number }, query: string): boolean {
+		if (tab.location !== view.renderedLocation || tab.refreshToken !== view.renderedRefreshToken) {
+			return false;
+		}
+		if (query !== view.renderedQuery) {
+			return false;
+		}
+		return query === '' || view.searchRoot === tab.location;
+	}
+
+	/** 在当前目录下递归搜索，结果替换文件列表内容。 */
+	private startSearch(view: DirectoryTabView, root: string, query: string): void {
+		const requestId = ++view.searchRequestId;
+		view.renderDisposables.clear();
+		view.virtualList = undefined;
+		reset(view.content);
+
+		const loading = append(view.content, $('.sidex-directory-status'));
+		loading.textContent = localize('sidex.search.searching', '正在搜索“{0}”…', query);
+		view.scrollable.scanDomNode();
+
+		void this.explorerService.searchEntries(root, query).then(
+			results => {
+				if (requestId !== view.searchRequestId) {
+					return;
+				}
+				const tab = this.directoryService.getTab(view.tabId);
+				// 输入已变化或标签已切换时丢弃过期结果。
+				if (!tab || tab.location !== root || this.directoryService.searchQuery.trim() !== query) {
+					return;
+				}
+				reset(view.content);
+				view.renderedLocation = tab.location;
+				view.renderedRefreshToken = tab.refreshToken;
+				this.renderDirectory(view, root, results, root);
+				view.scrollable.scanDomNode();
+				view.scrollable.setScrollPosition({ scrollTop: 0 });
+				view.virtualList?.update();
+			},
+			error => {
+				if (requestId !== view.searchRequestId) {
+					return;
+				}
+				reset(view.content);
+				const message = append(view.content, $('.sidex-directory-status'));
+				message.textContent = localize('sidex.search.failed', '搜索失败：{0}', error instanceof Error ? error.message : String(error));
+				view.scrollable.scanDomNode();
+			}
+		);
+	}
+
 	private onDrivesChange(): void {
 		for (const view of this.views.values()) {
 			view.renderedRefreshToken = -1;
+		}
+		// 驱动器列表只影响「此电脑」视图，普通目录与搜索结果无需重载。
+		if (this.directoryService.activeLocation) {
+			return;
 		}
 		const view = this.activeView;
 		if (view) {
@@ -816,15 +896,23 @@ export class DirectoryViewEditor extends EditorPane {
 		if (!view) {
 			return;
 		}
-		if (view.entries) {
+		const scrollTop = view.scrollable.getScrollPosition().scrollTop;
+		if (view.searchRoot !== undefined && view.searchResults) {
+			// 图标主题只影响行内容，用缓存的搜索结果重绘即可。
+			this.rerenderSearch(view, scrollTop);
+			const tab = this.directoryService.getTab(view.tabId);
+			if (tab) {
+				view.renderedRefreshToken = tab.refreshToken;
+			}
+		} else if (view.entries) {
 			// 图标主题只影响行内容，用缓存数据重绘即可。
-			this.rerenderDirectory(view, view.scrollable.getScrollPosition().scrollTop);
+			this.rerenderDirectory(view, scrollTop);
 			const tab = this.directoryService.getTab(view.tabId);
 			if (tab) {
 				view.renderedRefreshToken = tab.refreshToken;
 			}
 		} else {
-			void this.reload(view, view.scrollable.getScrollPosition().scrollTop);
+			void this.reload(view, scrollTop);
 		}
 	}
 
@@ -836,6 +924,9 @@ export class DirectoryViewEditor extends EditorPane {
 		view.renderedRefreshToken = tab ? tab.refreshToken : -1;
 		view.entries = undefined;
 		view.virtualList = undefined;
+		view.searchRoot = undefined;
+		view.searchResults = undefined;
+		view.searchRequestId++;
 
 		view.renderDisposables.clear();
 		reset(view.content);
@@ -887,6 +978,25 @@ export class DirectoryViewEditor extends EditorPane {
 		view.virtualList = undefined;
 		reset(view.content);
 		this.renderDirectory(view, view.renderedLocation, view.entries);
+		view.scrollable.scanDomNode();
+		if (scrollTop !== undefined) {
+			view.scrollable.setScrollPosition({ scrollTop });
+		}
+		view.virtualList?.update();
+	}
+
+	/** 使用缓存的搜索结果重新排序/渲染，不重复搜索。 */
+	private rerenderSearch(view: DirectoryTabView, scrollTop?: number): void {
+		const root = view.searchRoot;
+		const results = view.searchResults;
+		const location = view.renderedLocation;
+		if (root === undefined || !results || location === undefined) {
+			return;
+		}
+		view.renderDisposables.clear();
+		view.virtualList = undefined;
+		reset(view.content);
+		this.renderDirectory(view, location, results, root);
 		view.scrollable.scanDomNode();
 		if (scrollTop !== undefined) {
 			view.scrollable.setScrollPosition({ scrollTop });
@@ -1003,10 +1113,8 @@ export class DirectoryViewEditor extends EditorPane {
 		container.style.setProperty('--sidex-col-size', `${this.columnWidths[3]}px`);
 	}
 
-	private renderDirectory(view: DirectoryTabView, location: string, entries: readonly SideXExplorerEntry[]): void {
-		const query = this.directoryService.searchQuery.toLowerCase();
-		const filtered = query ? entries.filter(entry => entry.name.toLowerCase().includes(query)) : entries;
-		const sorted = this.sortEntries(filtered);
+	private renderDirectory(view: DirectoryTabView, location: string, entries: readonly SideXExplorerEntry[], searchRoot?: string): void {
+		const sorted = this.sortEntries(entries);
 
 		this.addColumnWidths(view.content);
 
@@ -1032,7 +1140,10 @@ export class DirectoryViewEditor extends EditorPane {
 				}
 				this.persistViewPreferences();
 				const scrollTop = view.scrollable.getScrollPosition().scrollTop;
-				if (view.entries) {
+				if (view.searchRoot !== undefined) {
+					this.rerenderSearch(view, scrollTop);
+					view.virtualList?.revealSelection();
+				} else if (view.entries) {
 					this.rerenderDirectory(view, scrollTop);
 					view.virtualList?.revealSelection();
 				} else {
@@ -1060,17 +1171,24 @@ export class DirectoryViewEditor extends EditorPane {
 		});
 
 		view.content.setAttribute('data-location', location);
-		view.renderedQuery = this.directoryService.searchQuery;
-		this.persistScrollPosition(view);
+		view.renderedQuery = searchRoot !== undefined ? this.directoryService.searchQuery.trim() : '';
+		view.searchRoot = searchRoot;
+		view.searchResults = searchRoot !== undefined ? entries : undefined;
+		// 搜索结果的滚动位置不写回目录的持久化位置。
+		if (searchRoot === undefined) {
+			this.persistScrollPosition(view);
+		}
 
 		if (!sorted.length) {
 			const empty = append(view.content, $('.sidex-file-list-empty'));
-			empty.textContent = localize('sidex.fileList.empty', '此文件夹为空');
+			empty.textContent = searchRoot !== undefined
+				? localize('sidex.search.empty', '未找到名称匹配“{0}”的项目', view.renderedQuery)
+				: localize('sidex.fileList.empty', '此文件夹为空');
 			return;
 		}
 
 		const host: IFileListHost = {
-			renderRow: entry => this.renderFileRow(entry),
+			renderRow: entry => this.renderFileRow(entry, searchRoot),
 			activateEntry: entry => this.openEntry(entry),
 			selectionChanged: (entries, primary) => this.selectionChanged(view, entries, primary),
 			showContextMenu: (event, entry) => this.showContextMenu(event, view, location, entry),
@@ -1143,7 +1261,7 @@ export class DirectoryViewEditor extends EditorPane {
 		}));
 	}
 
-	private renderFileRow(entry: SideXExplorerEntry): HTMLElement {
+	private renderFileRow(entry: SideXExplorerEntry, displayRoot?: string): HTMLElement {
 		const row = $('div.sidex-file-row');
 		row.setAttribute('data-path', entry.path);
 		row.dataset.isDir = entry.isDir ? 'true' : 'false';
@@ -1154,7 +1272,10 @@ export class DirectoryViewEditor extends EditorPane {
 		this.applyFileIcon(icon, entry);
 		this.attachThumbnail(icon, entry);
 		const text = append(nameCell, $('span.sidex-file-name-text'));
-		text.textContent = entry.name;
+		// 搜索结果跨目录展示，用相对路径区分同名项。
+		text.textContent = displayRoot
+			? entry.path.slice(displayRoot.length).replace(/^[\\/]/, '')
+			: entry.name;
 
 		const modified = append(row, $('span.sidex-file-cell'));
 		modified.textContent = entry.modified ? new Date(entry.modified * 1000).toLocaleString() : '';

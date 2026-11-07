@@ -1197,6 +1197,87 @@ pub fn search_files(
     scored
 }
 
+/// An entry (file or directory) matched by recursive name search.
+#[derive(Debug, Clone, Serialize)]
+pub struct EntryMatch {
+    pub path: String,
+    pub name: String,
+    /// Path relative to the search root, e.g. `src\main.rs`.
+    pub relative: String,
+    pub is_dir: bool,
+    pub size: u64,
+    /// Seconds since the Unix epoch.
+    pub modified: u64,
+}
+
+/// Options for recursive entry name search.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct EntrySearchOptions {
+    pub max_results: Option<usize>,
+    pub max_depth: Option<usize>,
+    pub include_hidden: Option<bool>,
+}
+
+/// Recursively match files and directories whose name contains `query`
+/// (case-insensitive). Used by the file list search box.
+pub fn search_entries(
+    root: &Path,
+    query: &str,
+    options: Option<&EntrySearchOptions>,
+) -> Vec<EntryMatch> {
+    let needle = query.trim().to_lowercase();
+    if needle.is_empty() {
+        return Vec::new();
+    }
+
+    let max_results = options
+        .and_then(|o| o.max_results)
+        .unwrap_or(DEFAULT_MAX_RESULTS);
+    let max_depth = options.and_then(|o| o.max_depth).unwrap_or(20);
+    let include_hidden = options.and_then(|o| o.include_hidden).unwrap_or(false);
+
+    let mut matches: Vec<EntryMatch> = Vec::new();
+
+    for entry in walkdir::WalkDir::new(root)
+        .follow_links(false)
+        .min_depth(1)
+        .max_depth(max_depth)
+        .into_iter()
+        .filter_entry(|e| !should_skip_entry(e, include_hidden))
+        .filter_map(std::result::Result::ok)
+    {
+        let name = entry.file_name().to_string_lossy();
+        if !name.to_lowercase().contains(&needle) {
+            continue;
+        }
+
+        let Ok(relative) = entry.path().strip_prefix(root) else {
+            continue;
+        };
+        let metadata = entry.metadata().ok();
+        matches.push(EntryMatch {
+            path: entry.path().to_string_lossy().into_owned(),
+            name: name.into_owned(),
+            relative: relative.to_string_lossy().into_owned(),
+            is_dir: entry.file_type().is_dir(),
+            size: metadata.as_ref().map_or(0, std::fs::Metadata::len),
+            modified: metadata
+                .as_ref()
+                .and_then(|m| m.modified().ok())
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map_or(0, |d| d.as_secs()),
+        });
+    }
+
+    matches.sort_by(|a, b| {
+        b.is_dir
+            .cmp(&a.is_dir)
+            .then_with(|| a.relative.to_lowercase().cmp(&b.relative.to_lowercase()))
+    });
+    matches.truncate(max_results);
+    matches
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1513,5 +1594,47 @@ mod tests {
         };
         let json = serde_json::to_string(&fr).unwrap();
         assert!(json.contains("world"));
+    }
+
+    #[test]
+    fn search_entries_matches_nested_names_case_insensitively() {
+        let tmp = TempDir::new().unwrap();
+        let nested = tmp.path().join("SubDir");
+        fs::create_dir_all(&nested).unwrap();
+        fs::write(nested.join("Report.txt"), "x").unwrap();
+        fs::write(tmp.path().join("other.log"), "x").unwrap();
+
+        let matches = search_entries(tmp.path(), "report", None);
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].name, "Report.txt");
+        assert!(!matches[0].is_dir);
+        assert!(matches[0].relative.ends_with("Report.txt"));
+        assert!(matches[0].modified > 0);
+    }
+
+    #[test]
+    fn search_entries_includes_dirs_first_and_respects_limit() {
+        let tmp = TempDir::new().unwrap();
+        fs::create_dir_all(tmp.path().join("alpha-dir")).unwrap();
+        fs::write(tmp.path().join("alpha-file.txt"), "x").unwrap();
+        fs::write(tmp.path().join("alpha-two.txt"), "x").unwrap();
+
+        let matches = search_entries(tmp.path(), "alpha", None);
+        assert_eq!(matches.len(), 3);
+        assert!(matches[0].is_dir);
+        assert_eq!(matches[0].relative, "alpha-dir");
+
+        let opts = EntrySearchOptions {
+            max_results: Some(1),
+            ..Default::default()
+        };
+        assert_eq!(search_entries(tmp.path(), "alpha", Some(&opts)).len(), 1);
+    }
+
+    #[test]
+    fn search_entries_ignores_empty_query() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("a.txt"), "x").unwrap();
+        assert!(search_entries(tmp.path(), "   ", None).is_empty());
     }
 }

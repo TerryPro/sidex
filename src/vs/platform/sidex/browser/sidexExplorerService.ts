@@ -50,6 +50,26 @@ export class SideXExplorerService implements ISideXExplorerService {
 		}));
 	}
 
+	async searchEntries(root: string, query: string, maxResults = 500): Promise<SideXExplorerEntry[]> {
+		const entries = await invoke<Array<{
+			name: string;
+			path: string;
+			is_dir: boolean;
+			size: number;
+			modified: number;
+		}>>('search_entries', { root, query, options: { max_results: maxResults } });
+		if (!Array.isArray(entries)) {
+			return [];
+		}
+		return entries.map(entry => ({
+			name: String(entry.name ?? ''),
+			path: String(entry.path ?? ''),
+			isDir: !!entry.is_dir,
+			size: Number(entry.size ?? 0),
+			modified: Number(entry.modified ?? 0)
+		}));
+	}
+
 	async stat(path: string): Promise<SideXFileStat> {
 		const stat = await invoke<{
 			size: number;

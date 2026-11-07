@@ -723,6 +723,7 @@ pub fn run() {
             commands::terminal::check_shell_exists,
             commands::terminal::get_available_shells,
             commands::search::search_files,
+            commands::search::search_entries,
             commands::search::search_text,
             commands::window::frontend_ready,
             commands::window::save_window_state,
