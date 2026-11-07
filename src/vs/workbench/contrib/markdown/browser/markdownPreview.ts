@@ -18,18 +18,11 @@ import { ITextFileService } from '../../../services/textfile/common/textfiles.js
 import { IThemeService } from '../../../../platform/theme/common/themeService.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { ILanguageService } from '../../../../editor/common/languages/language.js';
-import { tokenizeToString } from '../../../../editor/common/languages/textToHtmlTokenizer.js';
 import { DEFAULT_MARKDOWN_STYLES } from './markdownDocumentRenderer.js';
-import { markedGfmHeadingIdPlugin } from './markedGfmHeadingIdPlugin.js';
-import { MarkedKatexSupport } from './markedKatexSupport.js';
-import { MarkedKatexExtension } from '../common/markedKatexExtension.js';
-import { escapeHtml, renderMermaid } from './mermaidRenderer.js';
+import { escapeHtml } from './mermaidRenderer.js';
+import { renderMarkdownToHtml, resolveMarkdownUri } from './markdownHtml.js';
 import katexStyles from 'katex/dist/katex.min.css?inline';
-import { sanitizeHtml } from '../../../../base/browser/domSanitize.js';
-import { allowedMarkdownHtmlAttributes, allowedMarkdownHtmlTags } from '../../../../base/browser/markdownRenderer.js';
-import { Schemas } from '../../../../base/common/network.js';
 import { ColorScheme } from '../../../../platform/theme/common/theme.js';
-import * as marked from '../../../../base/common/marked/marked.js';
 
 const MARKDOWN_PREVIEW_VIEW_TYPE = 'sidex.markdown.preview';
 const PREVIEW_OPEN_FILES_KEY = 'markdown.preview.openFiles';
@@ -83,13 +76,6 @@ const PREVIEW_SCRIPT = `
 })();
 `;
 
-function resolveMarkdownUri(baseDir: URI, href: string): URI {
-	if (HAS_SCHEME.test(href)) {
-		return URI.parse(href);
-	}
-	return URI.joinPath(baseDir, href);
-}
-
 function rewriteImageSrcs(html: string, baseDir: URI): string {
 	return html.replace(
 		/<img\s+([^>]*?)src="([^"]*?)"([^>]*)>/gi,
@@ -102,94 +88,6 @@ function rewriteImageSrcs(html: string, baseDir: URI): string {
 			return `<img ${before}src="${webviewSafe.toString()}"${after}>`;
 		}
 	);
-}
-
-function sanitize(html: string): string {
-	const katexConfig = MarkedKatexSupport.getSanitizerOptions({
-		allowedTags: allowedMarkdownHtmlTags,
-		allowedAttributes: allowedMarkdownHtmlAttributes
-	});
-	return sanitizeHtml(html, {
-		allowedLinkProtocols: { override: [Schemas.http, Schemas.https, Schemas.file] },
-		allowRelativeLinkPaths: true,
-		allowedMediaProtocols: { override: [Schemas.http, Schemas.https, Schemas.data, Schemas.file] },
-		allowRelativeMediaPaths: true,
-		allowedTags: katexConfig.allowedTags,
-		allowedAttributes: {
-			override: [
-				...katexConfig.allowedAttributes!.override,
-				'name', 'id', 'role', 'tabindex', 'placeholder'
-			]
-		}
-	}).toString();
-}
-
-/**
- * Local copy of the `marked-highlight` extension. `renderMarkdownDocument` uses
- * the same helper, but it waits for the extension service to register, which
- * never resolves when no Node extension host is running.
- */
-function markedHighlight(options: {
-	async: boolean;
-	highlight: (code: string, lang: string) => Promise<string>;
-	/** Turns a diagram source into a placeholder token that is expanded after sanitizing. */
-	diagram?: (code: string) => string;
-}): marked.MarkedExtension {
-	return {
-		async: options.async,
-		walkTokens(token: marked.Token): Promise<void> | void {
-			if (token.type !== 'code') {
-				return;
-			}
-			const codeToken = token as marked.Tokens.Code;
-			const lang = codeToken.lang;
-			if (typeof lang !== 'string') {
-				return;
-			}
-			if (options.diagram && lang.trim().toLowerCase() === 'mermaid') {
-				codeToken.text = options.diagram(codeToken.text);
-				codeToken.escaped = true;
-				return;
-			}
-			return options.highlight(codeToken.text, lang).then(html => {
-				codeToken.text = html;
-				codeToken.escaped = true;
-			});
-		},
-		renderer: {
-			code({ text, lang, escaped }: marked.Tokens.Code) {
-				text = text.replace(/\n$/, '');
-				// Diagram placeholders are expanded into SVG after sanitizing.
-				if (/^SIDEXDIAGRAM\d+TOKEN$/.test(text)) {
-					return text;
-				}
-				const classAttr = lang ? ` class="language-${escapeAttr(lang)}"` : '';
-				return `<pre><code${classAttr}>${escaped ? text : escapeHtml(text)}\n</code></pre>`;
-			}
-		}
-	};
-}
-
-function escapeAttr(value: string): string {
-	return escapeHtml(value).replace(/"/g, '&quot;');
-}
-
-let katexExtensionPromise: Promise<marked.MarkedExtension | undefined> | undefined;
-
-/** Lazily loads KaTeX the first time a markdown preview is rendered. */
-function loadKatexExtension(): Promise<marked.MarkedExtension | undefined> {
-	if (!katexExtensionPromise) {
-		katexExtensionPromise = import('katex')
-			.then(module => {
-				const katex = ((module as unknown as { default?: typeof import('katex') }).default ?? module) as typeof import('katex');
-				return MarkedKatexExtension.extension(katex);
-			})
-			.catch(error => {
-				console.error('[Markdown Preview] failed to load katex', error);
-				return undefined;
-			});
-	}
-	return katexExtensionPromise;
 }
 
 export class MarkdownPreviewManager extends Disposable {
@@ -367,12 +265,12 @@ export class MarkdownPreviewManager extends Disposable {
 		const isLight = this._themeService.getColorTheme().type === ColorScheme.LIGHT;
 
 		this._renderMarkdown(text, isLight)
-			.then(htmlBody => {
+			.then(result => {
 				if (generation !== this._renderGeneration || !this._webviewInput) {
 					return;
 				}
-				const withImages = rewriteImageSrcs(htmlBody, baseDir);
-				this._webviewInput.webview.setHtml(this._buildDocument(withImages, MarkdownPreviewManager._hasMath(text)));
+				const withImages = rewriteImageSrcs(result.html, baseDir);
+				this._webviewInput.webview.setHtml(this._buildDocument(withImages, result.hasMath));
 				this._attachScrollSync(resource);
 			})
 			.catch(error => {
@@ -384,45 +282,8 @@ export class MarkdownPreviewManager extends Disposable {
 			});
 	}
 
-	private async _renderMarkdown(text: string, isLight: boolean): Promise<string> {
-		const diagrams = new Map<string, string>();
-		const instance = new marked.Marked(
-			markedHighlight({
-				async: true,
-				highlight: async (code: string, lang: string) => {
-					const languageName = lang.split(/\s+|:|,|(?!^)\{|\?]/, 1)[0];
-					const languageId =
-						this._languageService.getLanguageIdByLanguageName(lang) ??
-						this._languageService.getLanguageIdByLanguageName(languageName) ??
-						null;
-					return tokenizeToString(this._languageService, code, languageId);
-				},
-				diagram: source => {
-					const token = `SIDEXDIAGRAM${diagrams.size}TOKEN`;
-					diagrams.set(token, source);
-					return token;
-				}
-			}),
-			markedGfmHeadingIdPlugin()
-		);
-
-		const katexExtension = await loadKatexExtension();
-		if (katexExtension) {
-			instance.use(katexExtension);
-		}
-
-		const raw = await instance.parse(text, { async: true }) as string;
-		let html = sanitize(raw);
-		for (const [token, source] of diagrams) {
-			const svg = await renderMermaid(source, isLight);
-			html = html.replace(token, () => svg);
-		}
-		return html;
-	}
-
-	/** Whether the document is likely to contain `$...$` math, so the katex CSS can be skipped. */
-	private static _hasMath(text: string): boolean {
-		return /\$(?!\s)[^$\n]+\$|\$\$/.test(text);
+	private _renderMarkdown(text: string, isLight: boolean): Promise<{ html: string; hasMath: boolean }> {
+		return renderMarkdownToHtml(text, { languageService: this._languageService, isLight });
 	}
 
 	private _buildDocument(body: string, withKatex: boolean): string {

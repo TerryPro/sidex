@@ -5,7 +5,7 @@
  *  选中项按目录标签保存在 IDirectoryService 中，切换标签时面板跟随当前标签。
  *--------------------------------------------------------------------------------------------*/
 
-import { $, append, reset } from '../../../../base/browser/dom.js';
+import { $, addDisposableListener, append, EventType, reset } from '../../../../base/browser/dom.js';
 import { DomScrollableElement } from '../../../../base/browser/ui/scrollbar/scrollableElement.js';
 import { Codicon } from '../../../../base/common/codicons.js';
 import { DisposableStore, toDisposable } from '../../../../base/common/lifecycle.js';
@@ -24,12 +24,16 @@ import { IHoverService } from '../../../../platform/hover/browser/hover.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
 import { IKeybindingService } from '../../../../platform/keybinding/common/keybinding.js';
 import { IOpenerService } from '../../../../platform/opener/common/opener.js';
+import { ColorScheme } from '../../../../platform/theme/common/theme.js';
 import { IThemeService } from '../../../../platform/theme/common/themeService.js';
 import { ISideXExplorerService } from '../../../../platform/sidex/common/sidexExplorerService.js';
 import { ViewPane, IViewPaneOptions } from '../../../browser/parts/views/viewPane.js';
 import { IViewDescriptorService } from '../../../common/views.js';
+import { renderMarkdownToHtml, resolveMarkdownUri } from '../../markdown/browser/markdownHtml.js';
+import { renderMermaid } from '../../markdown/browser/mermaidRenderer.js';
 import { DirectorySelection, IDirectoryService } from './directoryService.js';
-import { classifyFile, extensionOf, formatBytes, imageMime } from '../common/fileKind.js';
+import { assetUrl, classifyFile, extensionOf, formatBytes, imageMime, isMarkdownFile, isMermaidFile } from '../common/fileKind.js';
+import katexStyles from 'katex/dist/katex.min.css?inline';
 
 /** 超过该大小不在侧栏读取内容，避免卡住界面。 */
 const MAX_TEXT_PREVIEW_BYTES = 1024 * 1024;
@@ -46,6 +50,7 @@ export class SideXPreviewPane extends ViewPane {
 	private textScrollable: DomScrollableElement | undefined;
 	private readonly renderDisposables = this._register(new DisposableStore());
 	private renderToken = 0;
+	private katexStyleElement: HTMLStyleElement | undefined;
 
 	constructor(
 		options: IViewPaneOptions,
@@ -85,6 +90,12 @@ export class SideXPreviewPane extends ViewPane {
 			if (event.affectsConfiguration('editor.fontSize') || event.affectsConfiguration('editor.fontFamily')) {
 				this.renderPreview();
 			}
+		}));
+		// Mermaid 图表按明暗主题重新渲染。
+		this._register(this.themeService.onDidColorThemeChange(() => this.renderPreview()));
+		this._register(toDisposable(() => {
+			this.katexStyleElement?.remove();
+			this.katexStyleElement = undefined;
 		}));
 	}
 
@@ -145,6 +156,10 @@ export class SideXPreviewPane extends ViewPane {
 
 		if (selection.isDir) {
 			this.renderPlaceholder(preview, Codicon.folder, localize('sidex.preview.folder', '文件夹'));
+		} else if (isMarkdownFile(selection.name)) {
+			void this.renderMarkdown(preview, selection, token);
+		} else if (isMermaidFile(selection.name)) {
+			void this.renderMermaid(preview, selection, token);
 		} else {
 			switch (classifyFile(selection.name)) {
 				case 'image':
@@ -366,6 +381,111 @@ export class SideXPreviewPane extends ViewPane {
 				this.renderPlaceholderError(box);
 			}
 		}
+	}
+
+	private async renderMarkdown(section: HTMLElement, selection: DirectorySelection, token: number): Promise<void> {
+		if (selection.size > MAX_TEXT_PREVIEW_BYTES) {
+			this.renderPlaceholder(section, Codicon.markdown, localize('sidex.preview.markdownTooLarge', '文件过大，不在侧栏预览。'));
+			return;
+		}
+
+		const box = append(section, $('.sidex-preview-media.sidex-preview-markdown'));
+		const loading = append(box, $('.sidex-preview-placeholder-text'));
+		loading.textContent = localize('sidex.preview.loading', '正在加载预览…');
+
+		try {
+			const file = await this.fileService.readFile(URI.file(selection.path));
+			if (token !== this.renderToken) {
+				return;
+			}
+			const isLight = this.themeService.getColorTheme().type === ColorScheme.LIGHT;
+			const result = await renderMarkdownToHtml(file.value.toString(), {
+				languageService: this.languageService,
+				isLight
+			});
+			if (token !== this.renderToken) {
+				return;
+			}
+
+			reset(box);
+			this.ensureKatexStyles(result.hasMath);
+			box.innerHTML = this.rewriteRelativeImages(result.html, URI.file(selection.path));
+			this.attachLinkHandler(box, selection.path);
+		} catch {
+			if (token === this.renderToken) {
+				reset(box);
+				this.renderPlaceholderError(box);
+			}
+		}
+	}
+
+	private async renderMermaid(section: HTMLElement, selection: DirectorySelection, token: number): Promise<void> {
+		if (selection.size > MAX_TEXT_PREVIEW_BYTES) {
+			this.renderPlaceholder(section, Codicon.markdown, localize('sidex.preview.markdownTooLarge', '文件过大，不在侧栏预览。'));
+			return;
+		}
+
+		const box = append(section, $('.sidex-preview-media.sidex-preview-mermaid'));
+		const loading = append(box, $('.sidex-preview-placeholder-text'));
+		loading.textContent = localize('sidex.preview.loading', '正在加载预览…');
+
+		try {
+			const file = await this.fileService.readFile(URI.file(selection.path));
+			if (token !== this.renderToken) {
+				return;
+			}
+			const isLight = this.themeService.getColorTheme().type === ColorScheme.LIGHT;
+			const svg = await renderMermaid(file.value.toString(), isLight);
+			if (token !== this.renderToken) {
+				return;
+			}
+			reset(box);
+			// SVG 由 mermaid 生成，且已开启 securityLevel: strict。
+			box.innerHTML = svg;
+		} catch {
+			if (token === this.renderToken) {
+				reset(box);
+				this.renderPlaceholderError(box);
+			}
+		}
+	}
+
+	/** KaTeX 样式是全局类名，含公式时注入一次即可。 */
+	private ensureKatexStyles(withKatex: boolean): void {
+		if (withKatex && !this.katexStyleElement) {
+			this.katexStyleElement = document.createElement('style');
+			this.katexStyleElement.textContent = katexStyles;
+			document.head.appendChild(this.katexStyleElement);
+		}
+	}
+
+	/** 相对图片路径改走 sidex-asset 协议，侧栏才能显示文档同目录的图片。 */
+	private rewriteRelativeImages(html: string, baseDir: URI): string {
+		return html.replace(
+			/<img\s+([^>]*?)src="([^"]*?)"([^>]*)>/gi,
+			(match, before: string, src: string, after: string) => {
+				if (/^\w[\w\d+.-]*:/.test(src) || src.startsWith('data:')) {
+					return match;
+				}
+				const resolved = resolveMarkdownUri(baseDir, src);
+				return `<img ${before}src="${assetUrl(resolved.fsPath)}"${after}>`;
+			}
+		);
+	}
+
+	/** 侧栏里只读预览：拦截链接默认跳转，交给工作台打开。 */
+	private attachLinkHandler(container: HTMLElement, documentPath: string): void {
+		this.renderDisposables.add(addDisposableListener(container, EventType.CLICK, event => {
+			const anchor = (event.target as HTMLElement | null)?.closest('a');
+			if (!anchor) {
+				return;
+			}
+			event.preventDefault();
+			const href = anchor.getAttribute('href');
+			if (href) {
+				void this.openerService.open(resolveMarkdownUri(URI.file(documentPath), href));
+			}
+		}));
 	}
 
 	private renderPlaceholderError(box: HTMLElement): void {

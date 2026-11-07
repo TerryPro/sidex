@@ -1028,6 +1028,125 @@
 	padding: 0 10px 8px;
 }
 
+/* Markdown 只读预览：内容撑开高度，由外层滚动容器接管滚动。 */
+.sidex-preview-media.sidex-preview-markdown {
+	display: block;
+	overflow: visible;
+	padding: 10px 12px;
+	text-align: left;
+	font-size: var(--vscode-font-size, 13px);
+	line-height: 1.6;
+	word-wrap: break-word;
+}
+
+.sidex-preview-markdown > :first-child {
+	margin-top: 0;
+}
+
+.sidex-preview-markdown > :last-child {
+	margin-bottom: 0;
+}
+
+.sidex-preview-markdown h1,
+.sidex-preview-markdown h2,
+.sidex-preview-markdown h3,
+.sidex-preview-markdown h4,
+.sidex-preview-markdown h5,
+.sidex-preview-markdown h6 {
+	margin: 16px 0 8px;
+	line-height: 1.25;
+	font-weight: 600;
+}
+
+.sidex-preview-markdown h1 {
+	font-size: 1.6em;
+	padding-bottom: 4px;
+	border-bottom: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.25));
+}
+
+.sidex-preview-markdown h2 {
+	font-size: 1.35em;
+}
+
+.sidex-preview-markdown p,
+.sidex-preview-markdown ul,
+.sidex-preview-markdown ol,
+.sidex-preview-markdown blockquote,
+.sidex-preview-markdown table {
+	margin: 8px 0;
+}
+
+.sidex-preview-markdown ul,
+.sidex-preview-markdown ol {
+	padding-left: 22px;
+}
+
+.sidex-preview-markdown a {
+	color: var(--vscode-textLink-foreground);
+	text-decoration: none;
+}
+
+.sidex-preview-markdown a:hover {
+	text-decoration: underline;
+}
+
+.sidex-preview-markdown img {
+	max-width: 100%;
+}
+
+.sidex-preview-markdown blockquote {
+	padding: 0 10px;
+	border-left: 3px solid var(--vscode-textBlockQuote-border, rgba(128, 128, 128, 0.4));
+	color: var(--vscode-textBlockQuote-foreground, inherit);
+}
+
+.sidex-preview-markdown code {
+	font-family: var(--vscode-editor-font-family, monospace);
+	font-size: 0.95em;
+}
+
+.sidex-preview-markdown pre {
+	padding: 10px 12px;
+	overflow: auto;
+	border-radius: 4px;
+	background-color: var(--vscode-textCodeBlock-background, rgba(128, 128, 128, 0.1));
+}
+
+.sidex-preview-markdown pre code {
+	font-size: var(--vscode-editor-font-size, 13px);
+}
+
+.sidex-preview-markdown table {
+	border-collapse: collapse;
+	display: block;
+	overflow-x: auto;
+}
+
+.sidex-preview-markdown th,
+.sidex-preview-markdown td {
+	padding: 4px 8px;
+	border: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.25));
+}
+
+.sidex-preview-markdown hr {
+	border: 0;
+	height: 1px;
+	background-color: var(--vscode-widget-border, rgba(128, 128, 128, 0.25));
+}
+
+/* Mermaid 图表：按容器宽度等比缩放。 */
+.sidex-preview-media.sidex-preview-mermaid {
+	display: block;
+	overflow: visible;
+	padding: 10px;
+	text-align: center;
+}
+
+.sidex-preview-mermaid svg {
+	max-width: 100%;
+	height: auto;
+}
+
 .sidex-preview-properties {
 	display: grid;
 	grid-template-columns: minmax(56px, auto) 1fr;

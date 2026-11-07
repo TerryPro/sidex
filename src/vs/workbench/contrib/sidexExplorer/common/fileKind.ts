@@ -66,6 +66,18 @@ export function classifyFile(name: string): FileKind {
 	return 'other';
 }
 
+/** 可渲染 Markdown 富文本预览的文件。 */
+export function isMarkdownFile(name: string): boolean {
+	const extension = extensionOf(name);
+	return extension === 'md' || extension === 'markdown';
+}
+
+/** 可渲染 Mermaid 图表的文件。 */
+export function isMermaidFile(name: string): boolean {
+	const extension = extensionOf(name);
+	return extension === 'mmd' || extension === 'mermaid';
+}
+
 /** 缩略图类别；不可生成缩略图时返回 undefined。 */
 export function thumbnailKindOf(name: string): ThumbnailKind | undefined {
 	const kind = classifyFile(name);
