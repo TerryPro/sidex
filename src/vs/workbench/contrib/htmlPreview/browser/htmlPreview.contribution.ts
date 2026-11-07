@@ -15,14 +15,9 @@ import { ITextFileService } from '../../../services/textfile/common/textfiles.js
 import { IWebviewWorkbenchService } from '../../webviewPanel/browser/webviewWorkbenchService.js';
 import type { WebviewInput } from '../../webviewPanel/browser/webviewEditorInput.js';
 import type { WebviewInitInfo } from '../../webview/browser/webview.js';
+import { ASSET_ORIGIN } from '../../sidexExplorer/common/fileKind.js';
 
 const HTML_PREVIEW_VIEW_TYPE = 'sidex.html.preview';
-
-/**
- * Local files are served by the `sidex-asset` protocol, so the preview can point
- * an iframe straight at the page instead of re-writing every relative URL.
- */
-const ASSET_ORIGIN = 'https://sidex-asset.localhost';
 
 function isHtml(resource: URI): boolean {
 	const path = resource.path.toLowerCase();

@@ -12,6 +12,7 @@ import { IFileService } from '../../../../platform/files/common/files.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { SideXExplorerEntry } from '../../../../platform/sidex/common/sidexExplorerService.js';
 import { loadPdfjsCore } from '../../pdfPreview/browser/pdfjsRuntime.js';
+import { assetUrl, imageMime, maxThumbnailBytes, thumbnailKindOf, type ThumbnailKind } from '../common/fileKind.js';
 
 export const IThumbnailService = createDecorator<IThumbnailService>('sidexThumbnailService');
 
@@ -25,19 +26,7 @@ export interface IThumbnailService {
 const THUMBNAIL_SIZE = 48;
 const MAX_CONCURRENT = 2;
 const MEMORY_CACHE_LIMIT = 300;
-const IMAGE_MAX_BYTES = 32 * 1024 * 1024;
-const VIDEO_MAX_BYTES = 512 * 1024 * 1024;
-const PDF_MAX_BYTES = 64 * 1024 * 1024;
 const LOAD_TIMEOUT = 10_000;
-
-/** The workbench and the asset protocol run on different origins, so images need CORS. */
-const ASSET_ORIGIN = 'https://sidex-asset.localhost';
-
-const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico', 'svg']);
-const VIDEO_EXTENSIONS = new Set(['mp4', 'webm', 'mkv', 'mov', 'm4v', 'avi', 'wmv']);
-const PDF_EXTENSIONS = new Set(['pdf']);
-
-type ThumbnailKind = 'image' | 'video' | 'pdf';
 
 interface IMemoryThumbnail {
 	readonly mtime: number;
@@ -85,8 +74,8 @@ export class ThumbnailService extends Disposable implements IThumbnailService {
 			return Promise.resolve(undefined);
 		}
 
-		const kind = classify(entry.name);
-		if (!kind || entry.size > maxBytesFor(kind)) {
+		const kind = thumbnailKindOf(entry.name);
+		if (!kind || entry.size > maxThumbnailBytes(kind)) {
 			return Promise.resolve(undefined);
 		}
 
@@ -287,56 +276,6 @@ export class ThumbnailService extends Disposable implements IThumbnailService {
 			void documentProxy.destroy();
 		}
 	}
-}
-
-function classify(name: string): ThumbnailKind | undefined {
-	const extension = name.slice(name.lastIndexOf('.') + 1).toLowerCase();
-	if (IMAGE_EXTENSIONS.has(extension)) {
-		return 'image';
-	}
-	if (VIDEO_EXTENSIONS.has(extension)) {
-		return 'video';
-	}
-	if (PDF_EXTENSIONS.has(extension)) {
-		return 'pdf';
-	}
-	return undefined;
-}
-
-function maxBytesFor(kind: ThumbnailKind): number {
-	switch (kind) {
-		case 'image':
-			return IMAGE_MAX_BYTES;
-		case 'video':
-			return VIDEO_MAX_BYTES;
-		case 'pdf':
-			return PDF_MAX_BYTES;
-	}
-}
-
-function imageMime(name: string): string {
-	const extension = name.slice(name.lastIndexOf('.') + 1).toLowerCase();
-	switch (extension) {
-		case 'png':
-			return 'image/png';
-		case 'gif':
-			return 'image/gif';
-		case 'webp':
-			return 'image/webp';
-		case 'bmp':
-			return 'image/bmp';
-		case 'ico':
-			return 'image/x-icon';
-		case 'svg':
-			return 'image/svg+xml';
-		default:
-			return 'image/jpeg';
-	}
-}
-
-function assetUrl(path: string, modified: number): string {
-	const normalized = path.replace(/\\/g, '/').split('/').map(segment => encodeURIComponent(segment)).join('/');
-	return `${ASSET_ORIGIN}/${normalized}?v=${modified}`;
 }
 
 function renderImage(source: CanvasImageSource, width: number, height: number): string | undefined {

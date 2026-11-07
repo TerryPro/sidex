@@ -29,24 +29,13 @@ import { ISideXExplorerService } from '../../../../platform/sidex/common/sidexEx
 import { ViewPane, IViewPaneOptions } from '../../../browser/parts/views/viewPane.js';
 import { IViewDescriptorService } from '../../../common/views.js';
 import { DirectorySelection, IDirectoryService } from './directoryService.js';
+import { classifyFile, extensionOf, formatBytes, imageMime } from '../common/fileKind.js';
 
 /** 超过该大小不在侧栏读取内容，避免卡住界面。 */
 const MAX_TEXT_PREVIEW_BYTES = 1024 * 1024;
 const MAX_IMAGE_PREVIEW_BYTES = 32 * 1024 * 1024;
 /** 侧栏文本预览最多显示的字符数。 */
 const MAX_TEXT_PREVIEW_CHARS = 20000;
-
-const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'ico', 'svg']);
-const TEXT_EXTENSIONS = new Set([
-	'txt', 'text', 'log', 'md', 'markdown', 'json', 'jsonc', 'js', 'mjs', 'cjs', 'ts', 'tsx', 'jsx',
-	'css', 'scss', 'less', 'html', 'htm', 'xml', 'yaml', 'yml', 'toml', 'ini', 'cfg', 'conf',
-	'rs', 'go', 'py', 'java', 'kt', 'c', 'h', 'cc', 'cpp', 'hpp', 'cs', 'swift', 'dart',
-	'rb', 'php', 'lua', 'pl', 'sh', 'bash', 'zsh', 'bat', 'cmd', 'ps1', 'sql', 'vue', 'svelte',
-	'gradle', 'properties', 'env', 'csv', 'tsv', 'diff', 'patch'
-]);
-const TEXT_FILE_NAMES = new Set(['makefile', 'dockerfile', 'license', 'readme', 'changelog', '.gitignore', '.editorconfig']);
-
-type PreviewKind = 'image' | 'text' | 'pdf' | 'other';
 
 export class SideXPreviewPane extends ViewPane {
 
@@ -157,7 +146,7 @@ export class SideXPreviewPane extends ViewPane {
 		if (selection.isDir) {
 			this.renderPlaceholder(preview, Codicon.folder, localize('sidex.preview.folder', '文件夹'));
 		} else {
-			switch (classify(selection.name)) {
+			switch (classifyFile(selection.name)) {
 				case 'image':
 					void this.renderImage(preview, selection, token);
 					break;
@@ -387,47 +376,6 @@ export class SideXPreviewPane extends ViewPane {
 	}
 }
 
-function extensionOf(name: string): string {
-	const index = name.lastIndexOf('.');
-	return index > 0 ? name.slice(index + 1).toLowerCase() : '';
-}
-
-function classify(name: string): PreviewKind {
-	const extension = extensionOf(name);
-	if (IMAGE_EXTENSIONS.has(extension)) {
-		return 'image';
-	}
-	if (TEXT_EXTENSIONS.has(extension) || (extension === '' && TEXT_FILE_NAMES.has(name.toLowerCase()))) {
-		return 'text';
-	}
-	if (extension === 'pdf') {
-		return 'pdf';
-	}
-	return 'other';
-}
-
-function imageMime(name: string): string | undefined {
-	switch (extensionOf(name)) {
-		case 'png':
-			return 'image/png';
-		case 'jpg':
-		case 'jpeg':
-			return 'image/jpeg';
-		case 'gif':
-			return 'image/gif';
-		case 'bmp':
-			return 'image/bmp';
-		case 'webp':
-			return 'image/webp';
-		case 'ico':
-			return 'image/x-icon';
-		case 'svg':
-			return 'image/svg+xml';
-		default:
-			return undefined;
-	}
-}
-
 function typeLabel(selection: DirectorySelection): string {
 	if (selection.isDir) {
 		return localize('sidex.preview.folderType', '文件夹');
@@ -440,15 +388,4 @@ function typeLabel(selection: DirectorySelection): string {
 
 function formatDateTime(seconds: number): string {
 	return seconds > 0 ? new Date(seconds * 1000).toLocaleString() : '';
-}
-
-function formatBytes(bytes: number): string {
-	if (!Number.isFinite(bytes) || bytes <= 0) {
-		return '0 B';
-	}
-	const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-	const index = Math.min(units.length - 1, Math.floor(Math.log(bytes) / Math.log(1024)));
-	const value = bytes / Math.pow(1024, index);
-	const decimals = index >= 3 ? 1 : 0;
-	return `${value.toFixed(decimals)} ${units[index]}`;
 }

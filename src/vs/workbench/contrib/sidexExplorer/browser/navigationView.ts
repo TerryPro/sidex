@@ -31,6 +31,7 @@ import { ViewPane, IViewPaneOptions } from '../../../browser/parts/views/viewPan
 import { IViewDescriptorService } from '../../../common/views.js';
 import { IDirectoryService, normalizeLocation } from './directoryService.js';
 import { driveIconSvg, folderIconSvg, pcIconSvg } from './explorerIcons.js';
+import { driveLabel } from '../common/driveLabel.js';
 
 type NavigationNodeKind = 'this-pc' | 'drive' | 'folder';
 
@@ -433,7 +434,7 @@ export class NavigationView extends ViewPane {
 	private getChildren(state: NavigationTabState, path: string): INavigationNode[] {
 		if (!path) {
 			return this.directoryService.drives.map(drive => {
-				const label = drive.label || this.defaultDriveLabel(drive.kind);
+				const label = drive.label || driveLabel(drive.kind);
 				return {
 					path: drive.path,
 					name: label ? `${label} (${drive.letter})` : drive.letter,
@@ -538,21 +539,6 @@ export class NavigationView extends ViewPane {
 		const state = this.activeState;
 		if (state) {
 			this.renderTree(state);
-		}
-	}
-
-	private defaultDriveLabel(kind: string): string {
-		switch (kind) {
-			case 'fixed':
-				return localize('sidex.drive.localDisk', '本地磁盘');
-			case 'removable':
-				return localize('sidex.drive.removableDisk', '可移动磁盘');
-			case 'network':
-				return localize('sidex.drive.networkDrive', '网络驱动器');
-			case 'cdrom':
-				return localize('sidex.drive.cdDrive', 'DVD 驱动器');
-			default:
-				return '';
 		}
 	}
 }
