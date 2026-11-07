@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, writeFileSync, existsSync, statSync } from 'fs';
+import { readdirSync, readFileSync, writeFileSync, existsSync, statSync, cpSync, rmSync } from 'fs';
 import { join, resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -6,8 +6,19 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 const extensionsDir = resolve(__dirname, '..', 'extensions');
+const publicExtensionsDir = resolve(__dirname, '..', 'public', 'extensions');
 const metaOutputPath = resolve(__dirname, '..', 'extensions-meta.json');
 const jsOutputPath = resolve(__dirname, '..', 'public', 'builtin-extensions.js');
+
+// 工作台以 `/extensions/<name>/...` 读取内置扩展资源（图标主题、语法、片段等），
+// 该路径相对前端根目录，因此需要把扩展目录同步进 public/ 随构建产物一起提供。
+function mirrorExtensionResources(dirNames) {
+  rmSync(publicExtensionsDir, { recursive: true, force: true });
+  for (const dirName of dirNames) {
+    cpSync(join(extensionsDir, dirName), join(publicExtensionsDir, dirName), { recursive: true });
+  }
+  console.log(`Mirrored ${dirNames.length} extension resource directories to public/extensions`);
+}
 
 function writeBuiltinExtensions(descriptors) {
   writeFileSync(metaOutputPath, JSON.stringify(descriptors, null, 2));
@@ -86,3 +97,4 @@ for (const dirName of entries) {
 descriptors.sort((a, b) => a.extensionPath.localeCompare(b.extensionPath));
 
 writeBuiltinExtensions(descriptors);
+mirrorExtensionResources(descriptors.map(descriptor => descriptor.extensionPath));
