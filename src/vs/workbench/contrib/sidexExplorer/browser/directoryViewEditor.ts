@@ -38,7 +38,10 @@ import { DirectoryViewEditorInput } from './directoryViewEditorInput.js';
 import { driveIconSvg } from './explorerIcons.js';
 import { FILE_LIST_FOCUS_CONTEXT, IFileListCommandHost, setActiveFileListHost } from './fileListCommands.js';
 import { fileName, IFileOperationService, joinPath, parentDirectory, SIDEX_FILES_MIME } from './fileOperationService.js';
+import { assetUrl, formatBytes } from '../common/fileKind.js';
+import { driveLabel } from '../common/driveLabel.js';
 import { IThumbnailService } from './thumbnailService.js';
+import { ISessionService } from './sessionService.js';
 
 /** 一个目录标签对应的独立视图，切换标签时保留内容与滚动位置。 */
 interface DirectoryTabView {
@@ -536,12 +539,6 @@ class VirtualFileList extends Disposable {
 	}
 }
 
-/** sidex-asset 协议的绝对地址，供拖出到外部应用时使用。 */
-function assetUrl(path: string): string {
-	const normalized = path.replace(/\\/g, '/').split('/').map(segment => encodeURIComponent(segment)).join('/');
-	return `https://sidex-asset.localhost/${normalized}`;
-}
-
 export class DirectoryViewEditor extends EditorPane {
 
 	static readonly ID = 'workbench.editor.sidexDirectoryView';
@@ -572,6 +569,7 @@ export class DirectoryViewEditor extends EditorPane {
 		@INotificationService private readonly notificationService: INotificationService,
 		@IThumbnailService private readonly thumbnailService: IThumbnailService,
 		@IFileOperationService private readonly fileOperationService: IFileOperationService,
+		@ISessionService private readonly sessionService: ISessionService,
 		@IContextKeyService contextKeyService: IContextKeyService
 	) {
 		super(DirectoryViewEditor.ID, group, telemetryService, themeService, storageService);
@@ -658,12 +656,7 @@ export class DirectoryViewEditor extends EditorPane {
 				this.savedScrollTops.delete(view.tabId);
 			}
 			// 立即落盘，避免防抖持久化未触发时恢复到旧位置。
-			this.storageService.store(
-				`sidex.directory.scroll:${view.tabId}`,
-				String(scrollTop),
-				StorageScope.PROFILE,
-				StorageTarget.MACHINE
-			);
+			this.sessionService.setScrollTop(view.tabId, scrollTop);
 		}
 	}
 
@@ -725,7 +718,7 @@ export class DirectoryViewEditor extends EditorPane {
 			view.scrollable.scanDomNode();
 			view.virtualList?.update();
 
-			const persisted = Number(this.storageService.get(`sidex.directory.scroll:${tabId}`, StorageScope.PROFILE) ?? '0');
+			const persisted = this.sessionService.getScrollTop(tabId);
 			const restoreTop = this.savedScrollTops.get(tabId) ?? persisted;
 			const query = this.directoryService.searchQuery;
 
@@ -934,7 +927,7 @@ export class DirectoryViewEditor extends EditorPane {
 		const body = append(tile, $('div.sidex-drive-tile-body'));
 
 		const name = append(body, $('div.sidex-drive-tile-name'));
-		const label = drive.label || this.defaultDriveLabel(drive.kind);
+		const label = drive.label || driveLabel(drive.kind);
 		name.textContent = label ? `${label} (${drive.letter})` : drive.letter;
 
 		const bar = append(body, $('div.sidex-drive-capacity'));
@@ -1145,13 +1138,7 @@ export class DirectoryViewEditor extends EditorPane {
 			}
 			persistTimer = window.setTimeout(() => {
 				persistTimer = undefined;
-				const scrollTop = String(view.scrollable.getScrollPosition().scrollTop);
-				this.storageService.store(
-					`sidex.directory.scroll:${view.tabId}`,
-					scrollTop,
-					StorageScope.PROFILE,
-					StorageTarget.MACHINE
-				);
+				this.sessionService.setScrollTop(view.tabId, view.scrollable.getScrollPosition().scrollTop);
 			}, 250);
 		}));
 	}
@@ -1554,30 +1541,5 @@ export class DirectoryViewEditor extends EditorPane {
 			element.classList.add(className);
 		}
 	}
-
-	private defaultDriveLabel(kind: string): string {
-		switch (kind) {
-			case 'fixed':
-				return localize('sidex.drive.localDisk', '本地磁盘');
-			case 'removable':
-				return localize('sidex.drive.removableDisk', '可移动磁盘');
-			case 'network':
-				return localize('sidex.drive.networkDrive', '网络驱动器');
-			case 'cdrom':
-				return localize('sidex.drive.cdDrive', 'DVD 驱动器');
-			default:
-				return '';
-		}
-	}
 }
 
-function formatBytes(bytes: number): string {
-	if (!Number.isFinite(bytes) || bytes <= 0) {
-		return '0 B';
-	}
-	const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-	const index = Math.min(units.length - 1, Math.floor(Math.log(bytes) / Math.log(1024)));
-	const value = bytes / Math.pow(1024, index);
-	const decimals = index >= 3 ? 1 : 0;
-	return `${value.toFixed(decimals)} ${units[index]}`;
-}

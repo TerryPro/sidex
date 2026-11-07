@@ -11,8 +11,6 @@ import { InstantiationType, registerSingleton } from '../../../../platform/insta
 import { IWorkingCopyBackupService } from '../common/workingCopyBackup.js';
 import { joinPath } from '../../../../base/common/resources.js';
 import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js';
-import { WorkbenchPhase, registerWorkbenchContribution2 } from '../../../common/contributions.js';
-import { BrowserWorkingCopyBackupTracker } from './workingCopyBackupTracker.js';
 
 export class BrowserWorkingCopyBackupService extends WorkingCopyBackupService {
 	constructor(
@@ -31,10 +29,3 @@ export class BrowserWorkingCopyBackupService extends WorkingCopyBackupService {
 
 // Register Service
 registerSingleton(IWorkingCopyBackupService, BrowserWorkingCopyBackupService, InstantiationType.Eager);
-
-// Register Backup Tracker
-registerWorkbenchContribution2(
-	BrowserWorkingCopyBackupTracker.ID,
-	BrowserWorkingCopyBackupTracker,
-	WorkbenchPhase.BlockStartup
-);

@@ -12,6 +12,8 @@ import { createDecorator } from '../../../../platform/instantiation/common/insta
 import { InstantiationType, registerSingleton } from '../../../../platform/instantiation/common/extensions.js';
 import { ISideXExplorerService, SideXDriveInfo } from '../../../../platform/sidex/common/sidexExplorerService.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
+import { driveLabel } from '../common/driveLabel.js';
+import { ISessionService } from './sessionService.js';
 
 export interface DirectoryTab {
 	readonly id: string;
@@ -127,21 +129,6 @@ export function parentLocation(location: string): string {
 	return parent;
 }
 
-function defaultDriveLabel(kind: string): string {
-	switch (kind) {
-		case 'fixed':
-			return localize('sidex.drive.localDisk', '本地磁盘');
-		case 'removable':
-			return localize('sidex.drive.removableDisk', '可移动磁盘');
-		case 'network':
-			return localize('sidex.drive.networkDrive', '网络驱动器');
-		case 'cdrom':
-			return localize('sidex.drive.cdDrive', 'DVD 驱动器');
-		default:
-			return '';
-	}
-}
-
 export class DirectoryService extends Disposable implements IDirectoryService {
 	declare readonly _serviceBrand: undefined;
 
@@ -175,54 +162,43 @@ export class DirectoryService extends Disposable implements IDirectoryService {
 
 	constructor(
 		@ISideXExplorerService private readonly explorerService: ISideXExplorerService,
-		@IStorageService private readonly storageService: IStorageService
+		@IStorageService private readonly storageService: IStorageService,
+		@ISessionService private readonly sessionService: ISessionService
 	) {
 		super();
 	}
 
 	private persistTabs(): void {
-		const data = JSON.stringify({
-			active: this._activeTabId,
-			tabs: this._tabs.map(tab => ({
+		this.sessionService.setTabs(
+			this._tabs.map(tab => ({
 				id: tab.id,
 				location: tab.location,
 				history: tab.history,
 				historyIndex: tab.historyIndex
-			}))
-		});
-		this.storageService.store('sidex.directory.tabs', data, StorageScope.PROFILE, StorageTarget.MACHINE);
+			})),
+			this._activeTabId
+		);
 	}
 
 	private restoreTabs(): boolean {
-		const raw = this.storageService.get('sidex.directory.tabs', StorageScope.PROFILE);
-		if (!raw) {
+		const snapshot = this.sessionService.snapshot;
+		if (!snapshot.tabs.length) {
 			return false;
 		}
-		try {
-			const data = JSON.parse(raw) as {
-				active?: string;
-				tabs?: Array<{ id: string; location: string; history?: string[]; historyIndex?: number }>;
+		this._tabs = snapshot.tabs.map(tab => {
+			const location = normalizeLocation(tab.location);
+			return {
+				id: tab.id,
+				location,
+				title: this.titleForLocation(location),
+				history: tab.history?.length ? tab.history : [location],
+				historyIndex: tab.historyIndex ?? 0,
+				refreshToken: 0
 			};
-			if (!data.tabs?.length) {
-				return false;
-			}
-			this._tabs = data.tabs.map(tab => {
-				const location = normalizeLocation(tab.location);
-				return {
-					id: tab.id,
-					location,
-					title: this.titleForLocation(location),
-					history: tab.history?.length ? tab.history : [location],
-					historyIndex: tab.historyIndex ?? 0,
-					refreshToken: 0
-				};
-			});
-			this._activeTabId = this._tabs.find(tab => tab.id === data.active)?.id ?? this._tabs[0].id;
-			this._tabCounter = this._tabs.length;
-			return true;
-		} catch {
-			return false;
-		}
+		});
+		this._activeTabId = this._tabs.find(tab => tab.id === snapshot.activeTabId)?.id ?? this._tabs[0].id;
+		this._tabCounter = this._tabs.length;
+		return true;
 	}
 
 	/** 当前目录内的名称过滤词；每个目录标签各存一份。 */
@@ -592,7 +568,7 @@ export class DirectoryService extends Disposable implements IDirectoryService {
 		const normalized = normalizeLocation(location);
 		const drive = this._drives.find(item => normalizeLocation(item.path).toLowerCase() === normalized.toLowerCase());
 		if (drive) {
-			const label = drive.label || defaultDriveLabel(drive.kind);
+			const label = drive.label || driveLabel(drive.kind);
 			return label ? `${label} (${drive.letter})` : drive.letter;
 		}
 
@@ -600,7 +576,7 @@ export class DirectoryService extends Disposable implements IDirectoryService {
 		if (root) {
 			const letter = `${root[1].toUpperCase()}:`;
 			const rootDrive = this._drives.find(item => item.letter.toUpperCase() === letter);
-			const label = rootDrive?.label || defaultDriveLabel(rootDrive?.kind ?? '');
+			const label = rootDrive?.label || driveLabel(rootDrive?.kind ?? '');
 			return label ? `${label} (${letter})` : letter;
 		}
 
