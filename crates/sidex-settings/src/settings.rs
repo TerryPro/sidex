@@ -58,7 +58,7 @@ impl Settings {
     pub fn load_user(&mut self, path: &Path) -> Result<()> {
         let contents =
             std::fs::read_to_string(path).context("failed to read user settings file")?;
-        let parsed = parse_jsonc(&contents)?;
+        let parsed = strip_nulls(parse_jsonc(&contents)?);
         let old_layer = std::mem::replace(&mut self.user_layer, parsed);
         self.fire_changes(&old_layer, &self.user_layer.clone());
         Ok(())
@@ -68,7 +68,7 @@ impl Settings {
     pub fn load_workspace(&mut self, path: &Path) -> Result<()> {
         let contents =
             std::fs::read_to_string(path).context("failed to read workspace settings file")?;
-        let parsed = parse_jsonc(&contents)?;
+        let parsed = strip_nulls(parse_jsonc(&contents)?);
         let old_layer = std::mem::replace(&mut self.workspace_layer, parsed);
         self.fire_changes(&old_layer, &self.workspace_layer.clone());
         Ok(())
@@ -110,6 +110,17 @@ impl Settings {
         }
     }
 
+    /// Remove a key from the **user** layer so the default applies again.
+    pub fn remove(&mut self, key: &str) {
+        let old = self.get_raw(key).cloned();
+        remove_in_layer(&mut self.user_layer, key);
+        if let Some(effective) = self.get_raw(key) {
+            if old.as_ref() != Some(effective) {
+                self.fire_handlers(key, effective);
+            }
+        }
+    }
+
     /// Set a value in the **workspace** layer.
     pub fn set_workspace(&mut self, key: &str, value: Value) {
         let old = self.get_raw(key).cloned();
@@ -117,6 +128,17 @@ impl Settings {
         if let Some(new) = self.get_raw(key) {
             if old.as_ref() != Some(new) {
                 self.fire_handlers(key, new);
+            }
+        }
+    }
+
+    /// Remove a key from the **workspace** layer.
+    pub fn remove_workspace(&mut self, key: &str) {
+        let old = self.get_raw(key).cloned();
+        remove_in_layer(&mut self.workspace_layer, key);
+        if let Some(effective) = self.get_raw(key) {
+            if old.as_ref() != Some(effective) {
+                self.fire_handlers(key, effective);
             }
         }
     }
@@ -173,6 +195,22 @@ impl Settings {
 fn set_in_layer(layer: &mut Value, key: &str, value: Value) {
     if let Some(obj) = layer.as_object_mut() {
         obj.insert(key.to_owned(), value);
+    }
+}
+
+fn remove_in_layer(layer: &mut Value, key: &str) {
+    if let Some(obj) = layer.as_object_mut() {
+        obj.remove(key);
+    }
+}
+
+/// Drop top-level `null` entries: a JSON `null` means "unset", but keeping it
+/// would shadow the built-in default with a useless null value and break every
+/// `config.<key>` context key derived from that setting.
+fn strip_nulls(value: Value) -> Value {
+    match value {
+        Value::Object(map) => Value::Object(map.into_iter().filter(|(_, v)| !v.is_null()).collect()),
+        other => other,
     }
 }
 
@@ -251,5 +289,23 @@ mod tests {
         let s = Settings::new();
         let theme: String = s.get("workbench.colorTheme").unwrap();
         assert_eq!(theme, "Default Dark+");
+    }
+
+    #[test]
+    fn remove_falls_back_to_default() {
+        let mut s = Settings::new();
+        s.set("editor.fontSize", json!(18));
+        s.remove("editor.fontSize");
+        let size: i64 = s.get("editor.fontSize").unwrap();
+        assert_eq!(size, 14);
+    }
+
+    #[test]
+    fn strip_nulls_drops_explicit_null_entries() {
+        let value = json!({
+            "workbench.sideBar.location": null,
+            "editor.fontSize": 18
+        });
+        assert_eq!(strip_nulls(value), json!({ "editor.fontSize": 18 }));
     }
 }
