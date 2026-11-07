@@ -1,6 +1,27 @@
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
 import * as path from 'path';
 import { nlsPlugin } from './scripts/vite-plugin-nls';
+
+// 移除 Mermaid 的 ELK 布局注册，避免产出约 1.4 MB 的 elk 懒加载块。
+// 请求 ELK 布局的图示由 Mermaid 自动回退到 dagre（仅控制台警告），渲染不受影响。
+// 关键点是 `elkLayoutLoaders` 有 @__PURE__ 标注，移除唯一调用后整段（含 elk 的
+// 动态 import）会被 Rollup 当做死代码摇掉。
+function stripMermaidElk(): Plugin {
+	return {
+		name: 'sidex-strip-mermaid-elk',
+		enforce: 'pre',
+		transform(code, id) {
+			if (!id.includes('node_modules/mermaid/') || !id.endsWith('.mjs')) {
+				return null;
+			}
+			if (!code.includes('elkLayoutLoaders') || !code.includes('...true ?')) {
+				return null;
+			}
+			const patched = code.replace('...elkLayoutLoaders()', '...[]');
+			return patched === code ? null : { code: patched, map: null };
+		},
+	};
+}
 
 function quietMissingSourceMaps() {
   const skip = [/\/vscode-textmate\/.*\.js\.map$/];
@@ -27,7 +48,7 @@ export default defineConfig({
   clearScreen: false,
   assetsInclude: ['**/*.wasm', '**/*.json', '**/*.tmLanguage.json'],
   publicDir: 'public',
-  plugins: [nlsPlugin(), quietMissingSourceMaps()],
+  plugins: [nlsPlugin(), stripMermaidElk(), quietMissingSourceMaps()],
   server: {
     port: 1420,
     strictPort: true,
