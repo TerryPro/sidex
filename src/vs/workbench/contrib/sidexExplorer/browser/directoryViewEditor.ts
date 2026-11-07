@@ -39,6 +39,7 @@ import { driveIconSvg } from './explorerIcons.js';
 import { FILE_LIST_FOCUS_CONTEXT, IFileListCommandHost, setActiveFileListHost } from './fileListCommands.js';
 import { fileName, IFileOperationService, joinPath, parentDirectory, SIDEX_FILES_MIME } from './fileOperationService.js';
 import { assetUrl, formatBytes } from '../common/fileKind.js';
+import { FileSortKey, sortFileEntries } from '../common/fileListSort.js';
 import { driveLabel } from '../common/driveLabel.js';
 import { IThumbnailService } from './thumbnailService.js';
 import { ISessionService } from './sessionService.js';
@@ -555,7 +556,7 @@ export class DirectoryViewEditor extends EditorPane {
 	private activeTabId: string | undefined;
 	private readonly viewDisposables = this._register(new DisposableStore());
 	private contextMenu: HTMLElement | undefined;
-	private sortKey: 'name' | 'modified' | 'type' | 'size' = 'name';
+	private sortKey: FileSortKey = 'name';
 	private sortAscending = true;
 	private readonly columnWidths = [260, 170, 130, 110];
 	private readonly fileListFocus: ReturnType<typeof FILE_LIST_FOCUS_CONTEXT.bindTo>;
@@ -1084,28 +1085,6 @@ export class DirectoryViewEditor extends EditorPane {
 		this.storageService.store('sidex.directory.columnWidths', this.columnWidths.join(','), StorageScope.PROFILE, StorageTarget.MACHINE);
 	}
 
-	private sortEntries(entries: readonly SideXExplorerEntry[]): SideXExplorerEntry[] {
-		const factor = this.sortAscending ? 1 : -1;
-		return [...entries].sort((a, b) => {
-			if (a.isDir !== b.isDir) {
-				return a.isDir ? -1 : 1;
-			}
-			switch (this.sortKey) {
-				case 'modified':
-					return (a.modified - b.modified) * factor;
-				case 'size':
-					return (a.size - b.size) * factor;
-				case 'type': {
-					const aType = a.isDir ? '' : a.name.slice(a.name.lastIndexOf('.') + 1);
-					const bType = b.isDir ? '' : b.name.slice(b.name.lastIndexOf('.') + 1);
-					return aType.localeCompare(bType) * factor;
-				}
-				default:
-					return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }) * factor;
-			}
-		});
-	}
-
 	private addColumnWidths(container: HTMLElement): void {
 		container.style.setProperty('--sidex-col-name', `${this.columnWidths[0]}px`);
 		container.style.setProperty('--sidex-col-modified', `${this.columnWidths[1]}px`);
@@ -1114,7 +1093,7 @@ export class DirectoryViewEditor extends EditorPane {
 	}
 
 	private renderDirectory(view: DirectoryTabView, location: string, entries: readonly SideXExplorerEntry[], searchRoot?: string): void {
-		const sorted = this.sortEntries(entries);
+		const sorted = sortFileEntries(entries, this.sortKey, this.sortAscending);
 
 		this.addColumnWidths(view.content);
 
