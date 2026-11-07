@@ -40,7 +40,7 @@ import { FILE_LIST_FOCUS_CONTEXT, IFileListCommandHost, setActiveFileListHost } 
 import { fileName, IFileOperationService, joinPath, parentDirectory, SIDEX_FILES_MIME } from './fileOperationService.js';
 import { assetUrl, formatBytes } from '../common/fileKind.js';
 import { type FileSortKey, sortFileEntries } from '../common/fileListSort.js';
-import { isDirectoryDataCurrent, isDirectoryViewCurrent } from '../common/directoryViewState.js';
+import { DirectoryViewContent } from '../common/directoryViewContent.js';
 import { driveLabel } from '../common/driveLabel.js';
 import { IThumbnailService } from './thumbnailService.js';
 import { ISessionService } from './sessionService.js';
@@ -52,19 +52,11 @@ interface DirectoryTabView {
 	readonly content: HTMLElement;
 	readonly scrollable: DomScrollableElement;
 	readonly renderDisposables: DisposableStore;
-	renderedLocation: string | undefined;
-	renderedRefreshToken: number;
-	renderedQuery: string;
-	requestId: number;
-	/** 目录完整数据集；排序、过滤和虚拟滚动都基于它，不再分页读取。 */
-	entries: readonly SideXExplorerEntry[] | undefined;
+	/** 目录数据、搜索结果与请求号的唯一持有者。 */
+	readonly data: DirectoryViewContent;
+	/** 当前 DOM 对应的数据版本；与 data.revision 不一致时需要重绘。 */
+	renderedRevision: number;
 	virtualList: VirtualFileList | undefined;
-	/** 当前渲染的是搜索结果时的搜索根目录；undefined 表示普通目录列表。 */
-	searchRoot: string | undefined;
-	/** 搜索结果的完整数据集，用于排序重绘。 */
-	searchResults: readonly SideXExplorerEntry[] | undefined;
-	/** 丢弃过期搜索结果的请求号。 */
-	searchRequestId: number;
 }
 
 const FILE_ROW_HEIGHT = 28;
@@ -694,15 +686,9 @@ export class DirectoryViewEditor extends EditorPane {
 			content,
 			scrollable,
 			renderDisposables: new DisposableStore(),
-			renderedLocation: undefined,
-			renderedRefreshToken: -1,
-			renderedQuery: '',
-			requestId: 0,
-			entries: undefined,
-			virtualList: undefined,
-			searchRoot: undefined,
-			searchResults: undefined,
-			searchRequestId: 0
+			data: new DirectoryViewContent(),
+			renderedRevision: -1,
+			virtualList: undefined
 		};
 		this.views.set(tabId, view);
 		return view;
@@ -734,14 +720,21 @@ export class DirectoryViewEditor extends EditorPane {
 			const query = this.directoryService.searchQuery.trim();
 
 			const tab = this.directoryService.getTab(tabId);
-			if (tab && isDirectoryViewCurrent(view, tab, query)) {
-				// 复用已有 DOM，并恢复被其他编辑器遮挡时记录的滚动位置。
-				if (restoreScroll && restoreTop) {
-					view.scrollable.setScrollPosition({ scrollTop: restoreTop });
-					view.virtualList?.update();
+			if (tab && view.data.isCurrent(tab.location, tab.refreshToken, query)) {
+				if (view.renderedRevision === view.data.revision) {
+					// 复用已有 DOM，并恢复被其他编辑器遮挡时记录的滚动位置。
+					if (restoreScroll && restoreTop) {
+						view.scrollable.setScrollPosition({ scrollTop: restoreTop });
+						view.virtualList?.update();
+					}
+					this.savedScrollTops.delete(tabId);
+					return;
 				}
-				this.savedScrollTops.delete(tabId);
-				return;
+				// 数据没变但 DOM 失效（例如切换过图标主题），用缓存重绘。
+				if (this.rerenderContent(view, restoreScroll ? restoreTop : undefined)) {
+					this.savedScrollTops.delete(tabId);
+					return;
+				}
 			}
 
 			this.savedScrollTops.delete(tabId);
@@ -763,7 +756,7 @@ export class DirectoryViewEditor extends EditorPane {
 			if (!tabIds.has(tabId)) {
 				this.views.delete(tabId);
 				this.savedScrollTops.delete(tabId);
-				view.searchRequestId++;
+				view.data.invalidate();
 				view.renderDisposables.dispose();
 				view.scrollable.dispose();
 				view.container.remove();
@@ -795,7 +788,7 @@ export class DirectoryViewEditor extends EditorPane {
 		const query = this.directoryService.searchQuery.trim();
 
 		// 唯一的过期判据：位置、刷新版本、搜索词与搜索根任何一项对不上都要重绘。
-		if (isDirectoryViewCurrent(view, tab, query)) {
+		if (view.data.isCurrent(tab.location, tab.refreshToken, query)) {
 			return;
 		}
 
@@ -806,9 +799,9 @@ export class DirectoryViewEditor extends EditorPane {
 		}
 
 		// 搜索词清空：目录缓存仍属于当前标签时直接重绘，否则重新读取。
-		if (view.searchRoot !== undefined) {
-			if (view.entries && isDirectoryDataCurrent(view, tab)) {
-				this.rerenderDirectory(view, 0);
+		if (view.data.searchRoot !== undefined) {
+			if (view.data.useDirectoryCache(tab.location, tab.refreshToken)) {
+				this.rerenderContent(view, 0);
 			} else {
 				void this.reload(view, 0);
 			}
@@ -816,7 +809,7 @@ export class DirectoryViewEditor extends EditorPane {
 		}
 
 		// 同一位置刷新时保留滚动位置；切换目录则回到顶部。
-		const scrollTop = tab.location === view.renderedLocation
+		const scrollTop = tab.location === view.data.location
 			? view.scrollable.getScrollPosition().scrollTop
 			: 0;
 		void this.reload(view, scrollTop);
@@ -824,7 +817,9 @@ export class DirectoryViewEditor extends EditorPane {
 
 	/** 在当前目录下递归搜索，结果替换文件列表内容。 */
 	private startSearch(view: DirectoryTabView, root: string, query: string): void {
-		const requestId = ++view.searchRequestId;
+		const tab = this.directoryService.getTab(view.tabId);
+		const requestId = view.data.beginSearch(root, tab ? tab.refreshToken : -1, query);
+
 		view.renderDisposables.clear();
 		view.virtualList = undefined;
 		reset(view.content);
@@ -832,27 +827,21 @@ export class DirectoryViewEditor extends EditorPane {
 		const loading = append(view.content, $('.sidex-directory-status'));
 		loading.textContent = localize('sidex.search.searching', '正在搜索“{0}”…', query);
 		view.scrollable.scanDomNode();
+		view.renderedRevision = view.data.revision;
 
 		void this.explorerService.searchEntries(root, query).then(
 			results => {
-				if (requestId !== view.searchRequestId) {
-					return;
-				}
-				const tab = this.directoryService.getTab(view.tabId);
-				// 输入已变化或标签已切换时丢弃过期结果。
-				if (!tab || tab.location !== root || this.directoryService.searchQuery.trim() !== query) {
+				if (!view.data.acceptSearch(requestId, results)) {
 					return;
 				}
 				reset(view.content);
-				view.renderedLocation = tab.location;
-				view.renderedRefreshToken = tab.refreshToken;
-				this.renderDirectory(view, root, results, root);
+				this.renderDirectory(view, root, results, { root, query });
 				view.scrollable.scanDomNode();
 				view.scrollable.setScrollPosition({ scrollTop: 0 });
 				view.virtualList?.update();
 			},
 			error => {
-				if (requestId !== view.searchRequestId) {
+				if (!view.data.fail(requestId)) {
 					return;
 				}
 				reset(view.content);
@@ -865,7 +854,7 @@ export class DirectoryViewEditor extends EditorPane {
 
 	private onDrivesChange(): void {
 		for (const view of this.views.values()) {
-			view.renderedRefreshToken = -1;
+			view.renderedRevision = -1;
 		}
 		// 驱动器列表只影响「此电脑」视图，普通目录与搜索结果无需重载。
 		if (this.directoryService.activeLocation) {
@@ -879,48 +868,31 @@ export class DirectoryViewEditor extends EditorPane {
 
 	private onFileIconThemeChange(): void {
 		for (const view of this.views.values()) {
-			view.renderedRefreshToken = -1;
+			view.renderedRevision = -1;
 		}
 		const view = this.activeView;
-		if (!view) {
+		if (!view || view.data.loading) {
+			// 加载中的数据等结果到了自然按新主题渲染，不能拿旧结果顶上。
 			return;
 		}
 		const scrollTop = view.scrollable.getScrollPosition().scrollTop;
-		if (view.searchRoot !== undefined && view.searchResults) {
-			// 图标主题只影响行内容，用缓存的搜索结果重绘即可。
-			this.rerenderSearch(view, scrollTop);
-			const tab = this.directoryService.getTab(view.tabId);
-			if (tab) {
-				view.renderedRefreshToken = tab.refreshToken;
-			}
-		} else if (view.entries) {
-			// 图标主题只影响行内容，用缓存数据重绘即可。
-			this.rerenderDirectory(view, scrollTop);
-			const tab = this.directoryService.getTab(view.tabId);
-			if (tab) {
-				view.renderedRefreshToken = tab.refreshToken;
-			}
-		} else {
+		if (!this.rerenderContent(view, scrollTop)) {
 			void this.reload(view, scrollTop);
 		}
 	}
 
 	private async reload(view: DirectoryTabView, scrollTop?: number): Promise<void> {
-		const currentRequest = ++view.requestId;
 		const tab = this.directoryService.getTab(view.tabId);
 		const location = tab?.location ?? '';
-		view.renderedLocation = tab ? tab.location : undefined;
-		view.renderedRefreshToken = tab ? tab.refreshToken : -1;
-		view.entries = undefined;
-		view.virtualList = undefined;
-		view.searchRoot = undefined;
-		view.searchResults = undefined;
-		view.searchRequestId++;
+		const requestId = view.data.beginDirectoryLoad(location, tab ? tab.refreshToken : -1);
 
+		view.virtualList = undefined;
 		view.renderDisposables.clear();
 		reset(view.content);
 		if (!location) {
+			view.data.accept(requestId, undefined);
 			this.renderThisPc(view);
+			view.renderedRevision = view.data.revision;
 			view.scrollable.scanDomNode();
 			if (scrollTop !== undefined) {
 				view.scrollable.setScrollPosition({ scrollTop });
@@ -931,14 +903,14 @@ export class DirectoryViewEditor extends EditorPane {
 		const loading = append(view.content, $('.sidex-directory-status'));
 		loading.textContent = localize('sidex.directory.loading', '正在加载…');
 		view.scrollable.scanDomNode();
+		view.renderedRevision = view.data.revision;
 
 		try {
 			const entries = await this.explorerService.readDirectory(location);
-			if (currentRequest !== view.requestId) {
+			if (!view.data.accept(requestId, entries)) {
 				return;
 			}
 			reset(view.content);
-			view.entries = entries;
 			this.renderDirectory(view, location, entries);
 			view.scrollable.scanDomNode();
 			if (scrollTop !== undefined) {
@@ -946,10 +918,9 @@ export class DirectoryViewEditor extends EditorPane {
 			}
 			view.virtualList?.update();
 		} catch (error) {
-			if (currentRequest !== view.requestId) {
+			if (!view.data.fail(requestId)) {
 				return;
 			}
-			view.entries = undefined;
 			reset(view.content);
 			const message = append(view.content, $('.sidex-directory-status'));
 			message.textContent = localize('sidex.directory.loadFailed', '无法打开此位置：{0}', error instanceof Error ? error.message : String(error));
@@ -957,40 +928,28 @@ export class DirectoryViewEditor extends EditorPane {
 		}
 	}
 
-	/** 使用已缓存的完整数据集重新排序/过滤/渲染，不访问磁盘。 */
-	private rerenderDirectory(view: DirectoryTabView, scrollTop?: number): void {
-		if (!view.entries || !view.renderedLocation) {
-			void this.reload(view, scrollTop);
-			return;
+	/** 用当前已接受的数据重绘，不访问磁盘；没有可展示数据时返回 false。 */
+	private rerenderContent(view: DirectoryTabView, scrollTop?: number): boolean {
+		const data = view.data;
+		const location = data.location;
+		const entries = data.entries;
+		if (location === undefined || !entries) {
+			return false;
 		}
 		view.renderDisposables.clear();
 		view.virtualList = undefined;
 		reset(view.content);
-		this.renderDirectory(view, view.renderedLocation, view.entries);
+		if (data.searchRoot !== undefined) {
+			this.renderDirectory(view, location, entries, { root: data.searchRoot, query: data.query });
+		} else {
+			this.renderDirectory(view, location, entries);
+		}
 		view.scrollable.scanDomNode();
 		if (scrollTop !== undefined) {
 			view.scrollable.setScrollPosition({ scrollTop });
 		}
 		view.virtualList?.update();
-	}
-
-	/** 使用缓存的搜索结果重新排序/渲染，不重复搜索。 */
-	private rerenderSearch(view: DirectoryTabView, scrollTop?: number): void {
-		const root = view.searchRoot;
-		const results = view.searchResults;
-		const location = view.renderedLocation;
-		if (root === undefined || !results || location === undefined) {
-			return;
-		}
-		view.renderDisposables.clear();
-		view.virtualList = undefined;
-		reset(view.content);
-		this.renderDirectory(view, location, results, root);
-		view.scrollable.scanDomNode();
-		if (scrollTop !== undefined) {
-			view.scrollable.setScrollPosition({ scrollTop });
-		}
-		view.virtualList?.update();
+		return true;
 	}
 
 	private renderThisPc(view: DirectoryTabView): void {
@@ -1080,7 +1039,12 @@ export class DirectoryViewEditor extends EditorPane {
 		container.style.setProperty('--sidex-col-size', `${this.columnWidths[3]}px`);
 	}
 
-	private renderDirectory(view: DirectoryTabView, location: string, entries: readonly SideXExplorerEntry[], searchRoot?: string): void {
+	private renderDirectory(
+		view: DirectoryTabView,
+		location: string,
+		entries: readonly SideXExplorerEntry[],
+		search?: { root: string; query: string }
+	): void {
 		const sorted = sortFileEntries(entries, this.sortKey, this.sortAscending);
 
 		this.addColumnWidths(view.content);
@@ -1107,15 +1071,10 @@ export class DirectoryViewEditor extends EditorPane {
 				}
 				this.persistViewPreferences();
 				const scrollTop = view.scrollable.getScrollPosition().scrollTop;
-				if (view.searchRoot !== undefined) {
-					this.rerenderSearch(view, scrollTop);
-					view.virtualList?.revealSelection();
-				} else if (view.entries) {
-					this.rerenderDirectory(view, scrollTop);
-					view.virtualList?.revealSelection();
-				} else {
+				if (!this.rerenderContent(view, scrollTop)) {
 					void this.reload(view, scrollTop);
 				}
+				view.virtualList?.revealSelection();
 			});
 			const resizer = append(cell, $('span.sidex-column-resizer'));
 			resizer.addEventListener('pointerdown', (event: PointerEvent) => {
@@ -1138,24 +1097,22 @@ export class DirectoryViewEditor extends EditorPane {
 		});
 
 		view.content.setAttribute('data-location', location);
-		view.renderedQuery = searchRoot !== undefined ? this.directoryService.searchQuery.trim() : '';
-		view.searchRoot = searchRoot;
-		view.searchResults = searchRoot !== undefined ? entries : undefined;
 		// 搜索结果的滚动位置不写回目录的持久化位置。
-		if (searchRoot === undefined) {
+		if (search === undefined) {
 			this.persistScrollPosition(view);
 		}
+		view.renderedRevision = view.data.revision;
 
 		if (!sorted.length) {
 			const empty = append(view.content, $('.sidex-file-list-empty'));
-			empty.textContent = searchRoot !== undefined
-				? localize('sidex.search.empty', '未找到名称匹配“{0}”的项目', view.renderedQuery)
+			empty.textContent = search !== undefined
+				? localize('sidex.search.empty', '未找到名称匹配“{0}”的项目', search.query)
 				: localize('sidex.fileList.empty', '此文件夹为空');
 			return;
 		}
 
 		const host: IFileListHost = {
-			renderRow: entry => this.renderFileRow(entry, searchRoot),
+			renderRow: entry => this.renderFileRow(entry, search?.root),
 			activateEntry: entry => this.openEntry(entry),
 			selectionChanged: (entries, primary) => this.selectionChanged(view, entries, primary),
 			showContextMenu: (event, entry) => this.showContextMenu(event, view, location, entry),
