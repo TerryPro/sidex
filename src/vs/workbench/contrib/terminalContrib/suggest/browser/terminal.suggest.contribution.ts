@@ -45,7 +45,6 @@ import { ITerminalCompletionService, TerminalCompletionService } from './termina
 import { ITerminalContributionService } from '../../../terminal/common/terminalExtensionPoints.js';
 import { InstantiationType, registerSingleton } from '../../../../../platform/instantiation/common/extensions.js';
 import { SuggestAddon } from './terminalSuggestAddon.js';
-import { TerminalClipboardContribution } from '../../clipboard/browser/terminal.clipboard.contribution.js';
 import { SimpleSuggestContext } from '../../../../services/suggest/browser/simpleSuggestWidget.js';
 import { SuggestDetailsClassName } from '../../../../services/suggest/browser/simpleSuggestWidgetDetails.js';
 import { EditorContextKeys } from '../../../../../editor/common/editorContextKeys.js';
@@ -248,14 +247,6 @@ class TerminalSuggestContribution extends DisposableStore implements ITerminalCo
 			addon.onAcceptedCompletion(async text => {
 				this._ctx.instance.focus();
 				this._ctx.instance.sendText(text, false);
-			})
-		);
-		const clipboardContrib = TerminalClipboardContribution.get(this._ctx.instance)!;
-		this.add(clipboardContrib.onWillPaste(() => (addon.isPasting = true)));
-		this.add(
-			clipboardContrib.onDidPaste(() => {
-				// Delay this slightly as synchronizing the prompt input is debounced
-				setTimeout(() => (addon.isPasting = false), 100);
 			})
 		);
 		if (!isWindows) {

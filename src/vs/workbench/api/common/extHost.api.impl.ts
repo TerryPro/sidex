@@ -70,7 +70,6 @@ import { IExtHostManagedSockets } from './extHostManagedSockets.js';
 import { ExtHostMessageService } from './extHostMessageService.js';
 import { IExtHostOutputService } from './extHostOutput.js';
 import { IExtHostProgress } from './extHostProgress.js';
-import { ExtHostQuickDiff } from './extHostQuickDiff.js';
 import { createExtHostQuickOpen } from './extHostQuickOpen.js';
 import { IExtHostRpcService } from './extHostRpcService.js';
 import { IExtHostSearch } from './extHostSearch.js';
@@ -248,10 +247,6 @@ export function createApiFactoryAndRegisterActors(accessor: ServicesAccessor): I
 	const extHostQuickOpen = rpcProtocol.set(
 		ExtHostContext.ExtHostQuickOpen,
 		createExtHostQuickOpen(rpcProtocol, extHostWorkspace, extHostCommands)
-	);
-	const extHostQuickDiff = rpcProtocol.set(
-		ExtHostContext.ExtHostQuickDiff,
-		new ExtHostQuickDiff(rpcProtocol, uriTransformer)
 	);
 	const extHostLabelService = rpcProtocol.set(ExtHostContext.ExtHostLabelService, new ExtHostLabelService(rpcProtocol));
 	const extHostTheming = rpcProtocol.set(ExtHostContext.ExtHostTheming, new ExtHostTheming(rpcProtocol));
@@ -1357,23 +1352,6 @@ export function createApiFactoryAndRegisterActors(accessor: ServicesAccessor): I
 			) {
 				checkProposedApiEnabled(extension, 'externalUriOpener');
 				return extHostUriOpeners.registerExternalUriOpener(extension.identifier, id, opener, metadata);
-			},
-			registerQuickDiffProvider(
-				selector: vscode.DocumentSelector,
-				quickDiffProvider: vscode.QuickDiffProvider,
-				id: string,
-				label: string,
-				rootUri?: vscode.Uri
-			): vscode.Disposable {
-				checkProposedApiEnabled(extension, 'quickDiffProvider');
-				return extHostQuickDiff.registerQuickDiffProvider(
-					extension,
-					checkSelector(selector),
-					quickDiffProvider,
-					id,
-					label,
-					rootUri
-				);
 			},
 			get tabGroups(): vscode.TabGroups {
 				return extHostEditorTabs.tabGroups;

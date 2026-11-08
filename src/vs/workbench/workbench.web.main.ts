@@ -128,7 +128,6 @@ import './contrib/preferences/browser/keyboardLayoutPicker.js';
 import './contrib/webview/browser/webview.web.contribution.js';
 
 // Extensions Management — removed: SideX ships built-in declarative extensions only
-// import './contrib/extensions/browser/extensions.web.contribution.js';
 
 // Terminal
 import './contrib/terminal/browser/terminal.web.contribution.js';
@@ -136,9 +135,6 @@ import './contrib/terminal/browser/terminalInstanceService.js';
 
 // SideX: removed — tags
 // import './contrib/tags/browser/workspaceTagsService.js';
-
-// Issues — removed: SideX has its own issue reporter
-// import './contrib/issue/browser/issue.contribution.js';
 
 // Splash — removed: SideX has its own splash screen
 // import './contrib/splash/browser/splash.contribution.js';

@@ -23,7 +23,6 @@ import { IClipboardService } from '../../../../../platform/clipboard/common/clip
 import { MutableDisposable } from '../../../../../base/common/lifecycle.js';
 import { IHoverService } from '../../../../../platform/hover/browser/hover.js';
 import { TerminalFindCommandId } from '../common/terminal.find.js';
-import { TerminalClipboardContribution } from '../../clipboard/browser/terminal.clipboard.contribution.js';
 import { StandardMouseEvent } from '../../../../../base/browser/mouseEvent.js';
 import { createTextInputActions } from '../../../../browser/actions/textInputActions.js';
 import { ILogService } from '../../../../../platform/log/common/log.js';
@@ -142,9 +141,6 @@ export class TerminalFindWidget extends SimpleFindWidget {
 		this._register(
 			xterm.onBeforeSearch(() => {
 				this._overrideCopyOnSelectionDisposable.clear();
-				this._overrideCopyOnSelectionDisposable.value = TerminalClipboardContribution.get(
-					this._instance
-				)?.overrideCopyOnSelection(false);
 			})
 		);
 
@@ -239,9 +235,6 @@ export class TerminalFindWidget extends SimpleFindWidget {
 
 	protected _onFocusTrackerFocus() {
 		this._overrideCopyOnSelectionDisposable.clear();
-		this._overrideCopyOnSelectionDisposable.value = TerminalClipboardContribution.get(
-			this._instance
-		)?.overrideCopyOnSelection(false);
 		this._findWidgetFocused.set(true);
 	}
 

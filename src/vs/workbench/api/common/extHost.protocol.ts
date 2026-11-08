@@ -1717,18 +1717,6 @@ export interface MainThreadExtensionServiceShape extends IDisposable {
 	$asBrowserUri(uri: UriComponents): Promise<UriComponents>;
 }
 
-export interface MainThreadQuickDiffShape extends IDisposable {
-	$registerQuickDiffProvider(
-		handle: number,
-		selector: IDocumentFilterDto[],
-		id: string,
-		label: string,
-		rootUri: UriComponents | undefined
-	): Promise<void>;
-	$unregisterQuickDiffProvider(handle: number): Promise<void>;
-}
-
-
 export interface IOpenUriOptions {
 	readonly allowTunneling?: boolean;
 	readonly allowContributedOpeners?: boolean | string;
@@ -2828,14 +2816,6 @@ export interface ExtHostTerminalShellIntegrationShape {
 	$closeTerminal(instanceId: number): void;
 }
 
-export interface ExtHostQuickDiffShape {
-	$provideOriginalResource(
-		sourceControlHandle: number,
-		uri: UriComponents,
-		token: CancellationToken
-	): Promise<UriComponents | null>;
-}
-
 export interface ExtHostShareShape {
 	$provideShare(
 		handle: number,
@@ -3207,7 +3187,6 @@ export const MainContext = {
 	MainThreadMessageService: createProxyIdentifier<MainThreadMessageServiceShape>('MainThreadMessageService'),
 	MainThreadOutputService: createProxyIdentifier<MainThreadOutputServiceShape>('MainThreadOutputService'),
 	MainThreadProgress: createProxyIdentifier<MainThreadProgressShape>('MainThreadProgress'),
-	MainThreadQuickDiff: createProxyIdentifier<MainThreadQuickDiffShape>('MainThreadQuickDiff'),
 	MainThreadQuickOpen: createProxyIdentifier<MainThreadQuickOpenShape>('MainThreadQuickOpen'),
 	MainThreadStatusBar: createProxyIdentifier<MainThreadStatusBarShape>('MainThreadStatusBar'),
 	MainThreadSecretState: createProxyIdentifier<MainThreadSecretStateShape>('MainThreadSecretState'),
@@ -3275,7 +3254,6 @@ export const ExtHostContext = {
 	ExtHostLanguages: createProxyIdentifier<ExtHostLanguagesShape>('ExtHostLanguages'),
 	ExtHostLanguageFeatures: createProxyIdentifier<ExtHostLanguageFeaturesShape>('ExtHostLanguageFeatures'),
 	ExtHostQuickOpen: createProxyIdentifier<ExtHostQuickOpenShape>('ExtHostQuickOpen'),
-	ExtHostQuickDiff: createProxyIdentifier<ExtHostQuickDiffShape>('ExtHostQuickDiff'),
 	ExtHostStatusBar: createProxyIdentifier<ExtHostStatusBarShape>('ExtHostStatusBar'),
 	ExtHostShare: createProxyIdentifier<ExtHostShareShape>('ExtHostShare'),
 	ExtHostExtensionService: createProxyIdentifier<ExtHostExtensionServiceShape>('ExtHostExtensionService'),

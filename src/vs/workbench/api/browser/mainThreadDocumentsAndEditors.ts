@@ -39,7 +39,6 @@ import { diffSets, diffMaps } from '../../../base/common/collections.js';
 import { IPaneCompositePartService } from '../../services/panecomposite/browser/panecomposite.js';
 import { ViewContainerLocation } from '../../common/views.js';
 import { IConfigurationService } from '../../../platform/configuration/common/configuration.js';
-import { IQuickDiffModelService } from '../../contrib/scm/browser/quickDiffModel.js';
 
 class TextEditorSnapshot {
 	readonly id: string;
@@ -318,8 +317,7 @@ export class MainThreadDocumentsAndEditors implements IMainThreadEditorLocator {
 		@IUriIdentityService uriIdentityService: IUriIdentityService,
 		@IClipboardService private readonly _clipboardService: IClipboardService,
 		@IPathService pathService: IPathService,
-		@IConfigurationService configurationService: IConfigurationService,
-		@IQuickDiffModelService quickDiffModelService: IQuickDiffModelService
+		@IConfigurationService configurationService: IConfigurationService
 	) {
 		this._proxy = extHostContext.getProxy(ExtHostContext.ExtHostDocumentsAndEditors);
 
@@ -345,9 +343,7 @@ export class MainThreadDocumentsAndEditors implements IMainThreadEditorLocator {
 				codeEditorService,
 				this._editorService,
 				this._editorGroupService,
-				configurationService,
-				quickDiffModelService,
-				uriIdentityService
+				configurationService
 			)
 		);
 		extHostContext.set(MainContext.MainThreadTextEditors, this._mainThreadEditors);
