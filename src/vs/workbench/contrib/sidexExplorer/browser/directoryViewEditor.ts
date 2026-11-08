@@ -40,6 +40,8 @@ import { FILE_LIST_FOCUS_CONTEXT, IFileListCommandHost, setActiveFileListHost } 
 import { fileName, IFileOperationService, joinPath, parentDirectory, SIDEX_FILES_MIME } from './fileOperationService.js';
 import { assetUrl, formatBytes } from '../common/fileKind.js';
 import { type FileSortKey, sortFileEntries } from '../common/fileListSort.js';
+import { displayEntryName, type FileViewMode } from '../common/fileListView.js';
+import { IFileListViewService } from './fileListViewService.js';
 import { DirectoryViewContent } from '../common/directoryViewContent.js';
 import { driveLabel } from '../common/driveLabel.js';
 import { IThumbnailService } from './thumbnailService.js';
@@ -60,7 +62,16 @@ interface DirectoryTabView {
 }
 
 const FILE_ROW_HEIGHT = 28;
+const FILE_CARD_WIDTH = 104;
+const FILE_CARD_HEIGHT = 104;
 const FILE_LIST_OVERSCAN = 8;
+
+/** 虚拟列表的排布方式：行式（详细信息/列表）或网格（图标）。 */
+interface FileViewLayout {
+	readonly mode: FileViewMode;
+	readonly itemHeight: number;
+	readonly cardWidth: number;
+}
 
 /** 虚拟文件列表对编辑器暴露的回调集合。 */
 interface IFileListHost extends IFileListCommandHost {
@@ -110,6 +121,8 @@ class VirtualFileList extends Disposable {
 	private updateHandle: number | undefined;
 	private dropTarget: HTMLElement | undefined;
 	private listDropTarget = false;
+	private columns = 1;
+	private cellWidth = 0;
 
 	constructor(
 		parent: HTMLElement,
@@ -119,13 +132,16 @@ class VirtualFileList extends Disposable {
 		tabId: string,
 		entries: readonly SideXExplorerEntry[],
 		selectedPaths: readonly string[],
-		primaryPath: string | undefined
+		primaryPath: string | undefined,
+		private readonly layout: FileViewLayout
 	) {
 		super();
 		this.entries = entries;
 		this.rowIdPrefix = `sidex-file-row-${tabId}`;
 
 		const list = append(parent, $('div.sidex-file-list'));
+		list.classList.toggle('view-icons', layout.mode === 'icons');
+		list.classList.toggle('view-list', layout.mode === 'list');
 		list.tabIndex = 0;
 		list.setAttribute('role', 'listbox');
 		list.setAttribute('aria-multiselectable', 'true');
@@ -170,22 +186,42 @@ class VirtualFileList extends Disposable {
 		this.rows.clear();
 		this.firstRendered = -1;
 		this.lastRendered = -1;
-		this.list.style.height = `${entries.length * FILE_ROW_HEIGHT}px`;
+		this.syncMetrics();
 		this.update();
+	}
+
+	/** 网格模式下按容器宽度重算列数，并把列表高度同步到当前条目数。 */
+	private syncMetrics(): void {
+		if (this.layout.mode === 'icons') {
+			const width = this.content.clientWidth;
+			this.columns = width > 0 ? Math.max(1, Math.floor((width - 8) / FILE_CARD_WIDTH)) : 1;
+			this.cellWidth = Math.floor((this.content.clientWidth - 8) / this.columns);
+		} else {
+			this.columns = 1;
+			this.cellWidth = 0;
+		}
+		const rows = Math.ceil(this.entries.length / this.columns);
+		this.list.style.height = `${rows * this.layout.itemHeight}px`;
 	}
 
 	/** 窗口尺寸或滚动条状态变化后重新计算可视区间。 */
 	update(): void {
 		const total = this.entries.length;
+		this.syncMetrics();
 		const listTop = this.list.offsetTop;
 		const viewportTop = Math.max(0, this.scrollable.getScrollPosition().scrollTop - listTop);
 		const viewportHeight = this.content.clientHeight;
-		const first = Math.max(
+		const columns = this.columns;
+		const firstRow = Math.max(
 			0,
-			Math.min(total, Math.floor(viewportTop / FILE_ROW_HEIGHT) - FILE_LIST_OVERSCAN)
+			Math.min(
+				Math.ceil(total / columns),
+				Math.floor(viewportTop / this.layout.itemHeight) - FILE_LIST_OVERSCAN
+			)
 		);
-		const visibleRows = Math.ceil(viewportHeight / FILE_ROW_HEIGHT) + FILE_LIST_OVERSCAN * 2 + 2;
-		const last = Math.min(total, first + visibleRows);
+		const visibleRows = Math.ceil(viewportHeight / this.layout.itemHeight) + FILE_LIST_OVERSCAN * 2 + 2;
+		const first = Math.min(total, firstRow * columns);
+		const last = Math.min(total, (firstRow + visibleRows) * columns);
 
 		if (first === this.firstRendered && last === this.lastRendered) {
 			return;
@@ -266,7 +302,15 @@ class VirtualFileList extends Disposable {
 		row.setAttribute('role', 'option');
 		row.setAttribute('aria-selected', this.selectedPaths.has(entry.path) ? 'true' : 'false');
 		row.classList.toggle('selected', this.selectedPaths.has(entry.path));
-		row.style.top = `${index * FILE_ROW_HEIGHT}px`;
+		if (this.layout.mode === 'icons') {
+			row.style.top = `${Math.floor(index / this.columns) * this.layout.itemHeight}px`;
+			row.style.left = `${(index % this.columns) * this.cellWidth}px`;
+			row.style.width = `${this.cellWidth}px`;
+		} else {
+			row.style.top = `${index * this.layout.itemHeight}px`;
+			row.style.left = '0';
+			row.style.width = '';
+		}
 		row.tabIndex = -1;
 		return row;
 	}
@@ -328,12 +372,13 @@ class VirtualFileList extends Disposable {
 		const listTop = this.list.offsetTop;
 		const viewportHeight = this.content.clientHeight;
 		const visibleTop = Math.max(0, this.scrollable.getScrollPosition().scrollTop - listTop);
-		const rowTop = index * FILE_ROW_HEIGHT;
-		if (rowTop < visibleTop) {
-			this.scrollable.setScrollPosition({ scrollTop: listTop + rowTop });
-		} else if (rowTop + FILE_ROW_HEIGHT > visibleTop + viewportHeight) {
+		const rowIndex = this.layout.mode === 'icons' ? Math.floor(index / this.columns) : index;
+		const itemTop = rowIndex * this.layout.itemHeight;
+		if (itemTop < visibleTop) {
+			this.scrollable.setScrollPosition({ scrollTop: listTop + itemTop });
+		} else if (itemTop + this.layout.itemHeight > visibleTop + viewportHeight) {
 			this.scrollable.setScrollPosition({
-				scrollTop: Math.max(0, listTop + rowTop + FILE_ROW_HEIGHT - viewportHeight)
+				scrollTop: Math.max(0, listTop + itemTop + this.layout.itemHeight - viewportHeight)
 			});
 		}
 		this.update();
@@ -412,14 +457,27 @@ class VirtualFileList extends Disposable {
 		let index = this.primaryPath
 			? this.entries.findIndex(entry => entry.path === this.primaryPath)
 			: -1;
-		const page = Math.max(1, Math.floor(this.content.clientHeight / FILE_ROW_HEIGHT) - 1);
+		const step = this.layout.mode === 'icons' ? Math.max(1, this.columns) : 1;
+		const page = Math.max(1, Math.floor(this.content.clientHeight / this.layout.itemHeight) - 1) * step;
 
 		switch (event.key) {
 			case 'ArrowDown':
-				index = index < 0 ? 0 : Math.min(total - 1, index + 1);
+				index = index < 0 ? 0 : Math.min(total - 1, index + step);
 				break;
 			case 'ArrowUp':
-				index = index < 0 ? total - 1 : Math.max(0, index - 1);
+				index = index < 0 ? total - 1 : Math.max(0, index - step);
+				break;
+			case 'ArrowRight':
+				if (this.layout.mode !== 'icons') {
+					return;
+				}
+				index = index < 0 ? 0 : Math.min(total - 1, index + 1);
+				break;
+			case 'ArrowLeft':
+				if (this.layout.mode !== 'icons') {
+					return;
+				}
+				index = index < 0 ? 0 : Math.max(0, index - 1);
 				break;
 			case 'PageDown':
 				index = Math.min(total - 1, (index < 0 ? 0 : index) + page);
@@ -549,8 +607,6 @@ export class DirectoryViewEditor extends EditorPane {
 	private activeTabId: string | undefined;
 	private readonly viewDisposables = this._register(new DisposableStore());
 	private contextMenu: HTMLElement | undefined;
-	private sortKey: FileSortKey = 'name';
-	private sortAscending = true;
 	private readonly columnWidths = [260, 170, 130, 110];
 	private readonly fileListFocus: ReturnType<typeof FILE_LIST_FOCUS_CONTEXT.bindTo>;
 
@@ -570,15 +626,18 @@ export class DirectoryViewEditor extends EditorPane {
 		@IThumbnailService private readonly thumbnailService: IThumbnailService,
 		@IFileOperationService private readonly fileOperationService: IFileOperationService,
 		@ISessionService private readonly sessionService: ISessionService,
+		@IFileListViewService private readonly fileListViewService: IFileListViewService,
 		@IContextKeyService contextKeyService: IContextKeyService
 	) {
 		super(DirectoryViewEditor.ID, group, telemetryService, themeService, storageService);
 
 		this.fileListFocus = FILE_LIST_FOCUS_CONTEXT.bindTo(contextKeyService);
-		this.restoreViewPreferences();
+		this.restoreColumnWidths();
 
 		this.viewDisposables.add(this.directoryService.onDidChange(() => this.onDirectoryChange()));
 		this.viewDisposables.add(this.directoryService.onDidChangeDrives(() => this.onDrivesChange()));
+		// 标题栏的查看/排序下拉与右键菜单共享同一份状态，变化后重绘当前视图。
+		this.viewDisposables.add(this.fileListViewService.onDidChange(() => this.rerenderFromViewState()));
 		// 文件图标主题切换后重新按新主题渲染列表。
 		this.viewDisposables.add(this.themeService.onDidFileIconThemeChange(() => this.onFileIconThemeChange()));
 	}
@@ -1007,29 +1066,33 @@ export class DirectoryViewEditor extends EditorPane {
 		}));
 	}
 
-	private restoreViewPreferences(): void {
-		const sort = this.storageService.get('sidex.directory.sort', StorageScope.PROFILE);
-		if (sort) {
-			const [key, direction] = sort.split(':');
-			if (key === 'name' || key === 'modified' || key === 'type' || key === 'size') {
-				this.sortKey = key;
-				this.sortAscending = direction !== 'desc';
-			}
-		}
+	private restoreColumnWidths(): void {
 		const widths = this.storageService.get('sidex.directory.columnWidths', StorageScope.PROFILE);
-		if (widths) {
-			const parsed = widths.split(',').map(Number);
-			if (parsed.length === 4 && parsed.every(value => Number.isFinite(value) && value > 40)) {
-				parsed.forEach((value, index) => {
-					this.columnWidths[index] = value;
-				});
-			}
+		if (!widths) {
+			return;
+		}
+		const parsed = widths.split(',').map(Number);
+		if (parsed.length === 4 && parsed.every(value => Number.isFinite(value) && value > 40)) {
+			parsed.forEach((value, index) => {
+				this.columnWidths[index] = value;
+			});
 		}
 	}
 
-	private persistViewPreferences(): void {
-		this.storageService.store('sidex.directory.sort', `${this.sortKey}:${this.sortAscending ? 'asc' : 'desc'}`, StorageScope.PROFILE, StorageTarget.MACHINE);
+	private persistColumnWidths(): void {
 		this.storageService.store('sidex.directory.columnWidths', this.columnWidths.join(','), StorageScope.PROFILE, StorageTarget.MACHINE);
+	}
+
+	/** 查看模式、排序或扩展名开关变化后，用缓存数据重绘当前视图。 */
+	private rerenderFromViewState(): void {
+		const view = this.activeView;
+		if (!view || view.data.loading) {
+			return;
+		}
+		const scrollTop = view.scrollable.getScrollPosition().scrollTop;
+		if (!this.rerenderContent(view, scrollTop)) {
+			void this.reload(view, scrollTop);
+		}
 	}
 
 	private addColumnWidths(container: HTMLElement): void {
@@ -1045,56 +1108,54 @@ export class DirectoryViewEditor extends EditorPane {
 		entries: readonly SideXExplorerEntry[],
 		search?: { root: string; query: string }
 	): void {
-		const sorted = sortFileEntries(entries, this.sortKey, this.sortAscending);
+		const state = this.fileListViewService.getViewState(view.tabId);
+		const sorted = sortFileEntries(entries, state.sortKey, state.sortAscending);
+		const layout: FileViewLayout = {
+			mode: state.viewMode,
+			itemHeight: state.viewMode === 'icons' ? FILE_CARD_HEIGHT : FILE_ROW_HEIGHT,
+			cardWidth: FILE_CARD_WIDTH
+		};
 
 		this.addColumnWidths(view.content);
 
-		const header = append(view.content, $('div.sidex-file-list-header'));
-		const columns: Array<{ key: 'name' | 'modified' | 'type' | 'size'; label: string }> = [
-			{ key: 'name', label: localize('sidex.fileList.name', '名称') },
-			{ key: 'modified', label: localize('sidex.fileList.modified', '修改日期') },
-			{ key: 'type', label: localize('sidex.fileList.type', '类型') },
-			{ key: 'size', label: localize('sidex.fileList.size', '大小') }
-		];
-		columns.forEach((column, index) => {
-			const cell = append(header, $('span.sidex-file-list-column'));
-			cell.textContent = column.label;
-			if (this.sortKey === column.key) {
-				cell.textContent = `${column.label} ${this.sortAscending ? '↑' : '↓'}`;
-			}
-			cell.addEventListener('click', () => {
-				if (this.sortKey === column.key) {
-					this.sortAscending = !this.sortAscending;
-				} else {
-					this.sortKey = column.key;
-					this.sortAscending = true;
+		if (state.viewMode === 'details') {
+			const header = append(view.content, $('div.sidex-file-list-header'));
+			const columns: Array<{ key: FileSortKey; label: string }> = [
+				{ key: 'name', label: localize('sidex.fileList.name', '名称') },
+				{ key: 'modified', label: localize('sidex.fileList.modified', '修改日期') },
+				{ key: 'type', label: localize('sidex.fileList.type', '类型') },
+				{ key: 'size', label: localize('sidex.fileList.size', '大小') }
+			];
+			columns.forEach((column, index) => {
+				const cell = append(header, $('span.sidex-file-list-column'));
+				cell.textContent = column.label;
+				if (state.sortKey === column.key) {
+					cell.textContent = `${column.label} ${state.sortAscending ? '↑' : '↓'}`;
 				}
-				this.persistViewPreferences();
-				const scrollTop = view.scrollable.getScrollPosition().scrollTop;
-				if (!this.rerenderContent(view, scrollTop)) {
-					void this.reload(view, scrollTop);
-				}
-				view.virtualList?.revealSelection();
+				cell.addEventListener('click', () => {
+					this.fileListViewService.setSortKey(column.key);
+					view.virtualList?.revealSelection();
+				});
+				const resizer = append(cell, $('span.sidex-column-resizer'));
+				resizer.addEventListener('pointerdown', (event: PointerEvent) => {
+					event.preventDefault();
+					event.stopPropagation();
+					const startX = event.clientX;
+					const startWidth = this.columnWidths[index];
+					const move = (moveEvent: PointerEvent) => {
+						this.columnWidths[index] = Math.max(60, startWidth + moveEvent.clientX - startX);
+						this.addColumnWidths(view.content);
+					};
+					const up = () => {
+						window.removeEventListener('pointermove', move);
+						window.removeEventListener('pointerup', up);
+						this.persistColumnWidths();
+					};
+					window.addEventListener('pointermove', move);
+					window.addEventListener('pointerup', up);
+				});
 			});
-			const resizer = append(cell, $('span.sidex-column-resizer'));
-			resizer.addEventListener('pointerdown', (event: PointerEvent) => {
-				event.preventDefault();
-				event.stopPropagation();
-				const startX = event.clientX;
-				const startWidth = this.columnWidths[index];
-				const move = (moveEvent: PointerEvent) => {
-					this.columnWidths[index] = Math.max(60, startWidth + moveEvent.clientX - startX);
-					this.addColumnWidths(view.content);
-				};
-				const up = () => {
-					window.removeEventListener('pointermove', move);
-					window.removeEventListener('pointerup', up);
-					this.persistViewPreferences();
-				};
-				window.addEventListener('pointermove', move);
-				window.addEventListener('pointerup', up);
-			});
-		});
+		}
 
 		view.content.setAttribute('data-location', location);
 		// 搜索结果的滚动位置不写回目录的持久化位置。
@@ -1112,7 +1173,7 @@ export class DirectoryViewEditor extends EditorPane {
 		}
 
 		const host: IFileListHost = {
-			renderRow: entry => this.renderFileRow(entry, search?.root),
+			renderRow: entry => this.renderFileRow(entry, search?.root, state.viewMode),
 			activateEntry: entry => this.openEntry(entry),
 			selectionChanged: (entries, primary) => this.selectionChanged(view, entries, primary),
 			showContextMenu: (event, entry) => this.showContextMenu(event, view, location, entry),
@@ -1159,7 +1220,8 @@ export class DirectoryViewEditor extends EditorPane {
 			view.tabId,
 			sorted,
 			selectedPaths,
-			primary
+			primary,
+			layout
 		);
 		view.virtualList = virtualList;
 		view.renderDisposables.add(virtualList);
@@ -1185,34 +1247,66 @@ export class DirectoryViewEditor extends EditorPane {
 		}));
 	}
 
-	private renderFileRow(entry: SideXExplorerEntry, displayRoot?: string): HTMLElement {
+	private renderFileRow(entry: SideXExplorerEntry, displayRoot: string | undefined, viewMode: FileViewMode): HTMLElement {
+		if (viewMode === 'icons') {
+			return this.renderFileCard(entry, displayRoot);
+		}
+
 		const row = $('div.sidex-file-row');
 		row.setAttribute('data-path', entry.path);
 		row.dataset.isDir = entry.isDir ? 'true' : 'false';
 		row.draggable = true;
+		if (viewMode === 'list') {
+			row.classList.add('view-list-row');
+		}
 
 		const nameCell = append(row, $('span.sidex-file-name'));
 		const icon = append(nameCell, $('span.sidex-file-icon'));
 		this.applyFileIcon(icon, entry);
 		this.attachThumbnail(icon, entry);
 		const text = append(nameCell, $('span.sidex-file-name-text'));
-		// 搜索结果跨目录展示，用相对路径区分同名项。
-		text.textContent = displayRoot
-			? entry.path.slice(displayRoot.length).replace(/^[\\/]/, '')
-			: entry.name;
+		text.textContent = this.entryLabel(entry, displayRoot);
 
-		const modified = append(row, $('span.sidex-file-cell'));
-		modified.textContent = entry.modified ? new Date(entry.modified * 1000).toLocaleString() : '';
+		if (viewMode === 'details') {
+			const modified = append(row, $('span.sidex-file-cell'));
+			modified.textContent = entry.modified ? new Date(entry.modified * 1000).toLocaleString() : '';
 
-		const type = append(row, $('span.sidex-file-cell'));
-		type.textContent = entry.isDir
-			? localize('sidex.fileList.folder', '文件夹')
-			: (entry.name.includes('.') ? entry.name.slice(entry.name.lastIndexOf('.') + 1).toUpperCase() + ' 文件' : localize('sidex.fileList.file', '文件'));
+			const type = append(row, $('span.sidex-file-cell'));
+			type.textContent = entry.isDir
+				? localize('sidex.fileList.folder', '文件夹')
+				: (entry.name.includes('.') ? entry.name.slice(entry.name.lastIndexOf('.') + 1).toUpperCase() + ' 文件' : localize('sidex.fileList.file', '文件'));
 
-		const size = append(row, $('span.sidex-file-cell'));
-		size.textContent = entry.isDir ? '' : formatBytes(entry.size);
+			const size = append(row, $('span.sidex-file-cell'));
+			size.textContent = entry.isDir ? '' : formatBytes(entry.size);
+		}
 
 		return row;
+	}
+
+	/** 图标模式的卡片：大图标在上，名称在下并单行省略。 */
+	private renderFileCard(entry: SideXExplorerEntry, displayRoot?: string): HTMLElement {
+		const card = $('div.sidex-file-row.sidex-file-card');
+		card.setAttribute('data-path', entry.path);
+		card.dataset.isDir = entry.isDir ? 'true' : 'false';
+		card.draggable = true;
+
+		const icon = append(card, $('span.sidex-file-card-icon'));
+		this.applyFileIcon(icon, entry);
+		this.attachThumbnail(icon, entry);
+
+		const text = append(card, $('span.sidex-file-card-name'));
+		text.textContent = this.entryLabel(entry, displayRoot);
+		text.title = entry.name;
+
+		return card;
+	}
+
+	/** 名称显示：搜索结果用相对路径，其余按「显示扩展名」开关处理。 */
+	private entryLabel(entry: SideXExplorerEntry, displayRoot?: string): string {
+		if (displayRoot) {
+			return entry.path.slice(displayRoot.length).replace(/^[\\/]/, '');
+		}
+		return displayEntryName(entry, this.fileListViewService.showExtensions);
 	}
 
 	private openEntry(entry: SideXExplorerEntry): void {
@@ -1269,9 +1363,20 @@ export class DirectoryViewEditor extends EditorPane {
 		host.appendChild(menu);
 		this.contextMenu = menu;
 
-		const addItem = (label: string, run: () => void, enabled = true) => {
+		const addItem = (
+			label: string,
+			run: (() => void) | undefined,
+			enabled = true,
+			submenu?: (submenu: HTMLElement) => void
+		) => {
 			const item = append(menu, $('div.sidex-context-menu-item'));
 			item.textContent = label;
+			if (submenu) {
+				item.classList.add('has-submenu');
+				const child = append(item, $('div.sidex-context-submenu'));
+				submenu(child);
+				return;
+			}
 			if (!enabled) {
 				item.classList.add('disabled');
 				return;
@@ -1280,8 +1385,65 @@ export class DirectoryViewEditor extends EditorPane {
 				event.preventDefault();
 				event.stopPropagation();
 				this.hideContextMenu();
+				run?.();
+			});
+		};
+
+		const addCheckIcon = (parent: HTMLElement, checked: boolean) => {
+			const icon = append(parent, $('span.sidex-menu-item-icon'));
+			if (!checked) {
+				icon.classList.add('hidden');
+			}
+			append(icon, $('span.codicon.codicon-check'));
+		};
+
+		const addSubmenuItem = (submenu: HTMLElement, label: string, checked: boolean, run: () => void) => {
+			const item = append(submenu, $('div.sidex-context-menu-subitem'));
+			addCheckIcon(item, checked);
+			const text = append(item, $('span.sidex-menu-item-label'));
+			text.textContent = label;
+			item.addEventListener('mousedown', event => {
+				event.preventDefault();
+				event.stopPropagation();
+				this.hideContextMenu();
 				run();
 			});
+		};
+
+		const addCheckItem = (label: string, checked: boolean, run: () => void) => {
+			const item = append(menu, $('div.sidex-context-menu-item'));
+			addCheckIcon(item, checked);
+			const text = append(item, $('span.sidex-menu-item-label'));
+			text.textContent = label;
+			item.addEventListener('mousedown', event => {
+				event.preventDefault();
+				event.stopPropagation();
+				this.hideContextMenu();
+				run();
+			});
+		};
+
+		const addDirectionRow = (ascending: boolean) => {
+			const row = append(menu, $('div.sidex-menu-direction'));
+			const create = (icon: string, label: string, active: boolean, next: boolean) => {
+				const button = append(row, $('button.sidex-menu-direction-button')) as HTMLButtonElement;
+				button.type = 'button';
+				if (active) {
+					button.classList.add('active');
+				}
+				const iconElement = append(button, $('span.codicon'));
+				iconElement.classList.add(icon);
+				const text = append(button, $('span'));
+				text.textContent = label;
+				button.addEventListener('mousedown', event => {
+					event.preventDefault();
+					event.stopPropagation();
+					this.hideContextMenu();
+					this.fileListViewService.setSortAscending(next);
+				});
+			};
+			create('codicon-arrow-up', localize('sidex.menu.sortAscending', '升序'), ascending, true);
+			create('codicon-arrow-down', localize('sidex.menu.sortDescending', '降序'), !ascending, false);
 		};
 
 		const selected = entry ? view.virtualList?.getSelectedEntries() ?? [] : [];
@@ -1323,6 +1485,36 @@ export class DirectoryViewEditor extends EditorPane {
 				this.fileOperationService.canUndo()
 			);
 		} else {
+			const state = this.fileListViewService.getViewState(view.tabId);
+			addItem(localize('sidex.menu.view', '查看'), undefined, true, submenu => {
+				const modes: Array<{ mode: FileViewMode; label: string }> = [
+					{ mode: 'details', label: localize('sidex.view.details', '详细信息') },
+					{ mode: 'list', label: localize('sidex.view.list', '列表') },
+					{ mode: 'icons', label: localize('sidex.view.icons', '图标') }
+				];
+				for (const entry of modes) {
+					addSubmenuItem(submenu, entry.label, state.viewMode === entry.mode, () => {
+						this.fileListViewService.setViewMode(entry.mode);
+					});
+				}
+			});
+			addItem(localize('sidex.menu.sortBy', '排序方式'), undefined, true, submenu => {
+				const keys: Array<{ key: FileSortKey; label: string }> = [
+					{ key: 'name', label: localize('sidex.fileList.name', '名称') },
+					{ key: 'modified', label: localize('sidex.fileList.modified', '修改日期') },
+					{ key: 'type', label: localize('sidex.fileList.type', '类型') },
+					{ key: 'size', label: localize('sidex.fileList.size', '大小') }
+				];
+				for (const entry of keys) {
+					addSubmenuItem(submenu, entry.label, state.sortKey === entry.key, () => {
+						this.fileListViewService.setSortKey(entry.key);
+					});
+				}
+			});
+			addDirectionRow(state.sortAscending);
+			addCheckItem(localize('sidex.menu.showExtensions', '显示文件扩展名'), this.fileListViewService.showExtensions, () => {
+				this.fileListViewService.toggleShowExtensions();
+			});
 			addItem(localize('sidex.menu.newFile', '新建文件'), () => void this.createEntry(location, false));
 			addItem(localize('sidex.menu.newFolder', '新建文件夹'), () => void this.createEntry(location, true));
 			addItem(localize('sidex.menu.paste', '粘贴'), () => void this.pasteEntry(location), !!clipboard && !!location);

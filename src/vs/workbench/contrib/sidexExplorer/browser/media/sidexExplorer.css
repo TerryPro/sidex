@@ -252,6 +252,35 @@
 	font-size: 15px;
 }
 
+/* 带下拉的按钮：自定义图形 + 小箭头。 */
+.sidex-explorer-nav-button.has-caret {
+	width: auto;
+	padding: 0 6px;
+	gap: 2px;
+}
+
+.sidex-explorer-nav-button > svg {
+	width: 16px;
+	height: 16px;
+	fill: none;
+	stroke: currentColor;
+	stroke-width: 1.4;
+	stroke-linecap: round;
+	stroke-linejoin: round;
+}
+
+.sidex-explorer-nav-caret {
+	font-size: 12px;
+	opacity: 0.7;
+}
+
+/* 标题栏查看/排序下拉里的分隔线。 */
+.sidex-explorer-menu-separator {
+	height: 1px;
+	margin: 4px 8px;
+	background: var(--vscode-menu-separatorBackground, rgba(128, 128, 128, 0.35));
+}
+
 .sidex-explorer-address-bar {
 	display: flex;
 	align-items: center;
@@ -708,18 +737,127 @@
 	font-size: 13px;
 	line-height: 1;
 	user-select: none;
-	overflow: hidden;
+	overflow: visible;
 }
 
 .sidex-context-menu-item {
 	display: flex;
 	align-items: center;
+	gap: 6px;
 	height: 24px;
 	padding: 0 12px;
 	cursor: pointer;
 	white-space: nowrap;
 	overflow: hidden;
 	text-overflow: ellipsis;
+	position: relative;
+}
+
+/* 菜单项的固定勾选槽：未选中时保留宽度，让文字始终对齐。 */
+.sidex-menu-item-icon {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 16px;
+	height: 16px;
+	flex: 0 0 16px;
+}
+
+.sidex-menu-item-icon .codicon {
+	font-size: 13px;
+}
+
+.sidex-menu-item-icon.hidden {
+	visibility: hidden;
+}
+
+.sidex-menu-item-label {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+/* 升序/降序的分段按钮。 */
+.sidex-menu-direction {
+	display: flex;
+	gap: 4px;
+	padding: 4px 8px;
+}
+
+.sidex-menu-direction-button {
+	flex: 1 1 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 4px;
+	height: 24px;
+	padding: 0 6px;
+	border: 1px solid var(--vscode-menu-border, var(--vscode-widget-border, rgba(128, 128, 128, 0.35)));
+	border-radius: 3px;
+	background: transparent;
+	color: inherit;
+	font-family: inherit;
+	font-size: 12px;
+	cursor: pointer;
+}
+
+.sidex-menu-direction-button:hover {
+	background: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.18));
+}
+
+.sidex-menu-direction-button.active {
+	background: var(--vscode-list-activeSelectionBackground, #04395e);
+	color: var(--vscode-list-activeSelectionForeground, #ffffff);
+	border-color: transparent;
+}
+
+.sidex-menu-direction-button .codicon {
+	font-size: 13px;
+}
+
+.sidex-context-menu-item.has-submenu {
+	padding-right: 22px;
+	overflow: visible;
+}
+
+.sidex-context-menu-item.has-submenu::after {
+	content: '›';
+	position: absolute;
+	right: 8px;
+	opacity: 0.8;
+}
+
+.sidex-context-submenu {
+	position: absolute;
+	left: 100%;
+	top: -4px;
+	display: none;
+	min-width: 150px;
+	padding: 4px 0;
+	background: var(--vscode-menu-background, var(--vscode-editorWidget-background, var(--vscode-editor-background, #252526)));
+	color: var(--vscode-menu-foreground, var(--vscode-foreground, #cccccc));
+	border: 1px solid var(--vscode-menu-border, var(--vscode-widget-border, rgba(128, 128, 128, 0.35)));
+	border-radius: 5px;
+	box-shadow: 0 2px 8px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.36));
+}
+
+.sidex-context-menu-item.has-submenu:hover > .sidex-context-submenu {
+	display: block;
+}
+
+.sidex-context-menu-subitem {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	height: 24px;
+	padding: 0 12px;
+	cursor: pointer;
+	white-space: nowrap;
+}
+
+.sidex-context-menu-subitem:hover {
+	background: var(--vscode-menu-selectionBackground, var(--vscode-list-activeSelectionBackground, #04395e));
+	color: var(--vscode-menu-selectionForeground, var(--vscode-list-activeSelectionForeground, #ffffff));
 }
 
 .sidex-context-menu-item:hover {
@@ -786,6 +924,67 @@
 .sidex-file-row:focus {
 	outline: 1px solid var(--vscode-focusBorder);
 	outline-offset: -1px;
+}
+
+/* 列表模式：只剩名称一列，行高与详细信息一致。 */
+.sidex-file-list.view-list .sidex-file-row.view-list-row {
+	grid-template-columns: minmax(0, 1fr);
+}
+
+/* 图标模式：卡片按网格绝对定位，由虚拟列表写入 top/left/width。 */
+.sidex-file-card {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: flex-start;
+	gap: 6px;
+	height: 104px;
+	padding: 12px 8px 8px;
+	box-sizing: border-box;
+	border-radius: 4px;
+	overflow: hidden;
+}
+
+.sidex-file-card-icon {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 40px;
+	height: 40px;
+	flex: 0 0 40px;
+	font-size: 34px;
+}
+
+.sidex-file-card-icon::before {
+	display: inline-block;
+	width: 40px;
+	height: 40px;
+	background-size: 40px;
+	background-position: center;
+	background-repeat: no-repeat;
+	font-size: inherit;
+}
+
+.sidex-file-card-icon.has-thumbnail {
+	width: 48px;
+	height: 48px;
+	flex-basis: 48px;
+}
+
+.sidex-file-card .sidex-file-thumb {
+	width: 48px;
+	height: 48px;
+	border-radius: 2px;
+}
+
+.sidex-file-card-name {
+	max-width: 100%;
+	font-size: 12px;
+	line-height: 16px;
+	text-align: center;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 }
 
 .sidex-file-name {

@@ -46,10 +46,12 @@ import { DirectoryViewEditorInput } from './directoryViewEditorInput.js';
 import { NavigationView } from './navigationView.js';
 import { SideXPreviewPane } from './previewPane.js';
 import { IThumbnailService, ThumbnailService } from './thumbnailService.js';
+import { FileListViewService, IFileListViewService } from './fileListViewService.js';
 import { ISessionService } from './sessionService.js';
 import { CapturedEditor, CapturedSession, SnapshotBackup, SnapshotEditor } from '../common/sessionSnapshot.js';
 
 registerSingleton(IThumbnailService, ThumbnailService, InstantiationType.Delayed);
+registerSingleton(IFileListViewService, FileListViewService, InstantiationType.Delayed);
 
 Registry.as<IEditorPaneRegistry>(EditorExtensions.EditorPane).registerEditorPane(
 	EditorPaneDescriptor.create(DirectoryViewEditor, DirectoryViewEditor.ID, localize('sidex.directoryView', '文件列表')),
