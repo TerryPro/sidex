@@ -113,10 +113,6 @@ public/pdfjs/
 # 内置扩展资源镜像（由 scripts/generate-extension-meta.js 从 extensions/ 复制）
 public/extensions/
 
-# ── Cloudflare Wrangler (marketplace-proxy dev state) ────────────────────────
-infrastructure/marketplace-proxy/.wrangler/
-infrastructure/marketplace-proxy/node_modules/
-
 # ── Sidex ephemeral state (never commit) ─────────────────────────────────────
 # Memory, bench results, and other generated state live in ~/.sidex/.
 # Only .sidex/rules/ and .sidex/skills/ are meant to be committed.
