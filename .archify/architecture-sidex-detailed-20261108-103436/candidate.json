@@ -1,0 +1,500 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "SideX 文件管理器与编辑器架构",
+    "locale": "zh-CN",
+    "output": ".archify/architecture-sidex-detailed-20261108-103436/sidex-architecture.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/TerryPro/sidex.git",
+      "provider": "github",
+      "revision": "810170485b5a29874005f7075d69ede6dab56c25"
+    },
+    "views": [
+      {
+        "id": "browse",
+        "label": "文件浏览主链路",
+        "focus": ["user", "shell", "tabs", "navtree", "filelist", "preview", "editor", "fsProvider", "bridge", "tauriIPC", "cmdFs", "cmdSearch", "wsCrate", "localFS"],
+        "note": "目录标签、文件列表、单击预览与双击编辑"
+      },
+      {
+        "id": "editing",
+        "label": "编辑与预览链路",
+        "focus": ["editor", "natives", "preview", "outline", "bridge", "tauriIPC", "cmdSyntax", "cmdTextmate", "synCrate"],
+        "note": "Monaco、原生 EditorPane 与语法/大纲能力"
+      },
+      {
+        "id": "panels",
+        "label": "面板与平台能力",
+        "focus": ["sidebar", "terminalPanel", "termBackend", "outline", "bridge", "tauriIPC", "cmdConfig", "cmdExtensions", "cmdTerminal", "cfgCrate", "extCrate", "extDir", "osShell"],
+        "note": "设置、扩展、终端与系统级命令"
+      },
+      {
+        "id": "persistence",
+        "label": "状态与持久化",
+        "focus": ["sessionSvc", "thumbSvc", "bridge", "tauriIPC", "cmdStorage", "settingsFile", "sqlite"],
+        "note": "会话快照、缩略图缓存与 SQLite 状态"
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "user",
+      "type": "external",
+      "icon": "person",
+      "label": "用户",
+      "sublabel": "Windows 桌面",
+      "pos": [20, 450],
+      "size": [90, 56]
+    },
+    {
+      "id": "shell",
+      "type": "frontend",
+      "label": "Workbench 外壳",
+      "sublabel": "布局 · 菜单 · 命令",
+      "pos": [40, 180],
+      "size": [150, 64],
+      "sources": [{ "path": "src/vs/workbench/browser/web.main.ts", "line": 157, "end_line": 160 }]
+    },
+    {
+      "id": "tabs",
+      "type": "frontend",
+      "label": "目录标签栏",
+      "sublabel": "每标签独立现场",
+      "pos": [260, 180],
+      "size": [170, 56],
+      "sources": [{ "path": "src/vs/workbench/contrib/sidexExplorer/browser/directoryTabsControl.ts", "line": 12 }]
+    },
+    {
+      "id": "navtree",
+      "type": "frontend",
+      "label": "导航树",
+      "sublabel": "目录层级",
+      "pos": [260, 60],
+      "size": [150, 56],
+      "sources": [{ "path": "src/vs/workbench/contrib/sidexExplorer/browser/navigationView.ts", "line": 1 }]
+    },
+    {
+      "id": "filelist",
+      "type": "frontend",
+      "label": "文件列表",
+      "sublabel": "虚拟滚动 · 排序 · 递归搜索",
+      "pos": [460, 180],
+      "size": [190, 64],
+      "sources": [
+        { "path": "src/vs/workbench/contrib/sidexExplorer/browser/sidexExplorer.contribution.ts", "line": 54, "end_line": 56 },
+        { "path": "src/vs/workbench/contrib/sidexExplorer/common/fileListSort.ts", "line": 1 }
+      ]
+    },
+    {
+      "id": "preview",
+      "type": "frontend",
+      "label": "预览与属性面板",
+      "sublabel": "图片 / 文本 / Markdown",
+      "pos": [450, 60],
+      "size": [180, 64],
+      "sources": [{ "path": "src/vs/workbench/contrib/sidexExplorer/browser/previewPane.ts", "line": 44, "end_line": 171 }]
+    },
+    {
+      "id": "editor",
+      "type": "frontend",
+      "label": "编辑器组",
+      "sublabel": "Monaco · 多标签",
+      "pos": [680, 180],
+      "size": [170, 64],
+      "sources": [{ "path": "src/vs/editor/editor.main.ts", "line": 1 }]
+    },
+    {
+      "id": "natives",
+      "type": "frontend",
+      "label": "原生预览编辑器",
+      "sublabel": "PDF · HTML · Markdown · CSV",
+      "pos": [880, 180],
+      "size": [180, 64],
+      "sources": [
+        { "path": "src/vs/workbench/contrib/pdfPreview/browser/pdfPreview.contribution.ts", "line": 1 },
+        { "path": "src/vs/workbench/contrib/csvPreview/browser/csvPreview.contribution.ts", "line": 1 },
+        { "path": "src/vs/workbench/contrib/markdown/browser/markdownHtml.ts", "line": 50 }
+      ]
+    },
+    {
+      "id": "sidebar",
+      "type": "frontend",
+      "label": "侧栏面板",
+      "sublabel": "设置 · 快捷键 · 主题 · 扩展",
+      "pos": [40, 60],
+      "size": [180, 64],
+      "sources": [
+        { "path": "src/vs/workbench/contrib/preferences/browser/preferences.contribution.ts", "line": 1 },
+        { "path": "src/vs/workbench/contrib/builtinExtensions/browser/builtinExtensions.contribution.ts", "line": 1 }
+      ]
+    },
+    {
+      "id": "outline",
+      "type": "frontend",
+      "label": "大纲视图",
+      "sublabel": "文档符号",
+      "pos": [670, 60],
+      "size": [150, 56],
+      "sources": [{ "path": "src/vs/workbench/contrib/outline/browser/outline.contribution.ts", "line": 1 }]
+    },
+    {
+      "id": "terminalPanel",
+      "type": "frontend",
+      "label": "终端面板",
+      "sublabel": "xterm · 多标签",
+      "pos": [1040, 60],
+      "size": [140, 56],
+      "sources": [{ "path": "src/vs/workbench/contrib/terminal/browser/terminal.contribution.ts", "line": 128, "end_line": 140 }]
+    },
+    {
+      "id": "fsProvider",
+      "type": "frontend",
+      "label": "文件系统提供器",
+      "sublabel": "IFileService 适配",
+      "pos": [455, 310],
+      "size": [160, 56],
+      "sources": [{ "path": "src/vs/platform/sidex/browser/sidexFileSystemProvider.ts", "line": 40, "end_line": 65 }]
+    },
+    {
+      "id": "thumbSvc",
+      "type": "frontend",
+      "label": "缩略图服务",
+      "sublabel": "内存 + IndexedDB 缓存",
+      "pos": [640, 310],
+      "size": [160, 56],
+      "sources": [{ "path": "src/vs/workbench/contrib/sidexExplorer/browser/thumbnailService.ts", "line": 54 }]
+    },
+    {
+      "id": "sessionSvc",
+      "type": "frontend",
+      "label": "会话恢复",
+      "sublabel": "单键快照",
+      "pos": [260, 310],
+      "size": [150, 56],
+      "sources": [{ "path": "src/vs/workbench/contrib/sidexExplorer/browser/sessionService.ts", "line": 63 }]
+    },
+    {
+      "id": "bridge",
+      "type": "frontend",
+      "label": "sidex-bridge",
+      "sublabel": "invoke() · 事件",
+      "pos": [840, 310],
+      "size": [160, 56],
+      "sources": [{ "path": "src/vs/sidex-bridge.ts", "line": 30, "end_line": 39 }]
+    },
+    {
+      "id": "termBackend",
+      "type": "frontend",
+      "label": "终端后端",
+      "sublabel": "tauriTerminalBackend",
+      "pos": [1030, 310],
+      "size": [140, 56],
+      "sources": [{ "path": "src/vs/workbench/contrib/terminal/browser/tauriTerminalBackend.ts", "line": 1 }]
+    },
+    {
+      "id": "tauriIPC",
+      "type": "backend",
+      "label": "Tauri IPC 命令层",
+      "sublabel": "lib.rs · generate_handler",
+      "pos": [560, 420],
+      "size": [180, 52],
+      "sources": [{ "path": "src-tauri/src/lib.rs", "line": 701, "end_line": 730 }]
+    },
+    {
+      "id": "cmdFs",
+      "type": "backend",
+      "label": "文件与驱动器",
+      "sublabel": "目录监视 · 回收站",
+      "pos": [40, 520],
+      "size": [100, 60],
+      "sources": [
+        { "path": "src-tauri/src/commands/fs.rs", "line": 4 },
+        { "path": "src-tauri/src/commands/watch.rs", "line": 12 }
+      ]
+    },
+    {
+      "id": "cmdSearch",
+      "type": "backend",
+      "label": "搜索",
+      "sublabel": "名称 / 全文",
+      "pos": [150, 520],
+      "size": [100, 60],
+      "sources": [{ "path": "src-tauri/src/commands/search.rs", "line": 4 }]
+    },
+    {
+      "id": "cmdSyntax",
+      "type": "backend",
+      "label": "语法与大纲",
+      "sublabel": "tree-sitter · 正则",
+      "pos": [260, 520],
+      "size": [100, 60],
+      "sources": [{ "path": "src-tauri/src/commands/syntax.rs", "line": 3, "end_line": 7 }]
+    },
+    {
+      "id": "cmdTextmate",
+      "type": "backend",
+      "label": "TextMate 分词",
+      "sublabel": "语法高亮",
+      "pos": [370, 520],
+      "size": [100, 60],
+      "sources": [{ "path": "src-tauri/src/commands/textmate.rs", "line": 12 }]
+    },
+    {
+      "id": "cmdConfig",
+      "type": "backend",
+      "label": "配置",
+      "sublabel": "设置 / 键位 / 主题",
+      "pos": [480, 520],
+      "size": [100, 60],
+      "sources": [
+        { "path": "src-tauri/src/commands/settings.rs", "line": 5 },
+        { "path": "src-tauri/src/commands/keymap.rs", "line": 4 },
+        { "path": "src-tauri/src/commands/theme.rs", "line": 4 }
+      ]
+    },
+    {
+      "id": "cmdExtensions",
+      "type": "backend",
+      "label": "扩展清单",
+      "sublabel": "声明式扫描",
+      "pos": [590, 520],
+      "size": [100, 60],
+      "sources": [{ "path": "src-tauri/src/commands/extensions.rs", "line": 28, "end_line": 29 }]
+    },
+    {
+      "id": "cmdTerminal",
+      "type": "backend",
+      "label": "终端",
+      "sublabel": "PTY / Shell",
+      "pos": [760, 520],
+      "size": [100, 60],
+      "sources": [{ "path": "src-tauri/src/commands/terminal.rs", "line": 100 }]
+    },
+    {
+      "id": "cmdStorage",
+      "type": "backend",
+      "label": "存储与档案",
+      "sublabel": "键值 / 密钥 / 档案",
+      "pos": [880, 520],
+      "size": [100, 60],
+      "sources": [
+        { "path": "src-tauri/src/commands/storage.rs", "line": 31, "end_line": 41 },
+        { "path": "src-tauri/src/commands/secrets.rs", "line": 22, "end_line": 30 },
+        { "path": "src-tauri/src/commands/profiles.rs", "line": 30, "end_line": 32 }
+      ]
+    },
+    {
+      "id": "cmdSystem",
+      "type": "backend",
+      "label": "系统与网络",
+      "sublabel": "窗口 / 菜单 / 代理",
+      "pos": [1000, 520],
+      "size": [100, 60],
+      "sources": [
+        { "path": "src-tauri/src/commands/window.rs", "line": 1 },
+        { "path": "src-tauri/src/commands/menu.rs", "line": 1 },
+        { "path": "src-tauri/src/commands/proxy.rs", "line": 1 }
+      ]
+    },
+    {
+      "id": "wsCrate",
+      "type": "backend",
+      "label": "sidex-workspace",
+      "sublabel": "文件树 / 搜索 / 文件操作",
+      "pos": [40, 620],
+      "size": [165, 60],
+      "sources": [{ "path": "crates/sidex-workspace/Cargo.toml", "line": 1, "end_line": 3 }]
+    },
+    {
+      "id": "synCrate",
+      "type": "backend",
+      "label": "sidex-syntax · textmate",
+      "sublabel": "AST 大纲 / 分词",
+      "pos": [214, 620],
+      "size": [165, 60],
+      "sources": [
+        { "path": "crates/sidex-syntax/Cargo.toml", "line": 1, "end_line": 3 },
+        { "path": "crates/sidex-textmate/Cargo.toml", "line": 1, "end_line": 3 }
+      ]
+    },
+    {
+      "id": "cfgCrate",
+      "type": "backend",
+      "label": "配置能力 crates",
+      "sublabel": "settings / keymap / theme",
+      "pos": [388, 620],
+      "size": [165, 60],
+      "sources": [
+        { "path": "crates/sidex-settings/Cargo.toml", "line": 1, "end_line": 3 },
+        { "path": "crates/sidex-keymap/Cargo.toml", "line": 1, "end_line": 3 },
+        { "path": "crates/sidex-theme/Cargo.toml", "line": 1, "end_line": 3 }
+      ]
+    },
+    {
+      "id": "extCrate",
+      "type": "backend",
+      "label": "sidex-extensions",
+      "sublabel": "清单与路径",
+      "pos": [562, 620],
+      "size": [165, 60],
+      "sources": [{ "path": "crates/sidex-extensions/Cargo.toml", "line": 1, "end_line": 3 }]
+    },
+    {
+      "id": "localFS",
+      "type": "database",
+      "label": "本地文件系统",
+      "sublabel": "磁盘 / 目录 / 文件",
+      "pos": [40, 720],
+      "size": [180, 56],
+      "sources": [{ "path": "src-tauri/src/commands/fs.rs", "line": 4 }]
+    },
+    {
+      "id": "settingsFile",
+      "type": "database",
+      "label": "settings.json",
+      "sublabel": "用户设置",
+      "pos": [240, 720],
+      "size": [170, 56],
+      "sources": [{ "path": "src-tauri/src/commands/settings.rs", "line": 10, "end_line": 41 }]
+    },
+    {
+      "id": "extDir",
+      "type": "database",
+      "label": "用户扩展目录",
+      "sublabel": "声明式扩展",
+      "pos": [430, 720],
+      "size": [170, 56],
+      "sources": [{ "path": "src-tauri/src/commands/extensions.rs", "line": 28, "end_line": 30 }]
+    },
+    {
+      "id": "osShell",
+      "type": "external",
+      "label": "OS Shell / PTY",
+      "sublabel": "PowerShell 等",
+      "pos": [640, 720],
+      "size": [150, 56],
+      "sources": [{ "path": "src-tauri/src/commands/terminal.rs", "line": 100 }]
+    },
+    {
+      "id": "sqlite",
+      "type": "database",
+      "label": "SQLite 状态库",
+      "sublabel": "kv_store · ItemTable",
+      "pos": [820, 720],
+      "size": [160, 56],
+      "sources": [
+        { "path": "src-tauri/src/lib.rs", "line": 615, "end_line": 620 },
+        { "path": "src-tauri/src/commands/secrets.rs", "line": 26, "end_line": 29 }
+      ]
+    },
+    {
+      "id": "network",
+      "type": "external",
+      "label": "网络端点",
+      "sublabel": "代理目标",
+      "pos": [1010, 720],
+      "size": [100, 56],
+      "sources": [{ "path": "src-tauri/src/commands/proxy.rs", "line": 1 }]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Tauri WebView · VS Code Workbench",
+      "wraps": ["shell", "tabs", "navtree", "filelist", "preview", "editor", "natives", "sidebar", "outline", "terminalPanel", "fsProvider", "thumbSvc", "sessionSvc", "bridge", "termBackend"],
+      "pad": 18
+    },
+    {
+      "kind": "region",
+      "label": "Tauri Rust 后端",
+      "wraps": ["tauriIPC", "cmdFs", "cmdSearch", "cmdSyntax", "cmdTextmate", "cmdConfig", "cmdExtensions", "cmdTerminal", "cmdStorage", "cmdSystem", "wsCrate", "synCrate", "cfgCrate", "extCrate"],
+      "pad": 18
+    }
+  ],
+  "connections": [
+    { "id": "user-shell", "from": "user", "to": "shell", "label": "启动", "variant": "emphasis" },
+    { "id": "shell-tabs", "from": "shell", "to": "tabs", "label": "打开目录" },
+    { "id": "nav-tabs", "from": "navtree", "to": "tabs", "label": "导航" },
+    { "id": "tabs-filelist", "from": "tabs", "to": "filelist", "label": "切换标签" },
+    { "id": "filelist-preview", "from": "filelist", "to": "preview", "label": "单击预览" },
+    { "id": "filelist-editor", "from": "filelist", "to": "editor", "label": "双击编辑" },
+    { "id": "editor-natives", "from": "editor", "to": "natives", "label": "按类型打开" },
+    { "id": "editor-outline", "from": "editor", "to": "outline", "label": "文档符号" },
+    { "id": "shell-sidebar", "from": "shell", "to": "sidebar", "label": "设置与扩展" },
+    { "id": "filelist-fsprovider", "from": "filelist", "to": "fsProvider", "label": "读目录" },
+    { "id": "filelist-thumb", "from": "filelist", "to": "thumbSvc" },
+    { "id": "session-tabs", "from": "sessionSvc", "to": "tabs", "label": "恢复现场" },
+    { "id": "thumb-bridge", "from": "thumbSvc", "to": "bridge" },
+    { "id": "editor-bridge", "from": "editor", "to": "bridge", "label": "打开 / 保存" },
+    { "id": "natives-bridge", "from": "natives", "to": "bridge", "label": "预览数据" },
+    { "id": "bridge-ipc", "from": "bridge", "to": "tauriIPC", "label": "invoke()", "variant": "emphasis" },
+    { "id": "term-panel-backend", "from": "terminalPanel", "to": "termBackend" },
+    { "id": "term-backend-ipc", "from": "termBackend", "to": "tauriIPC" },
+    { "id": "ipc-fs", "from": "tauriIPC", "to": "cmdFs", "route": "straight" },
+    { "id": "ipc-search", "from": "tauriIPC", "to": "cmdSearch", "route": "straight" },
+    { "id": "ipc-syntax", "from": "tauriIPC", "to": "cmdSyntax", "route": "straight" },
+    { "id": "ipc-textmate", "from": "tauriIPC", "to": "cmdTextmate", "route": "straight" },
+    { "id": "ipc-config", "from": "tauriIPC", "to": "cmdConfig", "route": "straight" },
+    { "id": "ipc-extensions", "from": "tauriIPC", "to": "cmdExtensions", "route": "straight" },
+    { "id": "ipc-terminal", "from": "tauriIPC", "to": "cmdTerminal", "route": "straight" },
+    { "id": "ipc-storage", "from": "tauriIPC", "to": "cmdStorage", "route": "straight" },
+    { "id": "ipc-system", "from": "tauriIPC", "to": "cmdSystem", "route": "straight" },
+    { "id": "fs-ws", "from": "cmdFs", "to": "wsCrate" },
+    { "id": "search-ws", "from": "cmdSearch", "to": "wsCrate" },
+    { "id": "syntax-syn", "from": "cmdSyntax", "to": "synCrate" },
+    { "id": "textmate-syn", "from": "cmdTextmate", "to": "synCrate" },
+    { "id": "config-cfg", "from": "cmdConfig", "to": "cfgCrate" },
+    { "id": "extensions-ext", "from": "cmdExtensions", "to": "extCrate" },
+    { "id": "ws-local", "from": "wsCrate", "to": "localFS", "label": "读写 / 回收站" },
+    { "id": "cfg-settings", "from": "cfgCrate", "to": "settingsFile", "label": "JSONC" },
+    { "id": "ext-dir", "from": "extCrate", "to": "extDir", "label": "扫描清单" },
+    { "id": "storage-db", "from": "cmdStorage", "to": "sqlite", "label": "kv / 凭据" },
+    { "id": "terminal-pty", "from": "cmdTerminal", "to": "osShell", "label": "spawn / write" },
+    { "id": "system-net", "from": "cmdSystem", "to": "network", "label": "HTTP 代理" }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "文件管理主链路",
+      "items": [
+        "每个目录标签独立维护导航历史、文件列表视图与编辑器工作集",
+        "文件列表虚拟滚动，只渲染可视行并保留滚动位置",
+        "排序、列宽、过滤与递归名称搜索都作用于完整数据集",
+        "右键支持新建、重命名、复制粘贴、回收站删除，最近 20 步可撤销"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "编辑与预览",
+      "items": [
+        "Monaco 提供多光标、查找替换、折叠与自动保存",
+        "CSV 使用原生表格 EditorPane，编辑后直接写回文件",
+        "PDF、HTML、Markdown、Mermaid、图片均为原生 EditorPane",
+        "PDF 与 Mermaid 内核按需动态加载；Markdown 渲染统一走 markdownHtml"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Rust 能力层",
+      "items": [
+        "sidex-workspace 负责文件树、文件操作与名称/全文搜索",
+        "sidex-syntax 用 tree-sitter 解析 TypeScript 大纲，其余语言回退正则",
+        "sidex-textmate 提供 TextMate 分词；sidex-theme 提供主题解析",
+        "sidex-settings / keymap 与 sidex-profiles / auth 承担配置、键位、档案与凭据",
+        "notify 做目录监视，portable-pty 提供终端，rusqlite 负责状态库"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "边界与已移除能力",
+      "items": [
+        "没有 Node / WASM 扩展运行时，扩展只保留声明式目录与只读面板",
+        "没有 LSP、Git、Problems、调试、任务与笔记本",
+        "没有扩展市场、账号同步、遥测与自动更新",
+        "单窗口、自绘菜单；sidex-asset 协议只读本地资源"
+      ]
+    }
+  ]
+}

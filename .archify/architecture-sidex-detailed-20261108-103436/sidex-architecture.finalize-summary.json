@@ -1,0 +1,351 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "command": "finalize",
+  "status": "pass",
+  "type": "architecture",
+  "quality": "showcase",
+  "specification": {
+    "path": "F:\\TRAEWS\\sidex\\.archify\\architecture-sidex-detailed-20261108-103436\\candidate.json",
+    "sha256": "88977ac6ea4dbb07254945569d50fa8957d6fabb588b16deee81884c81eca2c4",
+    "bytes": 19148
+  },
+  "artifact": {
+    "path": "F:\\TRAEWS\\sidex\\.archify\\architecture-sidex-detailed-20261108-103436\\sidex-architecture.html",
+    "sha256": "18386dff8a8851c1e0f508cdd0d8cb4eb813714e2150af5b9a6c1ca513ac3e29",
+    "bytes": 893463
+  },
+  "gates": {
+    "validate": "pass",
+    "deliver": "pass",
+    "check": "pass",
+    "browser-check": "pass"
+  },
+  "diagnostics": [],
+  "diagnosticSummary": {
+    "total": 0,
+    "shown": 0,
+    "truncated": false
+  },
+  "evidence": {
+    "receipt": "F:\\TRAEWS\\sidex\\.archify\\architecture-sidex-detailed-20261108-103436\\sidex-architecture.finalize.json",
+    "summaryReceipt": "F:\\TRAEWS\\sidex\\.archify\\architecture-sidex-detailed-20261108-103436\\sidex-architecture.finalize-summary.json",
+    "browserCheckReceipt": "F:\\TRAEWS\\sidex\\.archify\\architecture-sidex-detailed-20261108-103436\\sidex-architecture.browser-check.json"
+  },
+  "update": {
+    "status": "update_available",
+    "installedVersion": "3.1.0",
+    "availableVersion": "3.2.0",
+    "releaseNotes": "https://github.com/tt-a1i/archify/releases/tag/v3.2.0",
+    "severity": "normal",
+    "checkedAt": "2026-11-04T07:46:49.466Z",
+    "source": "cache",
+    "noticeRequired": true,
+    "noticeText": "Archify update: 3.1.0 → 3.2.0. A previous check at 2026-11-04T07:46:49.466Z found a newer release. Release notes: https://github.com/tt-a1i/archify/releases/tag/v3.2.0. The installed Skill has not changed; ask to snooze or ignore this reminder.",
+    "eventKey": "archify@sha256:70e210265c59f24dcbdf2a502ff671104b5454e7ee7d3554aecd86bad32384f5"
+  },
+  "visualReview": "not-requested",
+  "durationMs": 5187,
+  "visualReviewRecommendation": {
+    "action": "inspect-route-readability",
+    "signals": {
+      "resolvedCrossovers": 8,
+      "routesOverSuggestedBends": 10,
+      "routesOverSuggestedStretch": 5
+    },
+    "reason": "Automated gates passed, but crossings or detours still need perceptual review before claiming visual quality.",
+    "affectedRoutes": {
+      "crossings": [
+        {
+          "left": {
+            "id": "shell-tabs",
+            "from": "shell",
+            "to": "tabs",
+            "label": "打开目录",
+            "collectionIndex": 1,
+            "artifactIndex": 2
+          },
+          "right": {
+            "id": "filelist-thumb",
+            "from": "filelist",
+            "to": "thumbSvc",
+            "label": "",
+            "collectionIndex": 10,
+            "artifactIndex": 11
+          },
+          "point": [
+            293,
+            219
+          ]
+        },
+        {
+          "left": {
+            "id": "nav-tabs",
+            "from": "navtree",
+            "to": "tabs",
+            "label": "导航",
+            "collectionIndex": 2,
+            "artifactIndex": 3
+          },
+          "right": {
+            "id": "shell-sidebar",
+            "from": "shell",
+            "to": "sidebar",
+            "label": "设置与扩展",
+            "collectionIndex": 8,
+            "artifactIndex": 9
+          },
+          "point": [
+            313.29411764705884,
+            200.95294117647057
+          ]
+        },
+        {
+          "left": {
+            "id": "nav-tabs",
+            "from": "navtree",
+            "to": "tabs",
+            "label": "导航",
+            "collectionIndex": 2,
+            "artifactIndex": 3
+          },
+          "right": {
+            "id": "filelist-thumb",
+            "from": "filelist",
+            "to": "thumbSvc",
+            "label": "",
+            "collectionIndex": 10,
+            "artifactIndex": 11
+          },
+          "point": [
+            293,
+            174
+          ]
+        },
+        {
+          "left": {
+            "id": "filelist-preview",
+            "from": "filelist",
+            "to": "preview",
+            "label": "单击预览",
+            "collectionIndex": 4,
+            "artifactIndex": 5
+          },
+          "right": {
+            "id": "shell-sidebar",
+            "from": "shell",
+            "to": "sidebar",
+            "label": "设置与扩展",
+            "collectionIndex": 8,
+            "artifactIndex": 9
+          },
+          "point": [
+            506,
+            148
+          ]
+        },
+        {
+          "left": {
+            "id": "filelist-preview",
+            "from": "filelist",
+            "to": "preview",
+            "label": "单击预览",
+            "collectionIndex": 4,
+            "artifactIndex": 5
+          },
+          "right": {
+            "id": "filelist-thumb",
+            "from": "filelist",
+            "to": "thumbSvc",
+            "label": "",
+            "collectionIndex": 10,
+            "artifactIndex": 11
+          },
+          "point": [
+            506,
+            150
+          ],
+          "sharedNode": "filelist"
+        },
+        {
+          "left": {
+            "id": "shell-sidebar",
+            "from": "shell",
+            "to": "sidebar",
+            "label": "设置与扩展",
+            "collectionIndex": 8,
+            "artifactIndex": 9
+          },
+          "right": {
+            "id": "filelist-thumb",
+            "from": "filelist",
+            "to": "thumbSvc",
+            "label": "",
+            "collectionIndex": 10,
+            "artifactIndex": 11
+          },
+          "point": [
+            293,
+            205
+          ]
+        },
+        {
+          "left": {
+            "id": "syntax-syn",
+            "from": "cmdSyntax",
+            "to": "synCrate",
+            "label": "",
+            "collectionIndex": 29,
+            "artifactIndex": 30
+          },
+          "right": {
+            "id": "textmate-syn",
+            "from": "cmdTextmate",
+            "to": "synCrate",
+            "label": "",
+            "collectionIndex": 30,
+            "artifactIndex": 31
+          },
+          "point": [
+            310,
+            600
+          ],
+          "sharedNode": "synCrate"
+        },
+        {
+          "left": {
+            "id": "config-cfg",
+            "from": "cmdConfig",
+            "to": "cfgCrate",
+            "label": "",
+            "collectionIndex": 31,
+            "artifactIndex": 32
+          },
+          "right": {
+            "id": "cfg-settings",
+            "from": "cfgCrate",
+            "to": "settingsFile",
+            "label": "JSONC",
+            "collectionIndex": 34,
+            "artifactIndex": 35
+          },
+          "point": [
+            530,
+            596
+          ],
+          "sharedNode": "cfgCrate"
+        }
+      ],
+      "detours": [
+        {
+          "relationship": {
+            "id": "shell-tabs",
+            "from": "shell",
+            "to": "tabs",
+            "label": "打开目录",
+            "collectionIndex": 1,
+            "artifactIndex": 2
+          },
+          "bends": 3,
+          "stretch": 1.375
+        },
+        {
+          "relationship": {
+            "id": "nav-tabs",
+            "from": "navtree",
+            "to": "tabs",
+            "label": "导航",
+            "collectionIndex": 2,
+            "artifactIndex": 3
+          },
+          "bends": 4,
+          "stretch": 1
+        },
+        {
+          "relationship": {
+            "id": "tabs-filelist",
+            "from": "tabs",
+            "to": "filelist",
+            "label": "切换标签",
+            "collectionIndex": 3,
+            "artifactIndex": 4
+          },
+          "bends": 3,
+          "stretch": 1.407
+        },
+        {
+          "relationship": {
+            "id": "filelist-preview",
+            "from": "filelist",
+            "to": "preview",
+            "label": "单击预览",
+            "collectionIndex": 4,
+            "artifactIndex": 5
+          },
+          "bends": 4,
+          "stretch": 1
+        },
+        {
+          "relationship": {
+            "id": "filelist-editor",
+            "from": "filelist",
+            "to": "editor",
+            "label": "双击编辑",
+            "collectionIndex": 5,
+            "artifactIndex": 6
+          },
+          "bends": 3,
+          "stretch": 1.361
+        },
+        {
+          "relationship": {
+            "id": "editor-natives",
+            "from": "editor",
+            "to": "natives",
+            "label": "按类型打开",
+            "collectionIndex": 6,
+            "artifactIndex": 7
+          },
+          "bends": 3,
+          "stretch": 1.343
+        },
+        {
+          "relationship": {
+            "id": "editor-outline",
+            "from": "editor",
+            "to": "outline",
+            "label": "文档符号",
+            "collectionIndex": 7,
+            "artifactIndex": 8
+          },
+          "bends": 4,
+          "stretch": 1
+        },
+        {
+          "relationship": {
+            "id": "shell-sidebar",
+            "from": "shell",
+            "to": "sidebar",
+            "label": "设置与扩展",
+            "collectionIndex": 8,
+            "artifactIndex": 9
+          },
+          "bends": 3,
+          "stretch": 1
+        }
+      ],
+      "truncated": true
+    },
+    "hints": [
+      "tauriIPC has 5 relationships facing its right side, which fits 2 ports: make that side at least 88px, or move some of those neighbours so they face another side of tauriIPC.",
+      "tauriIPC has 5 relationships facing its left side, which fits 2 ports: make that side at least 88px, or move some of those neighbours so they face another side of tauriIPC.",
+      "shell → tabs crosses filelist → thumbSvc: move the node of whichever is a branch, return, or second entrance to the other side of the main path, so that relationship runs through an empty corridor.",
+      "navtree → tabs crosses shell → sidebar: move the node of whichever is a branch, return, or second entrance to the other side of the main path, so that relationship runs through an empty corridor.",
+      "navtree → tabs crosses filelist → thumbSvc: move the node of whichever is a branch, return, or second entrance to the other side of the main path, so that relationship runs through an empty corridor.",
+      "filelist → preview crosses shell → sidebar: move the node of whichever is a branch, return, or second entrance to the other side of the main path, so that relationship runs through an empty corridor.",
+      "filelist → preview and filelist → thumbSvc cross next to filelist: move node preview or thumbSvc so the two reach filelist from different sides (for example one level with it, one directly above or below it).",
+      "shell → sidebar crosses filelist → thumbSvc: move the node of whichever is a branch, return, or second entrance to the other side of the main path, so that relationship runs through an empty corridor."
+    ],
+    "repair": "Trace these relationships at the desktop viewport. For Architecture, use references/architecture-layout-repair.md: reflow a blocked main path or tangled connected scene, and repair an isolated defect locally only when the surrounding composition is accepted. Preserve all semantic content and user-fixed geometry. Rerun finalize once after the edit."
+  }
+}
