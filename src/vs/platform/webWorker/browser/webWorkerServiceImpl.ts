@@ -52,22 +52,7 @@ export class WebWorkerService implements IWebWorkerService {
 	}
 
 	getWorkerUrl(descriptor: WebWorkerDescriptor): string {
-		const isTauriProduction =
-			(globalThis as typeof globalThis & { __SIDEX_TAURI__?: boolean }).__SIDEX_TAURI__ === true &&
-			globalThis.location?.protocol === 'tauri:';
-		if (isTauriProduction) {
-			if (descriptor.label === 'editorWorkerService') {
-				return `${globalThis.location.origin}/assets/editorWorker.js`;
-			}
-			if (descriptor.label === 'TextMateWorker') {
-				return `${globalThis.location.origin}/assets/textMateWorker.js`;
-			}
-			if (descriptor.label === 'extensionHostWorkerMain') {
-				return `${globalThis.location.origin}/assets/extensionHostWorker.js`;
-			}
-		}
-
-		// Prefer bundler location for Vite/Webpack compatibility
+		// 打包产物里 worker 由 `?worker&url` 单独打成自包含文件，Tauri 协议下同样可用。
 		if (descriptor.esmModuleLocationBundler) {
 			const url =
 				typeof descriptor.esmModuleLocationBundler === 'function'

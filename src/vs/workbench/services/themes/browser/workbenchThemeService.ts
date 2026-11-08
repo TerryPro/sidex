@@ -164,7 +164,7 @@ export class WorkbenchThemeService extends Disposable implements IWorkbenchTheme
 	private readonly productIconThemeSequencer: Sequencer;
 
 	constructor(
-		@IExtensionService extensionService: IExtensionService,
+		@IExtensionService private readonly extensionService: IExtensionService,
 		@IStorageService private readonly storageService: IStorageService,
 		@IConfigurationService private readonly configurationService: IConfigurationService,
 		@ITelemetryService private readonly telemetryService: ITelemetryService,
@@ -307,6 +307,12 @@ export class WorkbenchThemeService extends Disposable implements IWorkbenchTheme
 				return this.setColorTheme(matchedColorTheme ? matchedColorTheme.id : devThemes[0].id, undefined);
 			}
 			let theme = this.colorThemeRegistry.findThemeBySettingsId(this.settings.colorTheme, undefined);
+			if (!theme) {
+				// 扩展主题（Dark+ 等）在扩展扫描完成后才注册；首屏初始化时若还没注册，
+				// 会退回到没有 TextMate 分词颜色的内置主题，导致所有语言失去高亮。
+				await this.extensionService.whenInstalledExtensionsRegistered();
+				theme = this.colorThemeRegistry.findThemeBySettingsId(this.settings.colorTheme, undefined);
+			}
 			if (!theme) {
 				// If the current theme is not available, first make sure setting sync is complete
 				await this.userDataInitializationService.whenInitializationFinished();

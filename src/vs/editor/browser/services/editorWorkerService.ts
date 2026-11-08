@@ -15,6 +15,7 @@ import { ITextModel } from '../../common/model.js';
 import * as languages from '../../common/languages.js';
 import { ILanguageConfigurationService } from '../../common/languages/languageConfigurationRegistry.js';
 import { EditorWorker } from '../../common/services/editorWebWorker.js';
+import editorWorkerMainUrl from '../../common/services/editorWebWorkerMain.ts?worker&url';
 import {
 	DiffAlgorithmName,
 	IEditorWorkerService,
@@ -64,7 +65,7 @@ export class EditorWorkerService extends Disposable implements IEditorWorkerServ
 
 	public static readonly workerDescriptor = new WebWorkerDescriptor({
 		esmModuleLocation: () => FileAccess.asBrowserUri('vs/editor/common/services/editorWebWorkerMain.js'),
-		esmModuleLocationBundler: new URL('../../common/services/editorWebWorkerMain.ts', import.meta.url),
+		esmModuleLocationBundler: new URL(editorWorkerMainUrl, import.meta.url),
 		label: 'editorWorkerService'
 	});
 

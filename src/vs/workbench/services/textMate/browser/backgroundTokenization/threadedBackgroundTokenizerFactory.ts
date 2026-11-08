@@ -23,6 +23,7 @@ import { IExtensionResourceLoaderService } from '../../../../../platform/extensi
 import { INotificationService } from '../../../../../platform/notification/common/notification.js';
 import { ITelemetryService } from '../../../../../platform/telemetry/common/telemetry.js';
 import { ICreateData, StateDeltas, TextMateTokenizationWorker } from './worker/textMateTokenizationWorker.worker.js';
+import textMateWorkerMainUrl from './worker/textMateTokenizationWorker.workerMain.ts?worker&url';
 import { TextMateWorkerHost } from './worker/textMateWorkerHost.js';
 import { TextMateWorkerTokenizerController } from './textMateWorkerTokenizerController.js';
 import { IValidGrammarDefinition } from '../../common/TMScopeRegistry.js';
@@ -189,7 +190,7 @@ export class ThreadedBackgroundTokenizerFactory implements IDisposable {
 				esmModuleLocation: FileAccess.asBrowserUri(
 					'vs/workbench/services/textMate/browser/backgroundTokenization/worker/textMateTokenizationWorker.workerMain.js'
 				),
-				esmModuleLocationBundler: new URL('./worker/textMateTokenizationWorker.workerMain.ts', import.meta.url),
+				esmModuleLocationBundler: new URL(textMateWorkerMainUrl, import.meta.url),
 				label: 'TextMateWorker'
 			})
 		));
